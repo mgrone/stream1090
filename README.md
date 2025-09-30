@@ -21,7 +21,7 @@ Stream1090 is written in C++ and self-contained. You will need cmake (3.10 or hi
 ## Compiling stream1090
 Building stream1090 is straightforward. Unlike other implementations, there are no additional libraries required. Get the source and do the usually cmake thing:
 
-```mkdir build && cd build && cmake ../ && make stream1090 && cd ..```
+```mkdir build && cd build && cmake ../ && make && cd ..```
 
 This will create the stream1090 executable in the build directory.
 
