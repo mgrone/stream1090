@@ -74,7 +74,7 @@ For testing you may now proceed in two steps:
 
 ```readsb --net-only --net-ri-port 30001 --interactive```
 
-This puts readsb into network only mode so it does claim the SDR dongle. 
+This puts readsb into network only mode so it does not claim the SDR dongle. 
 Furthermore, it starts listening on port 30001 for message frames that it will then decode.
 
 2. Once readsb is up and running, we can start stream1090 and send the output to readsb via socat with
