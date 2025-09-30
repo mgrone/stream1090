@@ -37,7 +37,7 @@ public:
 		logStatsSent(downlinkFormat);
 		m_prevFrameLongSent = frame;
 		m_prevTimeLongSent = m_currTime;
-#if defined(OUTPUT_RAW)
+#if defined(OUTPUT_RAW) && OUTPUT_RAW
 		ModeS::printFrameLongRaw(std::cout, frame);
 #else 
 		ModeS::printFrameLong(std::cout, frame);
@@ -53,7 +53,7 @@ public:
 		logStatsSent(downlinkFormat);
 		m_prevFrameShortSent = frame;
 		m_prevTimeShortSent = m_currTime;
-#if defined(OUTPUT_RAW)
+#if defined(OUTPUT_RAW) && OUTPUT_RAW
 		ModeS::printFrameShortRaw(std::cout, frame);
 #else 
 		ModeS::printFrameShort(std::cout, frame);
@@ -382,7 +382,7 @@ public:
 
 private:
 
-#ifdef STATS_ENABLED
+#if defined(STATS_ENABLED) && STATS_ENABLED
 	Stats::StatsLog m_statsLog;
 	void logStats(Stats::EventType evt) {
 		m_statsLog.log(evt);

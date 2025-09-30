@@ -36,7 +36,8 @@ You can now already test stream1090
 ``` rtl_sdr -g 49.6 -f 1090000000 -s 2400000 - | ./build/stream1090 > /dev/null ```
 
 This sets the gain to 49.6db (feel free to change this or set it to auto with 0), the sample rate to 2.4Mz and tunes the dongle to 1090Mhz.
-The output (8-bit unsigned IQ pairs) is then piped into stream1090. Stream1090 will write the resulting messages to stdout while providing statistics
+The output (8-bit unsigned IQ pairs) is then piped into stream1090. 
+Stream1090 will write the resulting messages to stdout while providing statistics
 on stderr every 5 seconds. We get rid of the messages for testing purposes. You should see now something like this:
 ```
 -------------------------------------------------------------
@@ -58,9 +59,11 @@ Messages Total 114496
 ```
 
 ## Readsb & socat (optional)
-Recall that stream1090 is a demodulator and not a decoder. In order to decode messages and integrate stream1090 into the stack,
-readsb in conjuntion with socat offers a simple effective solution. The idea is to pipe the messages from stream1090's stdout into socat which then
-forwards those to readsb. Readsb is able to receive messages in hex format and decode these.
+Recall that stream1090 is a demodulator and not a decoder. 
+In order to decode messages and integrate stream1090 into the stack,
+readsb in conjuntion with socat offers a simple effective solution. 
+The idea is to pipe the messages from stream1090's stdout into socat which then forwards those to readsb. 
+Readsb is able to receive messages in hex format and decode these.
 If you haven't already installed readsb, head over to https://github.com/wiedehopf/readsb and follow the instructions there.
 For socat, you can simply do
 
@@ -71,7 +74,8 @@ For testing you may now proceed in two steps:
 
 ```readsb --net-only --net-ri-port 30001 --interactive```
 
-This puts readsb into network only mode so it does claim the SDR dongle. Furthermore, it starts listening on port 30001 for message frames that it will decode then decode.
+This puts readsb into network only mode so it does claim the SDR dongle. 
+Furthermore, it starts listening on port 30001 for message frames that it will then decode.
 
 2. Once readsb is up and running, we can start stream1090 and send the output to readsb via socat with
 
@@ -81,9 +85,13 @@ You should now see the table of readsb filling up with plane data.
 
 ## Integration
 
-If you want to integrate stream1090 into an existing stack, readsb is probably the easiest way to do this. Make sure that ```--net-ri-port``` is open.
-Then start feeding it with socat either locally or from a different machine. If you want to disable the statistics completely, 
-remove ```-DSTATS_ENABLED``` from the compile options in ```CMakeLists.txt``` and rebuild the project.
+If you want to integrate stream1090 into an existing stack, readsb is probably the easiest way to do this. 
+Make sure that ```--net-ri-port [FILL_IN_YOUR_PORT]``` is set.
+Then start feeding it with socat either locally or from a different machine. 
+If you want to disable the statistics completely, rebuild the project and set the corresponding option for cmake:
+
+```cmake ../ -DENABLE_STATS=OFF```
+
 
 # Frequently asked questions
 
