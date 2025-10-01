@@ -7,6 +7,7 @@
 
 #pragma once
 #include <numeric>
+#include <memory>
 
 enum SampleRate {
     Rate_1_0_Mhz = 1000000,
@@ -24,10 +25,18 @@ template<SampleRate _InputSampleRate,
          size_t _InputBufferOverlap = 1>
 class SamplerBase;
 
+// one-to-one samplers 
+typedef SamplerBase<Rate_2_0_Mhz, Rate_2_0_Mhz> Sampler_2_0_to_2_0_Mhz;
+typedef SamplerBase<Rate_4_0_Mhz, Rate_4_0_Mhz> Sampler_4_0_to_4_0_Mhz;
+typedef SamplerBase<Rate_6_0_Mhz, Rate_6_0_Mhz> Sampler_6_0_to_6_0_Mhz;
+
+// 2.4 Mhz upsamplers 
 typedef SamplerBase<Rate_2_4_Mhz, Rate_4_0_Mhz> Sampler_2_4_to_4_0_Mhz;
 typedef SamplerBase<Rate_2_4_Mhz, Rate_6_0_Mhz> Sampler_2_4_to_6_0_Mhz;
 typedef SamplerBase<Rate_2_4_Mhz, Rate_8_0_Mhz> Sampler_2_4_to_8_0_Mhz;
+
 typedef SamplerBase<Rate_3_0_Mhz, Rate_6_0_Mhz> Sampler_3_0_to_6_0_Mhz;
+
 
 // This class serves as descriptor for various values required for managing buffers and iterating over them
 // All values are derived from the sample rates and optional the buffer overlap in case you want to write 
@@ -48,7 +57,7 @@ class SamplerBase {
     static constexpr SampleRate OutputSampleRate = _OutputSampleRate;
 
     // no shenanigans allowed here. It is about upsampling
-    static_assert(OutputSampleRate > InputSampleRate);
+    static_assert(OutputSampleRate >= InputSampleRate);
 
     // The output sample rate has to be a multiple of 2Mhz.
     static_assert(OutputSampleRate % Rate_2_0_Mhz == 0);
@@ -162,5 +171,28 @@ constexpr void SamplerBase<Rate_3_0_Mhz, Rate_6_0_Mhz>::sample(float* in, float*
             out += 2;
         }
 }
+
+// The following samplers are temporary and will be dealt with differently in the future
+// 2.0 Mhz to 2.0 Mhz (2 streams) dummy function (experimental)
+template<>
+constexpr void SamplerBase<Rate_2_0_Mhz, Rate_2_0_Mhz>::sample(float* in, float* out, size_t numBlocks) {
+    static_assert((RatioInput == 1) && (RatioInput == 1));
+    std::memcpy(out, in, numBlocks * sizeof(float));
+}
+
+// 4.0 Mhz to 4.0 Mhz (4 streams) dummy function (experimental)
+template<>
+constexpr void SamplerBase<Rate_4_0_Mhz, Rate_4_0_Mhz>::sample(float* in, float* out, size_t numBlocks) {
+    static_assert((RatioInput == 1) && (RatioInput == 1));
+    std::memcpy(out, in, numBlocks * sizeof(float));
+}
+
+// 6.0 Mhz to 6.0 Mhz (6 streams) dummy function (experimental)
+template<>
+constexpr void SamplerBase<Rate_6_0_Mhz, Rate_6_0_Mhz>::sample(float* in, float* out, size_t numBlocks) {
+    static_assert((RatioInput == 1) && (RatioInput == 1));
+    std::memcpy(out, in, numBlocks * sizeof(float));
+}
+
 
 

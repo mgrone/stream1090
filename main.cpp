@@ -10,30 +10,52 @@
 #include <unistd.h>
 #include "SampleStream.hpp"
 
-void runFromStdIn(bool isFloat) {
+void run_rtl_sdr() {
+    // create the default rtl_sdr instance 
     SampleStream<Sampler_2_4_to_8_0_Mhz> sampleStream;
-    
-    if (isFloat) {
-        sampleStream.read<MAG_float>(std::cin);
-    } else { 
-        sampleStream.read<IQ_uint8>(std::cin);
-    }
+    // start reading thhe uint8 iq data from rtl_sdr
+    sampleStream.read<IQ_RTL_SDR>(std::cin);
+}
+
+void run_airspy() {
+    // create an instance with a simple 1:1 sampler 
+    SampleStream<Sampler_6_0_to_6_0_Mhz> sampleStream;
+    // start reading the int16 iq data from airspy_rx
+    sampleStream.read<IQ_AIRSPY_RX>(std::cin);
+}
+
+void printHelp() {
+    std::cout << "No parameters: stream1090 expects standard rtl_sdr output with a sample rate of 2.4Mhz" << std::endl;
+    std::cout << "-a : experimental airspy mode. stream1090 expects int16 IQ data with a sample rate of 6Mhz" << std::endl;
 }
 
 int main(int argc, char** argv) {
-    bool g_readFloats = false;
     // Parse command line options.
+    int inputFormat = 0;
     int opt;
-    while ((opt = getopt(argc, argv, "f")) != -1) {
+    while ((opt = getopt(argc, argv, "ah")) != -1) {
         switch (opt) {
-            case 'f':
-                g_readFloats = true;
+            case 'a':
+                inputFormat = 1;
                 break;
+            case 'h':
+                printHelp();
+                return 0;
+            break;
             default:
-            return 0;
+            break;
         }
     }
    
-    runFromStdIn(g_readFloats);
+    switch (inputFormat)
+    {
+    case 1:
+        run_airspy();
+        break;
+    
+    default:
+        run_rtl_sdr();
+        break;
+    }
     return 0;
 }
