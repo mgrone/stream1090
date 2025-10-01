@@ -24,9 +24,10 @@ template<SampleRate _InputSampleRate,
          size_t _InputBufferOverlap = 1>
 class SamplerBase;
 
-typedef SamplerBase<Rate_2_4_Mhz, Rate_6_0_Mhz> Sampler_2_4_to_6_0_Mhz;
-typedef SamplerBase<Rate_3_0_Mhz, Rate_6_0_Mhz> Sampler_3_0_to_6_0_Mhz;
 typedef SamplerBase<Rate_2_4_Mhz, Rate_4_0_Mhz> Sampler_2_4_to_4_0_Mhz;
+typedef SamplerBase<Rate_2_4_Mhz, Rate_6_0_Mhz> Sampler_2_4_to_6_0_Mhz;
+typedef SamplerBase<Rate_2_4_Mhz, Rate_8_0_Mhz> Sampler_2_4_to_8_0_Mhz;
+typedef SamplerBase<Rate_3_0_Mhz, Rate_6_0_Mhz> Sampler_3_0_to_6_0_Mhz;
 
 // This class serves as descriptor for various values required for managing buffers and iterating over them
 // All values are derived from the sample rates and optional the buffer overlap in case you want to write 
@@ -87,17 +88,17 @@ class SamplerBase {
 template<>
 constexpr void SamplerBase<Rate_2_4_Mhz, Rate_4_0_Mhz>::sample(float* in, float* out, size_t numBlocks) {
     for (size_t i = 0; i < numBlocks; i++) {
-            //  |00000|11111|22222|33333|
-            //  +-----------------------+
-            //  |..000|00022|22224|44444|
-            //  |.....|11111|13333|33...|
-            out[0] = (3.0f * in[0] + 3.0f * in[1]) * (1.0f / 6.0f);   
-            out[1] = (5.0f * in[1] + 1.0f * in[2]) * (1.0f / 6.0f);
-            out[2] = (2.0f * in[1] + 4.0f * in[2]) * (1.0f / 6.0f);
-            out[3] = (4.0f * in[2] + 2.0f * in[3]) * (1.0f / 6.0f);
-            out[4] = (1.0f * in[2] + 5.0f * in[3]) * (1.0f / 6.0f);
-            in += 3;
-            out += 5;
+        //  |00000|11111|22222|33333|
+        //  +-----------------------+
+        //  |..000|00022|22224|44444|
+        //  |.....|11111|13333|33...|
+        out[0] = (3.0f * in[0] + 3.0f * in[1]) * (1.0f / 6.0f);   
+        out[1] = (5.0f * in[1] + 1.0f * in[2]) * (1.0f / 6.0f);
+        out[2] = (2.0f * in[1] + 4.0f * in[2]) * (1.0f / 6.0f);
+        out[3] = (4.0f * in[2] + 2.0f * in[3]) * (1.0f / 6.0f);
+        out[4] = (1.0f * in[2] + 5.0f * in[3]) * (1.0f / 6.0f);
+        in += 3;
+        out += 5;
     }   
 }
 
@@ -105,20 +106,46 @@ constexpr void SamplerBase<Rate_2_4_Mhz, Rate_4_0_Mhz>::sample(float* in, float*
 template<>
 constexpr void SamplerBase<Rate_2_4_Mhz, Rate_6_0_Mhz>::sample(float* in, float* out, size_t numBlocks) {
     for (size_t i = 0; i < numBlocks; i++) {
-            //  |00000|11111|22222|
-            //  +-----------------+
-            //  |00000|03333|33...|
-            //  |..111|11144|4444.|
-            //  |....2|22222|.....|
-            out[0] = (5.0f * in[0] + 1.0f * in[1]) * (1.0f / 6.0f);   
-            out[1] = (3.0f * in[0] + 3.0f * in[1]) * (1.0f / 6.0f);
-            out[2] = (1.0f * in[0] + 5.0f * in[1]) * (1.0f / 6.0f);
-            out[3] = (4.0f * in[1] + 2.0f * in[2]) * (1.0f / 6.0f);
-            out[4] = (2.0f * in[1] + 4.0f * in[2]) * (1.0f / 6.0f);
-            in += 2;
-            out += 5;
-        }
+        //  |00000|11111|22222|
+        //  +-----------------+
+        //  |00000|03333|33...|
+        //  |..111|11144|4444.|
+        //  |....2|22222|.....|
+        out[0] = (5.0f * in[0] + 1.0f * in[1]) * (1.0f / 6.0f);   
+        out[1] = (3.0f * in[0] + 3.0f * in[1]) * (1.0f / 6.0f);
+        out[2] = (1.0f * in[0] + 5.0f * in[1]) * (1.0f / 6.0f);
+        out[3] = (4.0f * in[1] + 2.0f * in[2]) * (1.0f / 6.0f);
+        out[4] = (2.0f * in[1] + 4.0f * in[2]) * (1.0f / 6.0f);
+        in += 2;
+        out += 5;
+    }
 }
+
+// 2.4 Mhz to 8.0 Mhz (8 streams) upsampling function
+template<>
+constexpr void SamplerBase<Rate_2_4_Mhz, Rate_8_0_Mhz>::sample(float* in, float* out, size_t numBlocks) {
+    for (size_t i = 0; i < numBlocks; i++) {
+        //  |0000000000|1111111111|2222222222|3333333333|
+        //  +-------------------------------------------+
+        //  |.000000000|0004444444|4444488888|8888888...|
+        //  |....111111|1111115555|5555555599|9999999999|
+        //  |.......222|2222222226|6666666666|6.........|
+        //  |..........|3333333333|3377777777|7777......|
+        out[0] = ( 9.0f * in[0] +  3.0f * in[1]) * (1.0f / 12.0f);   
+        out[1] = ( 6.0f * in[0] +  6.0f * in[1]) * (1.0f / 12.0f);
+        out[2] = ( 3.0f * in[0] +  9.0f * in[1]) * (1.0f / 12.0f);
+        out[3] = (10.0f * in[1] +  2.0f * in[2]) * (1.0f / 12.0f);
+        out[4] = ( 7.0f * in[1] +  5.0f * in[2]) * (1.0f / 12.0f);
+        out[5] = ( 4.0f * in[1] +  8.0f * in[2]) * (1.0f / 12.0f);
+        out[6] = ( 1.0f * in[1] + 10.0f * in[2] + 1.0f * in[3]) * (1.0f / 12.0f);
+        out[7] = ( 8.0f * in[2] +  4.0f * in[3]) * (1.0f / 12.0f);
+        out[8] = ( 5.0f * in[2] +  7.0f * in[3]) * (1.0f / 12.0f);
+        out[9] = ( 2.0f * in[2] + 10.0f * in[3]) * (1.0f / 12.0f);
+        in += 3;
+        out += 10;
+    }   
+}
+
 
 // 3.0 Mhz to 6.0 Mhz (6 streams) upsampling function
 template<>

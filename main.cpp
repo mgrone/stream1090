@@ -11,7 +11,7 @@
 #include "SampleStream.hpp"
 
 void runFromStdIn(bool isFloat) {
-    SampleStream<Sampler_2_4_to_6_0_Mhz> sampleStream;
+    SampleStream<Sampler_2_4_to_8_0_Mhz> sampleStream;
     
     if (isFloat) {
         sampleStream.read<MAG_float>(std::cin);
