@@ -24,19 +24,30 @@ void run_airspy() {
     sampleStream.read<IQ_AIRSPY_RX>(std::cin);
 }
 
+void run_float32_mag() {
+    // create the default rtl_sdr instance 
+    SampleStream<Sampler_2_4_to_8_0_Mhz> sampleStream;
+    // start reading floats at 2.4Mhz
+    sampleStream.read<MAG_FLOAT32>(std::cin);
+}
+
 void printHelp() {
     std::cout << "No parameters: stream1090 expects standard rtl_sdr output with a sample rate of 2.4Mhz" << std::endl;
     std::cout << "-a : experimental airspy mode. stream1090 expects int16 IQ data with a sample rate of 6Mhz" << std::endl;
+    std::cout << "-f : stream1090 expects float32 magnitudes at a rate of 2.4Mhz. " << std::endl;
 }
 
 int main(int argc, char** argv) {
     // Parse command line options.
     int inputFormat = 0;
     int opt;
-    while ((opt = getopt(argc, argv, "ah")) != -1) {
+    while ((opt = getopt(argc, argv, "afh")) != -1) {
         switch (opt) {
             case 'a':
                 inputFormat = 1;
+                break;
+            case 'f':
+                inputFormat = 2;
                 break;
             case 'h':
                 printHelp();
@@ -51,6 +62,9 @@ int main(int argc, char** argv) {
     {
     case 1:
         run_airspy();
+        break;
+    case 2:
+        run_float32_mag();
         break;
     
     default:

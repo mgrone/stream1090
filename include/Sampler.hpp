@@ -7,17 +7,20 @@
 
 #pragma once
 #include <numeric>
-#include <memory>
 
 enum SampleRate {
-    Rate_1_0_Mhz = 1000000,
-    Rate_2_0_Mhz = 2000000,
-    Rate_2_4_Mhz = 2400000,
-    Rate_3_0_Mhz = 3000000,
-    Rate_3_2_Mhz = 3200000,
-    Rate_4_0_Mhz = 4000000,
-    Rate_6_0_Mhz = 6000000,
-    Rate_8_0_Mhz = 8000000
+    Rate_1_0_Mhz  =  1000000,
+    Rate_2_0_Mhz  =  2000000,
+    Rate_2_4_Mhz  =  2400000,
+    Rate_3_0_Mhz  =  3000000,
+    Rate_3_2_Mhz  =  3200000,
+    Rate_4_0_Mhz  =  4000000,
+    Rate_6_0_Mhz  =  6000000,
+    Rate_8_0_Mhz  =  8000000,
+    Rate_10_0_Mhz = 10000000,
+    Rate_12_0_Mhz = 12000000,
+    Rate_14_0_Mhz = 14000000,
+    Rate_16_0_Mhz = 16000000
 };
 
 template<SampleRate _InputSampleRate, 
@@ -29,12 +32,17 @@ class SamplerBase;
 typedef SamplerBase<Rate_2_0_Mhz, Rate_2_0_Mhz> Sampler_2_0_to_2_0_Mhz;
 typedef SamplerBase<Rate_4_0_Mhz, Rate_4_0_Mhz> Sampler_4_0_to_4_0_Mhz;
 typedef SamplerBase<Rate_6_0_Mhz, Rate_6_0_Mhz> Sampler_6_0_to_6_0_Mhz;
+typedef SamplerBase<Rate_8_0_Mhz, Rate_8_0_Mhz> Sampler_8_0_to_8_0_Mhz;
+typedef SamplerBase<Rate_12_0_Mhz, Rate_12_0_Mhz> Sampler_12_0_to_12_0_Mhz;
+typedef SamplerBase<Rate_16_0_Mhz, Rate_16_0_Mhz> Sampler_16_0_to_16_0_Mhz;
+
 
 // 2.4 Mhz upsamplers 
 typedef SamplerBase<Rate_2_4_Mhz, Rate_4_0_Mhz> Sampler_2_4_to_4_0_Mhz;
 typedef SamplerBase<Rate_2_4_Mhz, Rate_6_0_Mhz> Sampler_2_4_to_6_0_Mhz;
 typedef SamplerBase<Rate_2_4_Mhz, Rate_8_0_Mhz> Sampler_2_4_to_8_0_Mhz;
 
+// test sampler
 typedef SamplerBase<Rate_3_0_Mhz, Rate_6_0_Mhz> Sampler_3_0_to_6_0_Mhz;
 
 
@@ -88,6 +96,9 @@ class SamplerBase {
     
     static constexpr size_t InputBufferOverlap  = _InputBufferOverlap;
     static constexpr size_t SampleBufferOverlap = SampleBlockSize;
+
+    // if the input equals the output sample rate
+    static constexpr bool isPassthrough = (InputSampleRate == OutputSampleRate);
 
     // the main sampling function that has to be implemented
     static constexpr void sample(float* in, float* out, size_t numBlocks);    
@@ -170,28 +181,6 @@ constexpr void SamplerBase<Rate_3_0_Mhz, Rate_6_0_Mhz>::sample(float* in, float*
             in += 1;
             out += 2;
         }
-}
-
-// The following samplers are temporary and will be dealt with differently in the future
-// 2.0 Mhz to 2.0 Mhz (2 streams) dummy function (experimental)
-template<>
-constexpr void SamplerBase<Rate_2_0_Mhz, Rate_2_0_Mhz>::sample(float* in, float* out, size_t numBlocks) {
-    static_assert((RatioInput == 1) && (RatioInput == 1));
-    std::memcpy(out, in, numBlocks * sizeof(float));
-}
-
-// 4.0 Mhz to 4.0 Mhz (4 streams) dummy function (experimental)
-template<>
-constexpr void SamplerBase<Rate_4_0_Mhz, Rate_4_0_Mhz>::sample(float* in, float* out, size_t numBlocks) {
-    static_assert((RatioInput == 1) && (RatioInput == 1));
-    std::memcpy(out, in, numBlocks * sizeof(float));
-}
-
-// 6.0 Mhz to 6.0 Mhz (6 streams) dummy function (experimental)
-template<>
-constexpr void SamplerBase<Rate_6_0_Mhz, Rate_6_0_Mhz>::sample(float* in, float* out, size_t numBlocks) {
-    static_assert((RatioInput == 1) && (RatioInput == 1));
-    std::memcpy(out, in, numBlocks * sizeof(float));
 }
 
 
