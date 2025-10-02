@@ -31,10 +31,6 @@ class SampleStream {
     
         // the samples that we get from upsampling
         m_samples = std::make_unique<float[]>(Sampler::SampleBufferSize + Sampler::SampleBufferOverlap);
-    
-        // make sure the overlap parts at the beginning of the buffers are zeroed
-        std::fill(m_inputMagnitude.get(), m_inputMagnitude.get() + Sampler::InputBufferOverlap, 0.0f);
-        std::fill(m_samples.get(), m_samples.get() + Sampler::SampleBufferOverlap, 0.0f);
     }
    
     // the main method 
@@ -58,6 +54,10 @@ inline void SampleStream<Sampler>::read(std::istream& inputStream) {
     // this will if needed also create its own buffer
     InputReader<Sampler, inputFormat> inputReader;
     
+    // make sure the overlap parts at the beginning of the buffers are zeroed
+    std::fill(m_inputMagnitude.get(), m_inputMagnitude.get() + Sampler::InputBufferOverlap, 0.0f);
+    std::fill(m_samples.get(), m_samples.get() + Sampler::SampleBufferOverlap, 0.0f);
+
      // the main loop for reading the stream
     while (!inputStream.eof()) {
         // tell the input reader to get us some data. Directly as magnitude.
