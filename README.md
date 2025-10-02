@@ -117,3 +117,10 @@ This would require the concept of noise, high and low levels which is not presen
 
 MLAT has not been a priority. Besides providing a proof of concept, stream1090 was written in the first place to feed a custom stack 
 for an augmented reality application. For this, very precise real-time positions are required, produced by a single local receiver setup.
+
+## Experimental Notes
+Currently there is a command line option (-a) that can switch stream1090 into "6Msps-Airspy-I-do-not-know-if-that-works" mode. 
+It will try to read int16 IQ samples at a speed of 6Msps which can be produced by airspy_rx.
+**Important** I do not own an airspy nor am i able to test it on some sample data. So any help is appreciated.
+It is a matter of getting the input format right. Adjusting sampling speed and adapting other backend things are then easy for me.
+Please let me know if piping signed 16bit IQ data at 6Msps into ```stream1090 -a``` does something.

@@ -18,6 +18,7 @@ void run_rtl_sdr() {
 }
 
 void run_airspy() {
+    std::cerr << "[Stream1090] 6Msps-Airspy-I-do-not-know-if-that-works Mode ENABLED" << std::endl;
     // create an instance with a simple 1:1 sampler 
     SampleStream<Sampler_6_0_to_6_0_Mhz> sampleStream;
     // start reading the int16 iq data from airspy_rx
