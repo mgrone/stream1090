@@ -11,7 +11,7 @@ situations, a higher overall message rate can be achieved compared to a preamble
 - Optional: RaspberryPi 5.
 
 **WARNING!** This has only been tested on a RaspberryPi 5 which is quite powerful. By design, stream1090 requires more computational power. 
-It sieves through 12 million possible messages per second. A RaspberryPi 5 can easily deal with this (16% single core, 4% total cpu load). 
+It sieves through 16 million possible messages per second. A RaspberryPi 5 can easily deal with this (<18% single core). 
 I do not own an older RaspberryPi and can therefore not say anything about those.
 **END OF WARNING.**
 
