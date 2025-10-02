@@ -6,8 +6,13 @@ Most implementations look for the so-called preamble (a sequence of pulses anoun
 directly a set of shift registers. Based on the CRC sum and other criteria, messages are being identified. The hope is that in high traffic
 situations, a higher overall message rate can be achieved compared to a preamble based approach.
 
+## Features
+- CRC-based message framing: Cannot miss a message, because it missed the preamble.
+- Error correction: The crc sum is computed regardless of the data, so why not use it for error correction whenever possible.
+- Not output sensitive: The majority of the computational work does not dependent on the message rate.
+   
 ## Hardware requirements
-- RTL-based SDR dongle with antenna etc.
+- RTL-based SDR dongle with antenna etc (different formats and input sampling speeds will be available soon).
 - Optional: RaspberryPi 5.
 
 **WARNING!** This has only been tested on a RaspberryPi 5 which is quite powerful. By design, stream1090 requires more computational power. 
