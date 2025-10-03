@@ -61,7 +61,7 @@ public:
 	}
 	
 	// This is the main entry function called by the SampleStream. 
-	// NumStreams many new bits are shifted. The crc's are updated
+	// NumStreams many new bits are shifted in. The crc's are updated
 	// and the streams are being checked for new messages
 	void shiftInNewBits(uint32_t* cmp) {
 		for (auto i = 0; i < NumStreams; i++) {
@@ -96,6 +96,7 @@ public:
 				m_crc_56[i]  ^= CRC::polynomial;
 			}
 		}
+
 		// the streams and crc's are ready
 		for (auto i = 0; i < NumStreams; i++) {
 			// first check if there is a short message
@@ -176,7 +177,7 @@ public:
 	/// @return returns true if a message has been send to the output
 	bool handleExtSquitterLongMessage(const uint8_t& downlinkFormat, const CRC::crc_t& crc, const Bits128& frame) {
 		// log this as an extended squitter message
-		logStats(Stats::DF11_HEADER);
+		logStats(Stats::DF17_HEADER);
 		// if the crc is zero, we have a correct message
 		if (crc == 0) {
 			// we consider a crc of 0 as a good message
