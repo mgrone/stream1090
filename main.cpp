@@ -17,6 +17,14 @@ void run_rtl_sdr() {
     sampleStream.read<IQ_RTL_SDR>(std::cin);
 }
 
+void run_airspy_12() {
+    std::cerr << "[Stream1090] 6 to 12Msps-Airspy ENABLED" << std::endl;
+    // create an instance with a simple 1:2 sampler 
+    SampleStream<Sampler_6_0_to_12_0_Mhz> sampleStream;
+    // start reading the int16 iq data from airspy_rx
+    sampleStream.read<IQ_AIRSPY_RX>(std::cin);
+}
+
 void run_airspy() {
     std::cerr << "[Stream1090] 6Msps-Airspy-I-do-not-know-if-that-works Mode ENABLED" << std::endl;
     // create an instance with a simple 1:1 sampler 
@@ -42,10 +50,13 @@ int main(int argc, char** argv) {
     // Parse command line options.
     int inputFormat = 0;
     int opt;
-    while ((opt = getopt(argc, argv, "afh")) != -1) {
+    while ((opt = getopt(argc, argv, "abfh")) != -1) {
         switch (opt) {
             case 'a':
                 inputFormat = 1;
+                break;
+            case 'b':
+                inputFormat = 3;
                 break;
             case 'f':
                 inputFormat = 2;
@@ -64,6 +75,10 @@ int main(int argc, char** argv) {
     case 1:
         run_airspy();
         break;
+    case 3:
+        run_airspy_12();
+        break;
+
     case 2:
         run_float32_mag();
         break;
