@@ -209,7 +209,7 @@ constexpr void SamplerBase<Rate_6_0_Mhz, Rate_12_0_Mhz>::sample(float* in, float
         }
 }
 
-// 6.0 Mhz to 12.0 Mhz (12 streams) upsampling function
+// 10.0 Mhz to 20.0 Mhz (20 streams) upsampling function
 template<>
 constexpr void SamplerBase<Rate_10_0_Mhz, Rate_20_0_Mhz>::sample(float* in, float* out, size_t numBlocks) {
     for (size_t i = 0; i < numBlocks; i++) {
