@@ -43,6 +43,7 @@ void run_float32_mag() {
 void printHelp() {
     std::cout << "No parameters: stream1090 expects standard rtl_sdr output with a sample rate of 2.4Mhz" << std::endl;
     std::cout << "-a : experimental airspy mode. stream1090 expects int16 IQ data with a sample rate of 6Mhz" << std::endl;
+    std::cout << "-b : experimental airspy mode. stream1090 expects int16 IQ data with a sample rate of 6Mhz and will then upsample that to 12Mhz" << std::endl;
     std::cout << "-f : stream1090 expects float32 magnitudes at a rate of 2.4Mhz. " << std::endl;
 }
 
