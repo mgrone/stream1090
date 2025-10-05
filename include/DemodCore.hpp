@@ -328,7 +328,7 @@ public:
 				// make sure to have this sender address in the list of known but not thrusted addresses
 				m_notTrusted.upsertWithCA(icaoWithCA, m_currTime);
 				// i hope i dont regret this. But i will forward that message anyways
-				sendFrameShort(11, 0, frame);
+				// sendFrameShort(11, 0, frame);
 			}
 		}
 		return false;
