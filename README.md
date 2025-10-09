@@ -12,13 +12,15 @@ situations, a higher overall message rate can be achieved compared to a preamble
 - Not output sensitive: The majority of the computational work does not dependent on the message rate.
    
 ## Hardware requirements
-- RTL-based SDR dongle with antenna etc (different formats and input sampling speeds will be available soon).
-- Optional: RaspberryPi 5.
+- RTL-based SDR dongle with antenna etc (different formats and input sampling speeds are available. See the experimental notes).
+- Optional: RaspberryPi 5 or 4.
 
 **WARNING!** This has only been tested on a RaspberryPi 5 which is quite powerful. By design, stream1090 requires more computational power. 
 It sieves through 16 million possible messages per second. A RaspberryPi 5 can easily deal with this (<18% single core). 
 I do not own an older RaspberryPi and can therefore not say anything about those.
 **END OF WARNING.**
+**UPDATE** 
+So some people tried it on a RaspberryPi 4 and it works fine. 
 
 # Installation
 Stream1090 is written in C++ and self-contained. You will need cmake (3.10 or higher) and some C++ compiler that supports C++20.
@@ -97,6 +99,8 @@ If you want to disable the statistics completely, rebuild the project and set th
 
 ```cmake ../ -DENABLE_STATS=OFF```
 
+## Notes on dump1090.
+I have not tried it, but others did and it seems to work just fine. Just make sure to open the raw input port.
 
 # Frequently asked questions & troubleshooting
 - Why is my message rate 0-2 messages per second?
@@ -119,8 +123,8 @@ MLAT has not been a priority. Besides providing a proof of concept, stream1090 w
 for an augmented reality application. For this, very precise real-time positions are required, produced by a single local receiver setup.
 
 ## Experimental Notes
-Currently there is a command line option (-a) that can switch stream1090 into "6Msps-Airspy-I-do-not-know-if-that-works" mode. 
-It will try to read int16 IQ samples at a speed of 6Msps which can be produced by airspy_rx.
-**Important** I do not own an airspy nor am i able to test it on some sample data. So any help is appreciated.
-It is a matter of getting the input format right. Adjusting sampling speed and adapting other backend things are then easy for me.
-Please let me know if piping signed 16bit IQ data at 6Msps into ```stream1090 -a``` does something.
+Currently there are several command line options (-a, -b, -c, -d) that can switch stream1090 into higher sample rate mode. 
+It will try to read int16 IQ samples at a speed of 6Msps (10Msps) which can be produced by airspy_rx. Please use "-h" for an overview what they do.
+
+**Important Update** I would like to thank several people that provided sample data, tried it in their setup and also did some tests with airspy.
+rhodan76, wiedehopf, caius, abcd567. Thank you very much!
