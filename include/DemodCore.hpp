@@ -41,7 +41,9 @@ public:
 #if defined(OUTPUT_RAW) && OUTPUT_RAW
 		ModeS::printFrameLongRaw(std::cout, frame);
 #else
-		ModeS::printFrameLongMlat(std::cout, currTimeTo12MhzTimeStamp(), frame);
+		// every bit is a 1 tick @ 1 Mhz which corresponds to 12 ticks @12 Mhz.
+		// the message started 112 ticks ago @ 1 Mhz => 112 * 12 ticks @ 12 Mhz ago. 
+		ModeS::printFrameLongMlat(std::cout, currTimeTo12MhzTimeStamp() - (112 * 12), frame);
 		//ModeS::printFrameLong(std::cout, frame);
 #endif
 	}
@@ -59,7 +61,7 @@ public:
 #if defined(OUTPUT_RAW) && OUTPUT_RAW
 		ModeS::printFrameShortRaw(std::cout, frame);
 #else 
-	ModeS::printFrameShortMlat(std::cout, currTimeTo12MhzTimeStamp(), frame);	
+	ModeS::printFrameShortMlat(std::cout, currTimeTo12MhzTimeStamp() - (56 * 12), frame);	
 	//ModeS::printFrameShort(std::cout, frame);
 #endif
 	}
