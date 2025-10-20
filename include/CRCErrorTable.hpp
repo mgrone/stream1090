@@ -68,6 +68,33 @@ namespace CRC {
 		}
 	};
 
+
+	// Error correction table used for extended squitter messages
+	class DF17ErrorTableExperimental : public BaseErrorTable<4859> {
+	public:
+		constexpr DF17ErrorTableExperimental() {
+			// one bit error correction excluding the DF part
+			for (int i = 0; i < 112-5; i++) {
+				insert(encodeFixOp(0x1,i));
+			}
+
+			// one-one bit errors
+			for (int i = 0; i < 111-5; i++) {
+				insert(encodeFixOp(0x3,i));
+			}
+
+			// 111 bit errors
+			for (int i = 0; i < 110-5; i++) {
+				insert(encodeFixOp(0x7,i));
+			}
+
+			// 1 000000 1 pattern shifted through the parity part
+			for (int i = 0; i < 16; i++) {
+				insert(encodeFixOp(129,i));
+			}
+		}
+	};
+
 	// Error correction table for df11 messages
 	class DF11ErrorTable : public BaseErrorTable<225> {
 	public:
@@ -79,10 +106,28 @@ namespace CRC {
 		}
 	};
 
+	// Error correction table for df11 messages experimental
+	class DF11ErrorTableExperimental : public BaseErrorTable<469> {
+	public:
+		constexpr DF11ErrorTableExperimental() {
+			// one bit error correction excluding the DF part
+			for (int i = 0; i < 56-5; i++) {
+				insert(encodeFixOp(0x1,i));
+			}
+
+			for (int i = 0; i < 55-5; i++) {
+				insert(encodeFixOp(0x3,i));
+			}
+		}
+	};
+
 	// We declare global instances here, but they have to be inline
 	// to not show up every time as a separate copy
-	inline constexpr DF17ErrorTable df17ErrorTable;
-	inline constexpr DF11ErrorTable df11ErrorTable;
+	//inline constexpr DF17ErrorTable df17ErrorTable;
+	inline constexpr DF17ErrorTableExperimental df17ErrorTable;
+	
+	//inline constexpr DF11ErrorTable df11ErrorTable;
+	inline constexpr DF11ErrorTableExperimental df11ErrorTable;
 
 } // end of namespace
 

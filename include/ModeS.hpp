@@ -13,27 +13,6 @@
 #include <chrono>
 
 namespace ModeS {
-	/* enum DownlinkFormat {
-		DF0 = 0,
-		DF4 = 4,
-		DF5 = 5,
-		DF11 = 11,
-		DF16 = 16,
-		DF17 = 17,
-		DF18 = 18,
-		DF19 = 19,
-		DF20 = 20,
-		DF21 = 20,
-		DF24 = 24,
-		NUM_DF,
-	}; */
-	
-	struct DF17Header {
-		uint8_t df : 5;
-		uint8_t ca : 3;
-		uint32_t icao : 24;
-	};
-
 	// compares the 56 lowest bits of a and b
 	constexpr inline bool equalShort(const Bits128& a, const Bits128& b) {
 		return ((a.low() << 8) == (b.low() << 8));
@@ -41,18 +20,19 @@ namespace ModeS {
 
 	// compares the 112 lowest bits of a and b
 	constexpr inline bool equalLong(const Bits128& a, const Bits128& b) {
-		if (a.low() != b.low())
+		/*if (a.low() != b.low())
 			return false;
 
-		return ((a.high() ^ b.high()) & 0xffffffffffffull) == 0;
+		return ((a.high() ^ b.high()) & 0xffffffffffffull) == 0; */
+		return (a.low() == b.low()) && ((a.high() << 16) == (b.high() << 16));
 	}
 
 	constexpr inline uint8_t extractDownlinkFormat112(const Bits128& frame) {
-		return (frame.high() >> 43) & 0b11111;
+		return (frame.high() >> 43) & 0b11111ull;
 	}
 
 	constexpr inline uint8_t extractDownlinkFormat56(const Bits128& frame) {
-		return (frame.low() >> 51) & 0b11111;
+		return (frame.low() >> 51) & 0b11111ull;
 	}
 
 	constexpr inline uint8_t DF17_extractCapability(const Bits128& frame) {
@@ -72,7 +52,7 @@ namespace ModeS {
 	}
 
 	constexpr inline uint32_t DF11_extractICAO(const Bits128& frame) {
-		return ((frame.low() >> 24) & 0xffffff);
+		return ((frame.low() >> 24) & 0xffffffull);
 	}
 
 	constexpr inline uint32_t DF11_extractICAOWithCA(const Bits128& frame) {
@@ -80,7 +60,7 @@ namespace ModeS {
 	}
 
 	constexpr inline int DF11_extractCapability(const Bits128& frame) {
-		return ((frame.low() >> 48) & 0x7);
+		return ((frame.low() >> 48) & 0x7ull);
 	}
 
 	inline void printFrameLong(std::ostream& out, const Bits128& frame) {
@@ -89,6 +69,16 @@ namespace ModeS {
 
 	inline void printFrameShort(std::ostream& out, const Bits128& frame) {
 		out << '*' << std::setfill('0') << std::setw(14) << std::hex << (frame.low() & 0xffffffffffffffull) << ";" << std::endl;
+	}
+
+	inline void printFrameLongMlat(std::ostream& out, uint64_t timeStamp, const Bits128& frame) {
+		// timestamp + frame = @ + 48 bit timestamp + 48 + 64 = 112 bit frame
+		out << '@' << std::hex << std::setfill('0') << std::setw(12) << (timeStamp & 0xffffffffffffull) << (frame.high() & 0xffffffffffffull) << std::setw(16) << frame.low() << ";" << std::endl;
+	}
+
+	inline void printFrameShortMlat(std::ostream& out, uint64_t timeStamp, const Bits128& frame) {
+		// timestamp + frame = @ + 48 bit timestamp + 56 bit frame
+		out << '@' << std::hex << std::setfill('0') << std::setw(12) << (timeStamp & 0xffffffffffffull) << std::setw(14) << (frame.low() & 0xffffffffffffffull) << ";" << std::endl;
 	}
 
 	inline void DF11_printDebug(std::ostream& out, const Bits128& frame) {

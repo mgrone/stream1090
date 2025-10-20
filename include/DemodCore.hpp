@@ -37,10 +37,12 @@ public:
 		logStatsSent(downlinkFormat);
 		m_prevFrameLongSent = frame;
 		m_prevTimeLongSent = m_currTime;
+
 #if defined(OUTPUT_RAW) && OUTPUT_RAW
 		ModeS::printFrameLongRaw(std::cout, frame);
-#else 
-		ModeS::printFrameLong(std::cout, frame);
+#else
+		ModeS::printFrameLongMlat(std::cout, currTimeTo12MhzTimeStamp(), frame);
+		//ModeS::printFrameLong(std::cout, frame);
 #endif
 	}
 
@@ -53,10 +55,12 @@ public:
 		logStatsSent(downlinkFormat);
 		m_prevFrameShortSent = frame;
 		m_prevTimeShortSent = m_currTime;
+
 #if defined(OUTPUT_RAW) && OUTPUT_RAW
 		ModeS::printFrameShortRaw(std::cout, frame);
 #else 
-		ModeS::printFrameShort(std::cout, frame);
+	ModeS::printFrameShortMlat(std::cout, currTimeTo12MhzTimeStamp(), frame);	
+	//ModeS::printFrameShort(std::cout, frame);
 #endif
 	}
 	
@@ -159,7 +163,7 @@ public:
 		case 0: // acas
 		case 4: // surveillance altitude
 		case 5: // surveillance identity
-			return handleAcasSurvShortMessage(downlinkFormat, crc, frame);	
+			return handleAcasSurvShortMessage(downlinkFormat, crc, frame);
 		case 11: // DF 11 messages
 			return handleDF11ShortMessage(crc, frame);
 		default:
@@ -177,7 +181,7 @@ public:
 	/// @return returns true if a message has been send to the output
 	bool handleExtSquitterLongMessage(const uint8_t& downlinkFormat, const CRC::crc_t& crc, const Bits128& frame) {
 		// log this as an extended squitter message
-		logStats(Stats::DF17_HEADER);
+		// logStats(Stats::DF17_HEADER);
 		// if the crc is zero, we have a correct message
 		if (crc == 0) {
 			// we consider a crc of 0 as a good message
@@ -251,7 +255,7 @@ public:
 	/// @return returns true if a message has been send to the output
 	bool handleAcasCommBLongMessage(const uint8_t& downlinkFormat, const CRC::crc_t& crc, const Bits128& frame) {
 		// log the type of message
-		logStats(Stats::COMM_B_HEADER);
+		// logStats(Stats::COMM_B_HEADER);
 		// a valid message has the icao overlaid, i.e., check if crc corresponds to 
 		// a known, active and trusted address
 		const auto e = m_trusted.find(crc);
@@ -264,7 +268,21 @@ public:
 			sendFrameLong(downlinkFormat, crc, frame);
 			// we are done
 			return true;
-		} // else: not much we can do here without a good crc
+		} else {
+			
+			// ok, we do not trust the sender address, but the message looks good with a crc of 0.
+			// Let's see if it is in the list of untrusted candidates
+			const auto notTrustedEntry = m_notTrusted.find(crc);
+			// if the sender is still active in that list
+			if (m_notTrusted.validAndNotOlderThan(notTrustedEntry, m_currTime, m_notTrustedTimeOut)) {
+				// we have seen this entry before not too long ago. We keep it fresh in the not trusted list
+				// but leave the trusted addresses alone
+				m_notTrusted.markAsSeen(notTrustedEntry, m_currTime);
+				// forward the frame to the output
+				sendFrameLong(downlinkFormat, crc, frame);
+				return true;
+			}// else: not much we can do here without a good crc
+		}
 		return false;
 	}
 
@@ -277,7 +295,7 @@ public:
 	/// @return returns true if a message has been send to the output
 	bool handleAcasSurvShortMessage(const uint8_t& downlinkFormat, const CRC::crc_t& crc, const Bits128& frame) {
 		// log the type of message
-		logStats(Stats::ACAS_SURV_HEADER);
+		//logStats(Stats::ACAS_SURV_HEADER);
 		// for DF 0, 4, 5 we have address parity, i.e. the crc of a valid message corresponds to the address of the transponder
 		// check if we have a trustworthy address in our cache
 		const auto e = m_trusted.find(crc);
@@ -290,7 +308,22 @@ public:
 			sendFrameShort(downlinkFormat, crc, frame);
 			// we are done
 			return true;
-		} 
+		} else {
+			
+			// ok, we do not trust the sender address, but the message looks good with a crc of 0.
+			// Let's see if it is in the list of untrusted candidates
+			const auto notTrustedEntry = m_notTrusted.find(crc);
+			// if the sender is still active in that list
+			if (m_notTrusted.validAndNotOlderThan(notTrustedEntry, m_currTime, m_notTrustedTimeOut)) {
+				// we have seen this entry before not too long ago. We keep it fresh in the not trusted list
+				// but leave the trusted addresses alone
+				m_notTrusted.markAsSeen(notTrustedEntry, m_currTime);
+				// forward the frame to the output
+				sendFrameShort(downlinkFormat, crc, frame);
+				return true;
+			}
+				
+		}
 		return false;
 	}
 
@@ -327,8 +360,6 @@ public:
 			} else {
 				// make sure to have this sender address in the list of known but not thrusted addresses
 				m_notTrusted.upsertWithCA(icaoWithCA, m_currTime);
-				// i hope i dont regret this. But i will forward that message anyways
-				// sendFrameShort(11, 0, frame);
 			}
 		}
 		return false;
@@ -340,7 +371,7 @@ public:
 	/// @return returns true if a message has been send to the output
 	bool handleDF11ShortMessage(const CRC::crc_t& crc, const Bits128& frame) {
 		// log this as a possible DF11 message
-		logStats(Stats::DF11_HEADER);
+		//logStats(Stats::DF11_HEADER);
 
 		if (crc == 0) {
 			logStats(Stats::DF11_ICAO_CA_FOUND_GOOD_CRC);
@@ -412,6 +443,11 @@ private:
 	static constexpr uint64_t secondsToNumSamples(float secs) {
 		return (samplesPerSecond() * secs);
 	}
+
+	constexpr uint64_t currTimeTo12MhzTimeStamp() {
+		constexpr double ratio = 12.0/(double)NumStreams;
+		return (uint64_t)(m_currTime * ratio);
+	}
 	
 	// NumStreams many shift registers holding the current frames 
 	Bits128 m_bits[NumStreams];
@@ -453,3 +489,27 @@ private:
 	// the current time measured in samples.
 	uint64_t m_currTime{ 0 };	
 };
+
+template<>
+inline uint64_t DemodCore<8>::currTimeTo12MhzTimeStamp() {
+	// for 8 Mhz we have 1.5 * 8 = 12
+	return m_currTime + (m_currTime >> 1);
+}
+
+template<>
+inline uint64_t DemodCore<6>::currTimeTo12MhzTimeStamp() {
+	// for 6 Mhz we have 2.0 * 6 = 12
+	return (m_currTime << 1);
+}
+
+template<>
+inline uint64_t DemodCore<12>::currTimeTo12MhzTimeStamp() {
+	// for 12 Mhz nothing to do
+	return m_currTime;
+}
+
+template<>
+inline uint64_t DemodCore<10>::currTimeTo12MhzTimeStamp() {
+	// for 12 Mhz nothing to do
+	return m_currTime;
+}

@@ -17,11 +17,11 @@ namespace Stats {
     enum EventType {
         NUM_STREAMS = 0,
         
-        SAMPLES_PROCESSED,    // sample has been processed
+        //SAMPLES_PROCESSED,    // sample has been processed
         NUM_ITERATIONS,
     
-        SKIP_LONG_EQUAL,      // handle long msg has been skipped because the previous stream 
-        SKIP_SHORT_EQUAL,     // handle short msg has been skipped because the previous stream
+        //SKIP_LONG_EQUAL,      // handle long msg has been skipped because the previous stream 
+        //SKIP_SHORT_EQUAL,     // handle short msg has been skipped because the previous stream
         
         // this section refers to extended squitter, thus includes also DF18,19 
         DF17_HEADER,          // DF 17, 18, or 19 detected
@@ -30,13 +30,13 @@ namespace Stats {
         DF17_REPAIR_SUCCESS,
         DF17_REPAIR_FAILED,
 
-        COMM_B_HEADER,
+        //COMM_B_HEADER,
         COMM_B_GOOD_MESSAGE,
 
-        ACAS_SURV_HEADER,
+        //ACAS_SURV_HEADER,
         ACAS_SURV_GOOD_MESSAGE,
 
-        DF11_HEADER,
+        //DF11_HEADER,
         DF11_ICAO_CA_FOUND,
         DF11_ICAO_CA_FOUND_GOOD_CRC,
         DF11_ICAO_CA_FOUND_1_BIT_FIX,

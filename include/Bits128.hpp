@@ -10,7 +10,7 @@
 #include <cstdint>
 #include <bitset>
 
-class Bits128 {
+class alignas(16) Bits128 {
 public:
 	explicit constexpr Bits128() : m_bits{ 0x0,0x0 } {}
 	explicit constexpr Bits128(const uint64_t& h, const uint64_t& l) : m_bits{ l, h } {}
@@ -55,14 +55,14 @@ public:
 		}
 	}
 
-	constexpr inline void set(uint8_t i, bool b) {
+	constexpr void set(uint8_t i, bool b) {
 		if (b)
 			m_bits[i >> 6] |= (0x1ull << (i & 0x3F));
 		else
 			m_bits[i >> 6] &= ~(0x1ull << (i & 0x3F));
 	}
 
-	constexpr inline void flip(uint8_t i) {
+	constexpr void flip(uint8_t i) {
 		m_bits[i >> 6] ^= (0x1ull << (i & 0x3F));
 	}
 

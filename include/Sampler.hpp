@@ -98,9 +98,10 @@ class SamplerBase {
     
     static constexpr size_t NumBlocksPerChunk = 256;
     static constexpr size_t ChunkSize = NumBlocksPerChunk * SampleBlockSize;
-
+    static_assert(ChunkSize % 2 == 0);
     // The number of elements in the input and sample buffer which are considered fresh
     // This is not the total size of each buffer due to some overlap
+    // TODO ENSURE THAT SAMPLE BUFFER SIZE / SampleBlockSize is even
     static constexpr size_t InputBufferSize  = RatioInput * ChunkSize; 
     static constexpr size_t SampleBufferSize = RatioOutput * ChunkSize; 
     

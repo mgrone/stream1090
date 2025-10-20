@@ -9,6 +9,11 @@
 
 #include <memory>
 
+
+/*
+THIS CLASS WILL BE REPLACED
+*/
+
 class CacheWithTimeStamp {
 public:
 	static constexpr auto NumBits { 16 };
@@ -54,7 +59,7 @@ public:
 
 	Entry find(uint32_t icao) const {
 		const auto key = icao & HashMask; 
-		return ((m_table[key] & 0xffffff) == icao) ? Entry(key) : Entry();
+		return ((m_table[key] & 0xffffffu) == icao) ? Entry(key) : Entry();
 	}
 
 	uint64_t lastSeen(const Entry& entry) const {

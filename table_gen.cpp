@@ -33,9 +33,41 @@ void generateKeySetExtSquitter(std::vector<crc_t>& keys) {
     }
 }
 
+void generateKeySetExtSquitterBurst(std::vector<crc_t>& keys) {
+    // skip the first 5 bits (df), first do all one bit corrections
+    for (int i = 0; i < 112-5; i++) {
+        keys.push_back(compute(encodeFixOp(0x1,i)));
+    }
+
+    // now two bit bursts (11)
+    for (int i = 0; i < 111-5; i++) {
+        keys.push_back(compute(encodeFixOp(0x3,i)));
+    }
+
+    // now three bit bursts (111)
+    for (int i = 0; i < 110-5; i++) {
+        keys.push_back(compute(encodeFixOp(0x7,i)));
+    }
+
+    // this seems to help, for the parity block
+    for (int i = 0; i < 16; i++) {
+        keys.push_back(compute(encodeFixOp(129,i)));
+    }
+}
+
 void generateKeySetShort1Bit(std::vector<crc_t>& keys) {
     for (int i = 0; i < 56-5; i++) {
         keys.push_back(compute(encodeFixOp(0x1,i)));
+    }
+}
+
+void generateKeySetShort2Bit(std::vector<crc_t>& keys) {
+    for (int i = 0; i < 56-5; i++) {
+        keys.push_back(compute(encodeFixOp(0x1,i)));
+    }
+
+    for (int i = 0; i < 55-5; i++) {
+        keys.push_back(compute(encodeFixOp(0x3,i)));
     }
 }
 
@@ -51,7 +83,7 @@ int testTableSize(const std::vector<crc_t>& keys, int tableSize) {
 }
 
 int bruteforceMinTableSize(const std::vector<crc_t>& keys) {
-    for (int N = keys.size(); N < 3000; N++) {
+    for (int N = keys.size(); N < 6000; N++) {
         int res = testTableSize(keys, N);
         if (res == 1) {
             return N;
@@ -66,14 +98,28 @@ int runExtSquitter() {
     return bruteforceMinTableSize(keys);
 }
 
+int runExtSquitterBurst() {
+    std::vector<crc_t> keys;
+    generateKeySetExtSquitterBurst(keys);
+    return bruteforceMinTableSize(keys);
+}
+
 int runOneBitShort() {
     std::vector<crc_t> keys;
     generateKeySetShort1Bit(keys);
     return bruteforceMinTableSize(keys);
 }
 
+int runTwoBitShort() {
+    std::vector<crc_t> keys;
+    generateKeySetShort2Bit(keys);
+    return bruteforceMinTableSize(keys);
+}
+
 int main(/*int argc, char** argv*/) {
-    std::cout << "Extended squitter min table size: " << runExtSquitter() << std::endl;
-    std::cout << "1 bit short message min table size: " << runOneBitShort() << std::endl;
+    std::cout << "DF17 min table size: " << runExtSquitter() << std::endl;
+    std::cout << "DF17 min table size with advanced correction: " << runExtSquitterBurst() << std::endl;
+    std::cout << "DF11 one bit short message min table size: " << runOneBitShort() << std::endl;
+    std::cout << "DF11 one bit short message min table size: " << runTwoBitShort() << std::endl;
     return 0;
 }
