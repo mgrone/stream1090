@@ -12,15 +12,8 @@ situations, a higher overall message rate can be achieved compared to a preamble
 - Not output sensitive: The majority of the computational work does not dependent on the message rate.
    
 ## Hardware requirements
-- RTL-based SDR dongle with antenna etc (different formats and input sampling speeds are available. See the experimental notes).
-- Optional: RaspberryPi 5 or 4.
-
-**WARNING!** This has only been tested on a RaspberryPi 5 which is quite powerful. By design, stream1090 requires more computational power. 
-It sieves through 16 million possible messages per second. A RaspberryPi 5 can easily deal with this (<18% single core). 
-I do not own an older RaspberryPi and can therefore not say anything about those.
-**END OF WARNING.**
-**UPDATE** 
-So some people tried it on a RaspberryPi 4 and it works fine. 
+- RTL-based SDR dongle or airspy with antenna etc. (different formats and input sampling speeds are available. See the experimental notes).
+- Optional: RaspberryPi 5 or 4 (let me know where it works).
 
 # Installation
 Stream1090 is written in C++ and self-contained. You will need cmake (3.10 or higher) and some C++ compiler that supports C++20.
@@ -119,8 +112,7 @@ This would require the concept of noise, high and low levels which is not presen
 
 - What about MLAT?
 
-MLAT has not been a priority. Besides providing a proof of concept, stream1090 was written in the first place to feed a custom stack 
-for an augmented reality application. For this, very precise real-time positions are required, produced by a single local receiver setup.
+MLAT timestamp is part of the output.
 
 ## Experimental Notes
 Currently there are several command line options (-a, -b, -c, -d) that can switch stream1090 into higher sample rate mode. 
