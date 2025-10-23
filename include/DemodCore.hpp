@@ -484,9 +484,3 @@ inline uint64_t DemodCore<12>::currTimeTo12MhzTimeStamp() {
 	// for 12 Mhz nothing to do
 	return m_currTime;
 }
-
-template<>
-inline uint64_t DemodCore<10>::currTimeTo12MhzTimeStamp() {
-	// for 12 Mhz nothing to do
-	return m_currTime;
-}
