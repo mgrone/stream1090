@@ -129,7 +129,7 @@ public:
 		}
 
 		// extract the first 5 bits representing the DF
-		const uint8_t downlinkFormat = ModeS::extractDownlinkFormat112(frame);
+		const auto downlinkFormat = ModeS::extractDownlinkFormat112(frame);
 
 		// consider cases based on the DF
 		switch (downlinkFormat) {
@@ -159,7 +159,7 @@ public:
 		}
 
 		// extract the downlink format from the frame
-		const uint8_t downlinkFormat = ModeS::extractDownlinkFormat56(frame);
+		const auto downlinkFormat = ModeS::extractDownlinkFormat56(frame);
 		switch (downlinkFormat)
 		{
 		case 0: // acas
@@ -190,21 +190,19 @@ public:
 			logStats(Stats::DF17_GOOD_MESSAGE);
 			// get the address including the CA field
 			const auto icaoWithCA = ModeS::DF17_extractICAOWithCA(frame);
-			// let us first check if we the sender is trustworthy
-			const auto e = m_trusted.findWithCA(icaoWithCA);
-			// if the sender is active and we trust the address
-			if (m_trusted.validAndNotOlderThan(e, m_currTime, m_trustedTimeOut)) {
-				// refresh the timestamp
-				m_trusted.markAsSeen(e, m_currTime);
-				// and send the 112 bit message to the output
-				sendFrameLong(downlinkFormat, crc, frame);
-				return true;
-			} else {
-				// ok, we cannot trust the sender address, but the message looks good with a crc of 0.
-				// Let's see if it is in the list of untrusted candidates
-				const auto notTrustedEntry = m_notTrusted.findWithCA(icaoWithCA);
-				// if the sender is active in untrusted list 
-				if (m_notTrusted.validAndNotOlderThan(notTrustedEntry, m_currTime, m_notTrustedTimeOut)) {
+			
+			const auto e = m_cache.findWithCA(icaoWithCA);
+			
+			// if we know this plane
+			if (e.isValid()) {
+				// if we trust this address and the we have seen it not that long ago
+				if (m_cache.isTrusted(e) && m_cache.notOlderThan(e, m_currTime, m_trustedTimeOut)) {
+					// mark the plane as seen
+					m_cache.markAsSeen(e, m_currTime);
+					// and send the 112 bit message to the output
+					sendFrameLong(downlinkFormat, crc, frame);
+					return true;
+				} else if (m_cache.notOlderThan(e, m_currTime, m_notTrustedTimeOut)) {
 					// we have seen this entry before and it has been put there by DF11.
 					// Good enough. Promote it and insert the address into the trusted table. 
 					// -----------------------------------------------
@@ -213,12 +211,16 @@ public:
 					//  After many experiments, this turned out to be
 					//  the way to go. 
 					// ---------------------------------------------- 
-					m_trusted.upsertWithCA(icaoWithCA, m_currTime);
+					m_cache.markAsTrusted(e);
+					// mark the plane as seen
+					m_cache.markAsSeen(e, m_currTime);
 					// and send the 112 bit message to the output
 					sendFrameLong(downlinkFormat, crc, frame);
 					return true;
 				}
-			}		
+			} else {
+				m_cache.insertWithCA(icaoWithCA, m_currTime);
+			}	
 		} else {
 			// the crc is not zero, so we might have a broken message
 			logStats(Stats::DF17_BAD_MESSAGE);
@@ -234,16 +236,16 @@ public:
 				const auto icaoWithCA = ModeS::DF17_extractICAOWithCA(toRepair);
 				// do we know this icao address? We are only asking there the list of trusted addresses
 				// using a not trusted address and repairing at the same time is too dangerous
-				const auto e = m_trusted.findWithCA(icaoWithCA);
-				if (m_trusted.validAndNotOlderThan(e, m_currTime, m_trustedTimeOut)) {
+				const auto e = m_cache.findWithCA(icaoWithCA);
+				if (e.isValid() && m_cache.isTrusted(e) && m_cache.notOlderThan(e, m_currTime, m_trustedTimeOut)) {
 					// log that fixing the message was a success
 					logStats(Stats::DF17_REPAIR_SUCCESS);
 					// and keep the trusted entry alive
-					m_trusted.markAsSeen(e, m_currTime);
+					m_cache.markAsSeen(e, m_currTime);
 					// send the 112 bit message to the output
 					sendFrameLong(downlinkFormat, crc, toRepair);
 					return true;
-				}
+				} 				
 			}
 			logStats(Stats::DF17_REPAIR_FAILED);
 		}
@@ -260,31 +262,22 @@ public:
 		// logStats(Stats::COMM_B_HEADER);
 		// a valid message has the icao overlaid, i.e., check if crc corresponds to 
 		// a known, active and trusted address
-		const auto e = m_trusted.find(crc);
-		if (m_trusted.validAndNotOlderThan(e, m_currTime, m_trustedTimeOut)) {
+		const auto e = m_cache.find(crc);
+		// if this is not in the list of known planes, we have to leave
+		if (!e.isValid())
+			return false;
+
+		if (m_cache.notOlderThan(e, m_currTime, m_notTrustedTimeOut) || 
+		   (m_cache.isTrusted(e) && m_cache.notOlderThan(e, m_currTime, m_trustedTimeOut))) {
 			// log that this message is a good message
-			logStats(Stats::COMM_B_GOOD_MESSAGE);
+			logStats(Stats::ACAS_SURV_GOOD_MESSAGE);
 			// we consider this a valid comm-b message
-			m_trusted.markAsSeen(e, m_currTime);
+			m_cache.markAsSeen(e, m_currTime);
 			// and output the message
 			sendFrameLong(downlinkFormat, crc, frame);
 			// we are done
 			return true;
-		} else {
-			
-			// ok, we do not trust the sender address, but the message looks good with a crc of 0.
-			// Let's see if it is in the list of untrusted candidates
-			const auto notTrustedEntry = m_notTrusted.find(crc);
-			// if the sender is still active in that list
-			if (m_notTrusted.validAndNotOlderThan(notTrustedEntry, m_currTime, m_notTrustedTimeOut)) {
-				// we have seen this entry before not too long ago. We keep it fresh in the not trusted list
-				// but leave the trusted addresses alone
-				m_notTrusted.markAsSeen(notTrustedEntry, m_currTime);
-				// forward the frame to the output
-				sendFrameLong(downlinkFormat, crc, frame);
-				return true;
-			}// else: not much we can do here without a good crc
-		}
+		} 
 		return false;
 	}
 
@@ -300,32 +293,22 @@ public:
 		//logStats(Stats::ACAS_SURV_HEADER);
 		// for DF 0, 4, 5 we have address parity, i.e. the crc of a valid message corresponds to the address of the transponder
 		// check if we have a trustworthy address in our cache
-		const auto e = m_trusted.find(crc);
-		if (m_trusted.validAndNotOlderThan(e, m_currTime, m_trustedTimeOut)) {
-			// we are good, log this success
+		const auto e = m_cache.find(crc);
+		// if this is not in the list of known planes, we have to leave
+		if (!e.isValid())
+			return false;
+
+		if (m_cache.notOlderThan(e, m_currTime, m_notTrustedTimeOut) || 
+		   (m_cache.isTrusted(e) && m_cache.notOlderThan(e, m_currTime, m_trustedTimeOut))) {
+			// log that this message is a good message
 			logStats(Stats::ACAS_SURV_GOOD_MESSAGE);
-			// reset the time to live of the entry
-			m_trusted.markAsSeen(e, m_currTime);
-			// output the message
+			// we consider this a valid comm-b message
+			m_cache.markAsSeen(e, m_currTime);
+			// and output the message
 			sendFrameShort(downlinkFormat, crc, frame);
 			// we are done
 			return true;
-		} else {
-			
-			// ok, we do not trust the sender address, but the message looks good with a crc of 0.
-			// Let's see if it is in the list of untrusted candidates
-			const auto notTrustedEntry = m_notTrusted.find(crc);
-			// if the sender is still active in that list
-			if (m_notTrusted.validAndNotOlderThan(notTrustedEntry, m_currTime, m_notTrustedTimeOut)) {
-				// we have seen this entry before not too long ago. We keep it fresh in the not trusted list
-				// but leave the trusted addresses alone
-				m_notTrusted.markAsSeen(notTrustedEntry, m_currTime);
-				// forward the frame to the output
-				sendFrameShort(downlinkFormat, crc, frame);
-				return true;
-			}
-				
-		}
+		} 
 		return false;
 	}
 
@@ -335,35 +318,29 @@ public:
 	bool handleDF11ShortMessageWithZeroCRC(const Bits128& frame) {
 		// get the address including the CA field
 		const auto icaoWithCA = ModeS::DF11_extractICAOWithCA(frame);
-		// look up the address in the trusted list
-		const auto e = m_trusted.findWithCA(icaoWithCA);
-		// if it is there and active
-		if (m_trusted.validAndNotOlderThan(e, m_currTime, m_trustedTimeOut)) {
-			// make sure to have this sender address in the list of known addresses not trusted addresses
-			m_notTrusted.upsertWithCA(icaoWithCA, m_currTime);
-			// keep the trusted entry alive
-			m_trusted.markAsSeen(e, m_currTime);
-			// output the message
-			sendFrameShort(11, 0, frame);
-			// we are done here
-			return true;
-		} else {			
-			// ok, we do not trust the sender address, but the message looks good with a crc of 0.
-			// Let's see if it is in the list of untrusted candidates
-			const auto notTrustedEntry = m_notTrusted.findWithCA(icaoWithCA);
-			// if the sender is still active in that list
-			if (m_notTrusted.validAndNotOlderThan(notTrustedEntry, m_currTime, m_notTrustedTimeOut)) {
-				// we have seen this entry before not too long ago. We keep it fresh in the not trusted list
-				// but leave the trusted addresses alone
-				m_notTrusted.markAsSeen(notTrustedEntry, m_currTime);
-				// forward the frame to the output
-				sendFrameShort(11, 0, frame);
-				return true;
-			} else {
-				// make sure to have this sender address in the list of known but not thrusted addresses
-				m_notTrusted.upsertWithCA(icaoWithCA, m_currTime);
-			}
+		
+		const auto e = m_cache.findWithCA(icaoWithCA);
+		
+		// if the plane is not in table,
+		if (!e.isValid()) {
+			// put it there.
+			m_cache.insertWithCA(icaoWithCA, m_currTime);
+			// we stop here and do not send the message
+			return false;
 		}
+
+		if (m_cache.notOlderThan(e, m_currTime, m_notTrustedTimeOut) || 
+		   (m_cache.isTrusted(e) && m_cache.notOlderThan(e, m_currTime, m_trustedTimeOut))) {
+			// log that this message is a good message
+			logStats(Stats::ACAS_SURV_GOOD_MESSAGE);
+			// we consider this a valid comm-b message
+			m_cache.markAsSeen(e, m_currTime);
+			// and output the message
+			sendFrameShort(11, 0, frame);
+			// we are done
+			return true;
+		} 
+		m_cache.markAsSeen(e, m_currTime);
 		return false;
 	}
 
@@ -395,16 +372,15 @@ public:
 				// get the address including the CA field
 				const auto icaoWithCA = ModeS::DF11_extractICAOWithCA(frame);
 				// look up the address in the trusted list
-				const auto e = m_trusted.findWithCA(icaoWithCA);
+				const auto e = m_cache.findWithCA(icaoWithCA);
 				// if it is there and we consider this as an active trusted transponder
-				if (m_trusted.validAndNotOlderThan(e, m_currTime, m_trustedTimeOut)) {
+				if (e.isValid() && m_cache.isTrusted(e) && m_cache.notOlderThan(e, m_currTime, m_trustedTimeOut)) {
 					// Hence, we trust the address including the CA field. Downlink format is correct. 
 					// The only remaining data in this short message is the parity block. Fix it!
 					Bits128 toRepair{ frame };
 					toRepair.low() ^= crc;
 					// make sure to have this sender address in the list of known but not thrustworthy addresses
-					m_notTrusted.upsertWithCA(icaoWithCA, m_currTime);
-					// Note that we are not touching the trusted table.
+					m_cache.markAsSeen(e, m_currTime);
 					// output the message
 					sendFrameShort(11, 0, toRepair);
 					// we are done here
@@ -412,7 +388,7 @@ public:
 				}
 			}
 		}
-		return false;	
+		return false;
 	} 
 
 
@@ -478,13 +454,12 @@ private:
 	// the timestamp of the last short message sent. Required for duplicate removal
 	uint64_t m_prevTimeShortSent { 0 };
 
-	// lookup table containing transponder addresses that we consider as safe
-	CacheWithTimeStamp m_trusted;
+	// plane lookup table
+	ICAOTable m_cache;
+
 	// After this amount of seconds, a trusted address is not considered as valid anymore
 	uint64_t m_trustedTimeOut { secondsToNumSamples(30.0) };
 
-	// lookup table containing addresses that are either safe or that are candidates to be promoted as thrustworthy
-	CacheWithTimeStamp m_notTrusted;
 	// here we use a shorter timeout. After this amount of seconds, an address is no longer valid.
 	uint64_t m_notTrustedTimeOut { secondsToNumSamples(2.0) };
 	
