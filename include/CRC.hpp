@@ -74,10 +74,16 @@ namespace CRC {
 	}
 
 	// applies the operation op to bits by flipping the bits accordingly
-	constexpr void applyFixOp(fixop_t op, Bits128& bits) {
+	constexpr void applyFixOp(fixop_t op, Bits128& bits, uint8_t offset = 0) {
 		Bits128 bitsToFlip((uint64_t)op.pattern);
-		bitsToFlip.shiftLeft(op.index);
+		bitsToFlip.shiftLeft(op.index + offset);
 		bits = bits ^ bitsToFlip;
+	}
+
+	// applies the operation op to bits by flipping the bits accordingly
+	constexpr void applyFixOp(fixop_t op, uint64_t& frameShort, uint8_t offset = 0) {
+		uint64_t bitsToFlip = ((uint64_t)op.pattern) << (op.index + offset);
+		frameShort = frameShort ^ bitsToFlip;
 	}
 
 	// overloaded function to compute the crc of the pattern of an operation op.

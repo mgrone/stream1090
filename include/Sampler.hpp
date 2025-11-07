@@ -19,10 +19,10 @@ enum SampleRate {
     Rate_8_0_Mhz  =  8000000,
     Rate_10_0_Mhz = 10000000,
     Rate_12_0_Mhz = 12000000,
-    Rate_14_0_Mhz = 14000000,
-    Rate_16_0_Mhz = 16000000,
-    Rate_18_0_Mhz = 18000000,
-    Rate_20_0_Mhz = 20000000
+    Rate_20_0_Mhz = 20000000,
+    Rate_24_0_Mhz = 24000000,
+    Rate_40_0_Mhz = 40000000,
+    Rate_48_0_Mhz = 48000000
 };
 
 template<SampleRate _InputSampleRate, 
@@ -37,9 +37,8 @@ typedef SamplerBase<Rate_6_0_Mhz,  Rate_6_0_Mhz>   Sampler_6_0_to_6_0_Mhz;
 typedef SamplerBase<Rate_8_0_Mhz,  Rate_8_0_Mhz>   Sampler_8_0_to_8_0_Mhz;
 typedef SamplerBase<Rate_10_0_Mhz, Rate_10_0_Mhz> Sampler_10_0_to_10_0_Mhz;
 typedef SamplerBase<Rate_12_0_Mhz, Rate_12_0_Mhz> Sampler_12_0_to_12_0_Mhz;
-typedef SamplerBase<Rate_16_0_Mhz, Rate_16_0_Mhz> Sampler_16_0_to_16_0_Mhz;
-typedef SamplerBase<Rate_18_0_Mhz, Rate_18_0_Mhz> Sampler_18_0_to_18_0_Mhz;
 typedef SamplerBase<Rate_20_0_Mhz, Rate_20_0_Mhz> Sampler_20_0_to_20_0_Mhz;
+typedef SamplerBase<Rate_24_0_Mhz, Rate_24_0_Mhz> Sampler_24_0_to_24_0_Mhz;
 
 // 2.4 Mhz upsamplers 
 typedef SamplerBase<Rate_2_4_Mhz, Rate_4_0_Mhz> Sampler_2_4_to_4_0_Mhz;
@@ -213,6 +212,52 @@ constexpr void SamplerBase<Rate_6_0_Mhz, Rate_12_0_Mhz>::sample(float* in, float
 // 10.0 Mhz to 20.0 Mhz (20 streams) upsampling function
 template<>
 constexpr void SamplerBase<Rate_10_0_Mhz, Rate_20_0_Mhz>::sample(float* in, float* out, size_t numBlocks) {
+    for (size_t i = 0; i < numBlocks; i++) {
+            //  |00|11|
+            //  +-----------------+
+            //  |00|..|
+            //  |.1|1.|
+            //  |.....|
+            out[0] = in[0];   
+            out[1] = (in[0] + in[1]) / 2.0f;
+            in += 1;
+            out += 2;
+        }
+}
+
+
+template<>
+constexpr void SamplerBase<Rate_12_0_Mhz, Rate_24_0_Mhz>::sample(float* in, float* out, size_t numBlocks) {
+    for (size_t i = 0; i < numBlocks; i++) {
+            //  |00|11|
+            //  +-----------------+
+            //  |00|..|
+            //  |.1|1.|
+            //  |.....|
+            out[0] = in[0];   
+            out[1] = (in[0] + in[1]) / 2.0f;
+            in += 1;
+            out += 2;
+        }
+}
+
+template<>
+constexpr void SamplerBase<Rate_20_0_Mhz, Rate_40_0_Mhz>::sample(float* in, float* out, size_t numBlocks) {
+    for (size_t i = 0; i < numBlocks; i++) {
+            //  |00|11|
+            //  +-----------------+
+            //  |00|..|
+            //  |.1|1.|
+            //  |.....|
+            out[0] = in[0];   
+            out[1] = (in[0] + in[1]) / 2.0f;
+            in += 1;
+            out += 2;
+        }
+}
+
+template<>
+constexpr void SamplerBase<Rate_24_0_Mhz, Rate_48_0_Mhz>::sample(float* in, float* out, size_t numBlocks) {
     for (size_t i = 0; i < numBlocks; i++) {
             //  |00|11|
             //  +-----------------+

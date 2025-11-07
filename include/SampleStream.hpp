@@ -59,15 +59,18 @@ inline void SampleStream<Sampler>::read(std::istream& inputStream) {
     std::fill(m_samples.get(), m_samples.get() + Sampler::SampleBufferOverlap, 0.0f);
 
      // the main loop for reading the stream
-    while (!inputStream.eof()) {
-        // tell the input reader to get us some data. Directly as magnitude.
-        inputReader.readMagnitude(inputStream, m_inputMagnitude.get() + Sampler::InputBufferOverlap);
-                        
+    while (!inputStream.eof()) {              
+        
         // check if actually we need the sampler to resample, or if this is a 1:1 sampling
         if constexpr(Sampler::isPassthrough) {
-            // this is a temporary solution. If the input sample rate == output sample rate, do not ask the sampler to deal with this
-            std::memcpy(m_samples.get() + Sampler::SampleBufferOverlap, m_inputMagnitude.get(), Sampler::ChunkSize * sizeof(float));
+            // tell the input reader to get us some data. Directly as magnitude. Since this is a passthrough sampler
+            // we will directly read into the samples buffer. There is no need for using the sampler at all.
+            // This works because the amount the input reader is getting us in this particular case is exactly the ChunkSize
+            static_assert(Sampler::ChunkSize == Sampler::InputBufferSize);
+            inputReader.readMagnitude(inputStream, m_samples.get() + Sampler::SampleBufferOverlap);
         } else {
+            // tell the input reader to get us some data. Directly as magnitude.
+            inputReader.readMagnitude(inputStream, m_inputMagnitude.get() + Sampler::InputBufferOverlap);
             // now ask the Sampler to resample the input magnitude to the output samples
             // similar to the input buffer, write after the overlap to keep some old values for the next iteration
             Sampler::sample(m_inputMagnitude.get(), m_samples.get() + Sampler::SampleBufferOverlap, Sampler::ChunkSize);

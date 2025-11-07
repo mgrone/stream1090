@@ -14,22 +14,18 @@
 #include "ICAOCache.hpp"
 #include "Stats.hpp"
 #include <cmath>
+#include "ShiftRegisters.hpp"
 
 template<int NumStreams>
 class DemodCore {
 public:
 	// default constructor
 	DemodCore() {
-		m_prev_crc_112 = 0;
-		m_prev_crc_56 = 0;
-		for (auto i = 0; i < NumStreams; i++) {
-			m_crc_112[i] = 0;
-			m_crc_56[i] = 0;
-		}
+		// nothing
 	}
 
-	void sendFrameLong(const uint8_t downlinkFormat, CRC::crc_t, const Bits128& frame) {
-		if (((m_currTime - m_prevTimeLongSent) < NumStreams) && ModeS::equalLong(frame, m_prevFrameLongSent)) {
+	void sendFrameLongAligned(const uint8_t downlinkFormat, CRC::crc_t, const Bits128& frame) {
+		if (((m_currTime - m_prevTimeLongSent) < NumStreams) && (m_prevFrameLongSent == frame)) {
 			logStatsDup(downlinkFormat);
 			return;
 		}
@@ -41,28 +37,24 @@ public:
 #if defined(OUTPUT_RAW) && OUTPUT_RAW
 		ModeS::printFrameLongRaw(std::cout, frame);
 #else
-		// every bit is a 1 tick @ 1 Mhz which corresponds to 12 ticks @12 Mhz.
-		// the message started 112 ticks ago @ 1 Mhz => 112 * 12 ticks @ 12 Mhz ago. 
-		ModeS::printFrameLongMlat(std::cout, currTimeTo12MhzTimeStamp() - (112 * 12), frame);
-		//ModeS::printFrameLong(std::cout, frame);
+		ModeS::printFrameLongMLAT(std::cout, currTimeTo12MhzTimeStamp() + RegLayout::OffsetMLAT_Long , frame);
 #endif
 	}
 
-	void sendFrameShort(const uint8_t downlinkFormat, CRC::crc_t, const Bits128& frame) {
-		if (((m_currTime - m_prevTimeShortSent) < NumStreams) && ModeS::equalShort(frame, m_prevFrameShortSent)) {
+	void sendFrameShortAligned(const uint8_t downlinkFormat, CRC::crc_t, const uint64_t& frameShort) {
+		if (((m_currTime - m_prevTimeShortSent) < NumStreams) && (m_prevFrameShortSent == frameShort)) {
 			logStatsDup(downlinkFormat);
 			return;
 		}
 		
 		logStatsSent(downlinkFormat);
-		m_prevFrameShortSent = frame;
+		m_prevFrameShortSent = frameShort;
 		m_prevTimeShortSent = m_currTime;
 
 #if defined(OUTPUT_RAW) && OUTPUT_RAW
-		ModeS::printFrameShortRaw(std::cout, frame);
+		ModeS::printFrameShortRaw(std::cout, frameShort);
 #else 
-	ModeS::printFrameShortMlat(std::cout, currTimeTo12MhzTimeStamp() - (56 * 12), frame);	
-	//ModeS::printFrameShort(std::cout, frame);
+		ModeS::printFrameShortMLAT(std::cout, currTimeTo12MhzTimeStamp() + RegLayout::OffsetMLAT_Short, frameShort);
 #endif
 	}
 	
@@ -70,127 +62,124 @@ public:
 	// NumStreams many new bits are shifted in. The crc's are updated
 	// and the streams are being checked for new messages
 	void shiftInNewBits(uint32_t* cmp) {
-		for (auto i = 0; i < NumStreams; i++) {
-			// check if we shift out the 112th bit
-			if (m_bits[i].high() & (0x1ull << 47)) {
-				// adjust the 112 bit crc accordingly
-				m_crc_112[i] ^= CRC::delta<111>();
-			}
-
-			// check if we shift out the 56th bit
-			if (m_bits[i].low() & (0x1ull << 55)) {
-				// adjust the 56 bit crc
-				m_crc_56[i] ^= CRC::delta<55>();
-			}
-
-			// now shift the complete frame one bit to the left
-			m_bits[i].shiftLeft();
-			// and add the new bit
-			m_bits[i].low() |= cmp[i];
-
-			// do the same with the 56- and 112-bit crcs
-			m_crc_112[i] = (m_crc_112[i] << 1) | cmp[i];
-			m_crc_56[i]  = (m_crc_56[i]  << 1) | cmp[i];
-
-			// if now the 25-th bit is set, divide by the polynomial 
-			if (m_crc_112[i] & (0x1 << 24)) {
-				m_crc_112[i] ^= CRC::polynomial;
-			}
-
-			// same for the crc of the 56 bits
-			if (m_crc_56[i] & (0x1 << 24)) {
-				m_crc_56[i]  ^= CRC::polynomial;
-			}
-		}
-
+		m_shiftRegisters.shiftInNewBits(cmp); 
 		// the streams and crc's are ready
 		for (auto i = 0; i < NumStreams; i++) {
-			// first check if there is a short message
-			bool foundShortMessage = handleStreamShort(m_crc_56[i], m_bits[i]);
-			// if we have found a short message, there is no need to check for a long message
-			if (!foundShortMessage) {
-				handleStreamLong(m_crc_112[i], m_bits[i]);
+			if (RegLayout::SameStart) {
+				handleStream(i);
+			} else { 
+				if (!handleStreamShort(i)) {
+					handleStreamLong(i); 
+				} 				
 			}
-				
-			m_prevFrame = m_bits[i];
-			m_prev_crc_112 = m_crc_112[i];
-			m_prev_crc_56 = m_crc_56[i];
+			
 			m_currTime++;
 		}
 		logStats(Stats::NUM_ITERATIONS);
 	}
-	
-	// Dispatcher function for handling 112-bit messages based on the downlink format  
-	bool handleStreamLong(const CRC::crc_t &crc, const Bits128 &frame) {
-		// check if the previous stream has dealt with this
-		if ((crc == m_prev_crc_112) && (ModeS::equalLong(frame, m_prevFrame))) {
-			// the other stream already has dealt with this content, broken or not.
-			return false;
-		}
 
-		// extract the first 5 bits representing the DF
-		const auto downlinkFormat = ModeS::extractDownlinkFormat112(frame);
 
-		// consider cases based on the DF
-		switch (downlinkFormat) {
+	bool phaseDupCheckShort(const uint64_t& frameShort) {
+		if (frameShort == m_prevShortFrame)
+			return true;
+		
+		m_prevShortFrame = frameShort;
+		return false;
+	}
+
+	bool phaseDupCheckLong(const Bits128& frameLong) {
+		if (frameLong == m_prevLongFrame)
+			return true;
+		
+		m_prevLongFrame = frameLong;
+		return false;
+	}
+
+	bool handleStreamLong(int streamIndex) {	
+		const auto downlinkFormat = m_shiftRegisters.getDF_112(streamIndex);
+		switch (downlinkFormat)
+		{
 		// Extended squitter messages
 		case 17:
 		case 18:
 		case 19:
-			return handleExtSquitterLongMessage(downlinkFormat, crc, frame);
+			return handleExtSquitterLongMessage(streamIndex, downlinkFormat);
 
 		//  ACAS, Comm-B Messages
 		case 16:
 		case 20:
 		case 21:
-			return handleAcasCommBLongMessage(downlinkFormat, crc, frame);
+			return handleAcasCommBLongMessage(streamIndex, downlinkFormat);
 		default:
 			break;
 		}
 		return false;
 	}
 
-	// Dispatcher function for handling 56-bit messages based on the downlink format
-	bool handleStreamShort(const CRC::crc_t& crc, const Bits128& frame) {
-		// check if the previous stream has dealt with this
-		if ((crc == m_prev_crc_56) && (ModeS::equalShort(frame, m_prevFrame))) {
-			// the other stream already has dealt with this content, broken or not.
-			return false;
-		}
+	bool handleStreamShort(int streamIndex) {
 
-		// extract the downlink format from the frame
-		const auto downlinkFormat = ModeS::extractDownlinkFormat56(frame);
+		const auto downlinkFormat = m_shiftRegisters.getDF_56(streamIndex);
 		switch (downlinkFormat)
 		{
 		case 0: // acas
 		case 4: // surveillance altitude
 		case 5: // surveillance identity
-			return handleAcasSurvShortMessage(downlinkFormat, crc, frame);
+			return handleAcasSurvShortMessage(streamIndex, downlinkFormat);
 		case 11: // DF 11 messages
-			return handleDF11ShortMessage(crc, frame);
+			return handleDF11ShortMessage(streamIndex);
 		default:
 			break;
 		}
 		return false;
 	}
 
-	
+
+	// Dispatcher function for handling messages based on the downlink format  
+	bool handleStream(int streamIndex) {
+
+		const auto downlinkFormat = m_shiftRegisters.getDF(streamIndex);
+		switch (downlinkFormat)
+		{
+		case 0: // acas
+		case 4: // surveillance altitude
+		case 5: // surveillance identity
+			return handleAcasSurvShortMessage(streamIndex, downlinkFormat);
+		case 11: // DF 11 messages
+			return handleDF11ShortMessage(streamIndex);
+
+		// Extended squitter messages
+		case 17:
+		case 18:
+		case 19:
+			return handleExtSquitterLongMessage(streamIndex, downlinkFormat);
+		//  ACAS, Comm-B Messages
+		case 16:
+		case 20:
+		case 21:
+			return handleAcasCommBLongMessage(streamIndex, downlinkFormat);
+		default:
+			break;
+		}
+
+		return false;
+	}
 
 	/// @brief Handler for the extended squitter messages
-	/// @param downlinkFormat the downlink format (17,18,19) 
-	/// @param crc the crc of the current frame
-	/// @param frame the frame itself
 	/// @return returns true if a message has been send to the output
-	bool handleExtSquitterLongMessage(const uint8_t& downlinkFormat, const CRC::crc_t& crc, const Bits128& frame) {
-		// log this as an extended squitter message
-		// logStats(Stats::DF17_HEADER);
+	bool handleExtSquitterLongMessage(int streamIndex, const uint8_t& downlinkFormat) {
+		auto frame = m_shiftRegisters.extractAlignedFrameLong(streamIndex);
+
+		if (phaseDupCheckLong(frame))
+			return false;
+
+		auto crc = m_shiftRegisters.getCRC_112(streamIndex);
+
 		// if the crc is zero, we have a correct message
 		if (crc == 0) {
 			// we consider a crc of 0 as a good message
 			logStats(Stats::DF17_GOOD_MESSAGE);
 			// get the address including the CA field
-			const auto icaoWithCA = ModeS::DF17_extractICAOWithCA(frame);
-			
+			const auto icaoWithCA = ModeS::extractICAOWithCA_Long(frame);
 			const auto e = m_cache.findWithCA(icaoWithCA);
 			
 			// if we know this plane
@@ -200,7 +189,7 @@ public:
 					// mark the plane as seen
 					m_cache.markAsSeen(e, m_currTime);
 					// and send the 112 bit message to the output
-					sendFrameLong(downlinkFormat, crc, frame);
+					sendFrameLongAligned(downlinkFormat, crc, frame);
 					return true;
 				} else if (m_cache.notOlderThan(e, m_currTime, m_notTrustedTimeOut)) {
 					// we have seen this entry before and it has been put there by DF11.
@@ -215,7 +204,7 @@ public:
 					// mark the plane as seen
 					m_cache.markAsSeen(e, m_currTime);
 					// and send the 112 bit message to the output
-					sendFrameLong(downlinkFormat, crc, frame);
+					sendFrameLongAligned(downlinkFormat, crc, frame);
 					return true;
 				}
 			} else {
@@ -231,21 +220,27 @@ public:
 				// make a copy of the broken message
 				Bits128 toRepair{ frame };
 				// and let the error table apply the fix
-				CRC::applyFixOp(fix_op, toRepair);
+				CRC::applyFixOp(fix_op, toRepair, 0);
 				// extract the address together with the CA bits
-				const auto icaoWithCA = ModeS::DF17_extractICAOWithCA(toRepair);
+				const auto icaoWithCA = ModeS::extractICAOWithCA_Long(toRepair);
 				// do we know this icao address? We are only asking there the list of trusted addresses
 				// using a not trusted address and repairing at the same time is too dangerous
 				const auto e = m_cache.findWithCA(icaoWithCA);
-				if (e.isValid() && m_cache.isTrusted(e) && m_cache.notOlderThan(e, m_currTime, m_trustedTimeOut)) {
+
+				// if this plane is not known we are leaving this
+				if (!e.isValid())
+					return false;
+
+				if (m_cache.notOlderThan(e, m_currTime, m_notTrustedTimeOut) || 
+		   			(m_cache.isTrusted(e) && m_cache.notOlderThan(e, m_currTime, m_trustedTimeOut))) {
 					// log that fixing the message was a success
 					logStats(Stats::DF17_REPAIR_SUCCESS);
 					// and keep the trusted entry alive
 					m_cache.markAsSeen(e, m_currTime);
 					// send the 112 bit message to the output
-					sendFrameLong(downlinkFormat, crc, toRepair);
+					sendFrameLongAligned(downlinkFormat, crc, toRepair);
 					return true;
-				} 				
+				}				
 			}
 			logStats(Stats::DF17_REPAIR_FAILED);
 		}
@@ -254,12 +249,14 @@ public:
 
 	/// @brief Handler for long ACAS and Comm-B messages
 	/// @param downlinkFormat the downlink format (16,20,21) 
-	/// @param crc the crc of the current frame
-	/// @param frame the frame itself
 	/// @return returns true if a message has been send to the output
-	bool handleAcasCommBLongMessage(const uint8_t& downlinkFormat, const CRC::crc_t& crc, const Bits128& frame) {
-		// log the type of message
-		// logStats(Stats::COMM_B_HEADER);
+	bool handleAcasCommBLongMessage(int streamIndex, const uint8_t& downlinkFormat) {
+		auto frame = m_shiftRegisters.extractAlignedFrameLong(streamIndex);
+
+		if (phaseDupCheckLong(frame))
+			return false;
+
+		auto crc = m_shiftRegisters.getCRC_112(streamIndex);
 		// a valid message has the icao overlaid, i.e., check if crc corresponds to 
 		// a known, active and trusted address
 		const auto e = m_cache.find(crc);
@@ -274,7 +271,7 @@ public:
 			// we consider this a valid comm-b message
 			m_cache.markAsSeen(e, m_currTime);
 			// and output the message
-			sendFrameLong(downlinkFormat, crc, frame);
+			sendFrameLongAligned(downlinkFormat, crc, frame);
 			// we are done
 			return true;
 		} 
@@ -285,12 +282,15 @@ public:
 
 	/// @brief This function handles the downlink formats 0 (short acas reply), 4 (altitude reply), and 5 (identity reply)
 	/// @param downlinkFormat the downlink format (0, 4, 5) 
-	/// @param crc the crc of the current frame
-	/// @param frame the frame itself
 	/// @return returns true if a message has been send to the output
-	bool handleAcasSurvShortMessage(const uint8_t& downlinkFormat, const CRC::crc_t& crc, const Bits128& frame) {
-		// log the type of message
-		//logStats(Stats::ACAS_SURV_HEADER);
+	bool handleAcasSurvShortMessage(int streamIndex, const uint8_t& downlinkFormat) {
+		// get the short message frame
+		const auto frameShort = m_shiftRegisters.extractAlignedFrameShort(streamIndex);
+		// first check if we have seen this in the previous stream
+		if (phaseDupCheckShort(frameShort))
+			return false;
+
+		const auto crc = m_shiftRegisters.getCRC_56(streamIndex);
 		// for DF 0, 4, 5 we have address parity, i.e. the crc of a valid message corresponds to the address of the transponder
 		// check if we have a trustworthy address in our cache
 		const auto e = m_cache.find(crc);
@@ -305,7 +305,7 @@ public:
 			// we consider this a valid comm-b message
 			m_cache.markAsSeen(e, m_currTime);
 			// and output the message
-			sendFrameShort(downlinkFormat, crc, frame);
+			sendFrameShortAligned(downlinkFormat, crc, frameShort);
 			// we are done
 			return true;
 		} 
@@ -315,10 +315,8 @@ public:
 	/// @brief Helper function for all-call replies (DF11) with a crc of zero. Either received correctly or repaired with 1-bit error correction
 	/// @param frame the frame itself
 	/// @return returns true if a message has been send to the output
-	bool handleDF11ShortMessageWithZeroCRC(const Bits128& frame) {
-		// get the address including the CA field
-		const auto icaoWithCA = ModeS::DF11_extractICAOWithCA(frame);
-		
+	bool handleDF11ShortMessageWithZeroCRC(const uint64_t& frameShort) {
+		const auto icaoWithCA = ModeS::extractICAOWithCA_Short(frameShort);
 		const auto e = m_cache.findWithCA(icaoWithCA);
 		
 		// if the plane is not in table,
@@ -329,14 +327,12 @@ public:
 			return false;
 		}
 
-		if (m_cache.notOlderThan(e, m_currTime, m_notTrustedTimeOut) || 
-		   (m_cache.isTrusted(e) && m_cache.notOlderThan(e, m_currTime, m_trustedTimeOut))) {
+		if (m_cache.notOlderThan(e, m_currTime, m_notTrustedTimeOut)) {
 			// log that this message is a good message
-			logStats(Stats::ACAS_SURV_GOOD_MESSAGE);
 			// we consider this a valid comm-b message
 			m_cache.markAsSeen(e, m_currTime);
 			// and output the message
-			sendFrameShort(11, 0, frame);
+			sendFrameShortAligned(11, 0, frameShort);
 			// we are done
 			return true;
 		} 
@@ -348,41 +344,40 @@ public:
 	/// @param crc the crc of the current frame
 	/// @param frame the frame itself
 	/// @return returns true if a message has been send to the output
-	bool handleDF11ShortMessage(const CRC::crc_t& crc, const Bits128& frame) {
-		// log this as a possible DF11 message
-		//logStats(Stats::DF11_HEADER);
+	bool handleDF11ShortMessage(int streamIndex) {
+		auto frameShort = m_shiftRegisters.extractAlignedFrameShort(streamIndex);
 
+		if (phaseDupCheckShort(frameShort))
+			return false;
+
+		const auto crc = m_shiftRegisters.getCRC_56(streamIndex);
+	
 		if (crc == 0) {
 			logStats(Stats::DF11_ICAO_CA_FOUND_GOOD_CRC);
-			return handleDF11ShortMessageWithZeroCRC(frame);
+			return handleDF11ShortMessageWithZeroCRC(frameShort);
 		} else  {
 			// ask the 1 bit error correction table for short messages for help
 			const auto fix_op = CRC::df11ErrorTable.lookup(crc);
 			// can we fix it?
 			if (fix_op.valid()) {
-				// make a copy of the broken message
-				Bits128 toRepair{ frame };
-				// and let the error table apply the fix
-				CRC::applyFixOp(fix_op, toRepair);
+				// let the error table apply the fix
+				CRC::applyFixOp(fix_op, frameShort, 0);
 				logStats(Stats::DF11_ICAO_CA_FOUND_1_BIT_FIX);
 				// we are good now and proceed as with the normal zero crc case
-				return handleDF11ShortMessageWithZeroCRC(toRepair);
+				return handleDF11ShortMessageWithZeroCRC(frameShort);
 			} else {
-				// the crc is not good and no repairing with a 1 bit fix. We do now a dirty trick here.
+				// the crc is not good and no repairs with the error table. We do now a dirty trick here.
 				// get the address including the CA field
-				const auto icaoWithCA = ModeS::DF11_extractICAOWithCA(frame);
+				const auto icaoWithCA = ModeS::extractICAOWithCA_Short(frameShort);
 				// look up the address in the trusted list
 				const auto e = m_cache.findWithCA(icaoWithCA);
 				// if it is there and we consider this as an active trusted transponder
-				if (e.isValid() && m_cache.isTrusted(e) && m_cache.notOlderThan(e, m_currTime, m_trustedTimeOut)) {
+				if (e.isValid() && m_cache.isTrusted(e) && m_cache.notOlderThan(e, m_currTime, m_notTrustedTimeOut)) {
 					// Hence, we trust the address including the CA field. Downlink format is correct. 
-					// The only remaining data in this short message is the parity block. Fix it!
-					Bits128 toRepair{ frame };
-					toRepair.low() ^= crc;
 					// make sure to have this sender address in the list of known but not thrustworthy addresses
 					m_cache.markAsSeen(e, m_currTime);
-					// output the message
-					sendFrameShort(11, 0, toRepair);
+					// The only remaining data in this short message is the parity block. Fix it and output the message
+					sendFrameShortAligned(11, 0, frameShort ^ crc);
 					// we are done here
 					return true;
 				}
@@ -427,22 +422,10 @@ private:
 		return (uint64_t)(m_currTime * ratio);
 	}
 	
-	// NumStreams many shift registers holding the current frames 
-	Bits128 m_bits[NumStreams];
-
-	// Each stream has a checksum for long messages (112 bit)
-	CRC::crc_t m_crc_112[NumStreams];
-
-	// And a checksum for the short messages (56 bit)
-	CRC::crc_t m_crc_56[NumStreams];
-
 	// while dealing with a single stream, this holds a copy of the frame
 	// from the previous stream  
-	Bits128 m_prevFrame;
-	// a copy of the previous long message checksum
-	CRC::crc_t m_prev_crc_112;
-	// and a also the corresponding short message checksum 
-	CRC::crc_t m_prev_crc_56;
+	Bits128 m_prevLongFrame;
+	uint64_t m_prevShortFrame;
 
 	// the last long message sent to the ouput. Used for duplicate removal
 	Bits128 m_prevFrameLongSent;
@@ -450,7 +433,7 @@ private:
 	uint64_t m_prevTimeLongSent { 0 };
 
 	// the last short message sent to the ouput. Used for duplicate removal
-	Bits128 m_prevFrameShortSent;
+	uint64_t m_prevFrameShortSent;
 	// the timestamp of the last short message sent. Required for duplicate removal
 	uint64_t m_prevTimeShortSent { 0 };
 
@@ -464,7 +447,15 @@ private:
 	uint64_t m_notTrustedTimeOut { secondsToNumSamples(2.0) };
 	
 	// the current time measured in samples.
-	uint64_t m_currTime{ 0 };	
+	uint64_t m_currTime{ 0 };
+
+#if defined(MSG_RIGHT_ALIGN) && MSG_RIGHT_ALIGN
+	using RegLayout = RegisterLayout_Right;
+#else
+	using RegLayout = RegisterLayout_Left;
+#endif
+	
+	ShiftRegisters<NumStreams, RegLayout> m_shiftRegisters;
 };
 
 template<>
@@ -484,3 +475,34 @@ inline uint64_t DemodCore<12>::currTimeTo12MhzTimeStamp() {
 	// for 12 Mhz nothing to do
 	return m_currTime;
 }
+
+template<>
+inline uint64_t DemodCore<24>::currTimeTo12MhzTimeStamp() {
+	// for 24 Mhz we simply divide by 2
+	return (m_currTime >> 1);
+}
+
+template<>
+inline uint64_t DemodCore<48>::currTimeTo12MhzTimeStamp() {
+	// for 48 Mhz we simply divide by 4
+	return (m_currTime >> 2);
+}
+
+template<>
+inline uint64_t DemodCore<10>::currTimeTo12MhzTimeStamp() {
+	// for 10 Mhz we have 12/10 = 6/5 = 1 + 1/5
+	return m_currTime + m_currTime/5;
+}
+
+template<>
+inline uint64_t DemodCore<20>::currTimeTo12MhzTimeStamp() {
+	// for 20 Mhz we have 12/20 = 6/10 = 1/2 + 1/10 
+	return (m_currTime >> 1) + m_currTime/10;
+}
+
+template<>
+inline uint64_t DemodCore<40>::currTimeTo12MhzTimeStamp() {
+	// for 40 Mhz we have 12/40 = 3/10 = 1/4 + 1/20 
+	return (m_currTime >> 2) + m_currTime/20;
+}
+

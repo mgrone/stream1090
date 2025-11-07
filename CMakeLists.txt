@@ -9,6 +9,7 @@ endif(NOT CMAKE_BUILD_TYPE)
 option(ENABLE_STATS "Compile with STATS_ENABLED (1 = enabled, 0 = disabled)" ON)
 option(ENABLE_OUTPUT_RAW "Compile with OUTPUT_RAW (1 = enabled, 0 = disabled)" OFF)
 
+
 if(ENABLE_STATS)
   set(STATS_DEF STATS_ENABLED=1)
 else()
@@ -28,12 +29,35 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(DEFAULT_COMPILE_OPTIONS -Wall -Wextra -Wunused-function -Ofast)
 
-add_executable(stream1090 main.cpp)
-target_include_directories(stream1090 PRIVATE include)
-target_compile_options(stream1090 PRIVATE ${DEFAULT_COMPILE_OPTIONS})
-target_compile_definitions(stream1090 PRIVATE ${STATS_DEF} ${OUTPUT_DEF})
-target_compile_features(stream1090 PRIVATE cxx_std_20)
+# 0 corresponds to the original rtl_sdr 2.4 Mhz
+set(SAMPLE_RATES_MHZ 0 6 10 12 20 24)
 
+set(SRC_FILES main.cpp) 
+set(INCLUDE_DIRS include)
+
+function(mhz_to_suffix_and_hz mhz out_suffix out_hz)
+    set(${out_suffix} "${mhz}M" PARENT_SCOPE)
+    math(EXPR hz "${mhz} * 1000000")
+    set(${out_hz} "${hz}" PARENT_SCOPE)
+endfunction()
+
+# Create a target for each sample rate
+foreach(MHZ IN LISTS SAMPLE_RATES_MHZ)
+    mhz_to_suffix_and_hz(${MHZ} SUFFIX HZ)
+
+    if(MHZ EQUAL 0)
+      set(TGT_NAME stream1090)
+    else()
+      set(TGT_NAME stream1090_${SUFFIX})
+    endif()
+    
+    add_executable(${TGT_NAME} ${SRC_FILES})
+    target_include_directories(${TGT_NAME} PRIVATE ${INCLUDE_DIRS})
+    target_compile_options(${TGT_NAME} PRIVATE ${DEFAULT_COMPILE_OPTIONS})
+    target_compile_definitions(${TGT_NAME} PRIVATE ${STATS_DEF} ${OUTPUT_DEF})
+    target_compile_definitions(${TGT_NAME} PRIVATE COMPILER_INPUT_SAMPLE_RATE=${HZ})
+    target_compile_features(${TGT_NAME} PRIVATE cxx_std_20)
+endforeach()
 
 add_executable(table_gen table_gen.cpp)
 target_include_directories(table_gen PRIVATE include)

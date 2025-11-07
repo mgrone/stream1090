@@ -23,7 +23,10 @@ Building stream1090 is straightforward. Unlike other implementations, there are 
 
 ```mkdir build && cd build && cmake ../ && make && cd ..```
 
-This will create the stream1090 executable in the build directory.
+This will create several executables in the build directory. These have the following purpose:
+- stream1090 (no suffix): This is meant to be used in conjunction with rtl_sdr (see below).
+- stream1090_(SomeNumber)M: Used for devices that deliever higher sample rates. So for example an airspy sampling at 6MHz should use stream1090_6M.
+Please use -h for some more info.
 
 ## RTL-based SDRs
 As a next step, we need to feed stream1090 which expects 8-bit unsigned IQ pairs at a rate of 2.4Mhz at stdin. For this install rtl_sdr
@@ -113,10 +116,6 @@ This would require the concept of noise, high and low levels which is not presen
 - What about MLAT?
 
 MLAT timestamp is part of the output.
-
-## Experimental Notes
-Currently there are several command line options (-a, -b, -c, -d) that can switch stream1090 into higher sample rate mode. 
-It will try to read int16 IQ samples at a speed of 6Msps (10Msps) which can be produced by airspy_rx. Please use "-h" for an overview what they do.
 
 **Important Update** I would like to thank several people that provided sample data, tried it in their setup and also did some tests with airspy.
 rhodan76, wiedehopf, caius, abcd567. Thank you very much!
