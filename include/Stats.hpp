@@ -254,4 +254,9 @@ private:
             stats.reset();
         }
     }
+    
+    inline void printStatsOnExit(StatsLog& stats, std::ostream& out) {
+            stats.updateGlobalStats();
+            printStats(stats, out);
+    }
 }

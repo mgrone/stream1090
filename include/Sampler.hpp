@@ -19,6 +19,7 @@ enum SampleRate {
     Rate_8_0_Mhz  =  8000000,
     Rate_10_0_Mhz = 10000000,
     Rate_12_0_Mhz = 12000000,
+    Rate_16_0_Mhz = 16000000,
     Rate_20_0_Mhz = 20000000,
     Rate_24_0_Mhz = 24000000,
     Rate_40_0_Mhz = 40000000,
@@ -47,9 +48,12 @@ typedef SamplerBase<Rate_2_4_Mhz, Rate_8_0_Mhz> Sampler_2_4_to_8_0_Mhz;
 
 // 6 Mhz upsamplers
 typedef SamplerBase<Rate_6_0_Mhz, Rate_12_0_Mhz> Sampler_6_0_to_12_0_Mhz;
+typedef SamplerBase<Rate_6_0_Mhz, Rate_16_0_Mhz> Sampler_6_0_to_16_0_Mhz;
+typedef SamplerBase<Rate_6_0_Mhz, Rate_24_0_Mhz> Sampler_6_0_to_24_0_Mhz;
 
 // 10 Mhz upsampler
 typedef SamplerBase<Rate_10_0_Mhz, Rate_20_0_Mhz> Sampler_10_0_to_20_0_Mhz;
+typedef SamplerBase<Rate_10_0_Mhz, Rate_24_0_Mhz> Sampler_10_0_to_24_0_Mhz;
 
 // test sampler
 typedef SamplerBase<Rate_3_0_Mhz, Rate_6_0_Mhz> Sampler_3_0_to_6_0_Mhz;
@@ -157,23 +161,23 @@ constexpr void SamplerBase<Rate_2_4_Mhz, Rate_8_0_Mhz>::sample(float* in, float*
     for (size_t i = 0; i < numBlocks; i++) {
         //  |0000000000|1111111111|2222222222|3333333333|
         //  +-------------------------------------------+
-        //  |.000000000|0004444444|4444488888|8888888...|
-        //  |....111111|1111115555|5555555599|9999999999|
-        //  |.......222|2222222226|6666666666|6.........|
-        //  |..........|3333333333|3377777777|7777......|
-        out[0] = ( 9.0f * in[0] +  3.0f * in[1]) * (1.0f / 12.0f);   
-        out[1] = ( 6.0f * in[0] +  6.0f * in[1]) * (1.0f / 12.0f);
-        out[2] = ( 3.0f * in[0] +  9.0f * in[1]) * (1.0f / 12.0f);
-        out[3] = (10.0f * in[1] +  2.0f * in[2]) * (1.0f / 12.0f);
-        out[4] = ( 7.0f * in[1] +  5.0f * in[2]) * (1.0f / 12.0f);
-        out[5] = ( 4.0f * in[1] +  8.0f * in[2]) * (1.0f / 12.0f);
-        out[6] = ( 1.0f * in[1] + 10.0f * in[2] + 1.0f * in[3]) * (1.0f / 12.0f);
-        out[7] = ( 8.0f * in[2] +  4.0f * in[3]) * (1.0f / 12.0f);
-        out[8] = ( 5.0f * in[2] +  7.0f * in[3]) * (1.0f / 12.0f);
-        out[9] = ( 2.0f * in[2] + 10.0f * in[3]) * (1.0f / 12.0f);
+        //  |...0000000|0....44444|444....888|88888.....|
+        //  |......1111|1111....55|555555....|99999999..|
+        //  |.........2|2222222...|.66666666.|..........|
+        //  |..........|..33333333|....777777|77........|
+        out[0] = ( 7.0f * in[0] +  1.0f * in[1]) * (1.0f / 8.0f);   
+        out[1] = ( 4.0f * in[0] +  4.0f * in[1]) * (1.0f / 8.0f);
+        out[2] = ( 1.0f * in[0] +  7.0f * in[1]) * (1.0f / 8.0f);
+        out[3] = ( 8.0f * in[1] +  0.0f * in[2]) * (1.0f / 8.0f);
+        out[4] = ( 5.0f * in[1] +  3.0f * in[2]) * (1.0f / 8.0f);
+        out[5] = ( 2.0f * in[1] +  6.0f * in[2]) * (1.0f / 8.0f);
+        out[6] = ( 8.0f * in[2] +  0.0f * in[3]) * (1.0f / 8.0f);
+        out[7] = ( 6.0f * in[2] +  2.0f * in[3]) * (1.0f / 8.0f);
+        out[8] = ( 3.0f * in[2] +  5.0f * in[3]) * (1.0f / 8.0f);
+        out[9] = ( 0.0f * in[2] +  8.0f * in[3]) * (1.0f / 8.0f);
         in += 3;
         out += 10;
-    }   
+    } 
 }
 
 
@@ -185,7 +189,6 @@ constexpr void SamplerBase<Rate_3_0_Mhz, Rate_6_0_Mhz>::sample(float* in, float*
             //  +-----------------+
             //  |00|..|
             //  |.1|1.|
-            //  |.....|
             out[0] = in[0];   
             out[1] = (in[0] + in[1]) / 2.0f;
             in += 1;
@@ -196,16 +199,62 @@ constexpr void SamplerBase<Rate_3_0_Mhz, Rate_6_0_Mhz>::sample(float* in, float*
 // 6.0 Mhz to 12.0 Mhz (12 streams) upsampling function
 template<>
 constexpr void SamplerBase<Rate_6_0_Mhz, Rate_12_0_Mhz>::sample(float* in, float* out, size_t numBlocks) {
-    for (size_t i = 0; i < numBlocks; i++) {
+   for (size_t i = 0; i < numBlocks; i++) {
             //  |00|11|
             //  +-----------------+
             //  |00|..|
             //  |.1|1.|
-            //  |.....|
             out[0] = in[0];   
             out[1] = (in[0] + in[1]) / 2.0f;
             in += 1;
             out += 2;
+        }
+}
+
+// 6.0 Mhz to 16.0 Mhz (16 streams) upsampling function
+template<>
+constexpr void SamplerBase<Rate_6_0_Mhz, Rate_16_0_Mhz>::sample(float* in, float* out, size_t numBlocks) {
+   for (size_t i = 0; i < numBlocks; i++) {
+            //  |00000000|11111111|22222222|33333333|
+            //  +-----------------------------------+
+            //  |00000000|........|........|........|
+            //  |...11111|111.....|........|........|
+            //  |......22|222222..|........|........|
+            //  |........|.3333333|3.......|........|
+            //  |........|....4444|4444....|........|
+            //  |........|.......5|5555555.|........|
+            //  |........|........|..666666|66......|
+            //  |........|........|.....777|77777...|
+            //  |........|........|........|88888888|
+            out[0] = ( 8.0f * in[0] +  0.0f * in[1]) * (1.0f / 8.0f);   
+            out[1] = ( 5.0f * in[0] +  3.0f * in[1]) * (1.0f / 8.0f);
+            out[2] = ( 2.0f * in[0] +  6.0f * in[1]) * (1.0f / 8.0f);
+            out[3] = ( 7.0f * in[1] +  1.0f * in[2]) * (1.0f / 8.0f);
+            out[4] = ( 4.0f * in[1] +  4.0f * in[2]) * (1.0f / 8.0f);
+            out[5] = ( 1.0f * in[1] +  7.0f * in[2]) * (1.0f / 8.0f);
+            out[6] = ( 6.0f * in[2] +  2.0f * in[3]) * (1.0f / 8.0f);
+            out[7] = ( 3.0f * in[2] +  5.0f * in[3]) * (1.0f / 8.0f);
+            in += 3;
+            out += 8;
+        }
+}
+
+// 6.0 Mhz to 24.0 Mhz (24 streams) upsampling function
+template<>
+constexpr void SamplerBase<Rate_6_0_Mhz, Rate_24_0_Mhz>::sample(float* in, float* out, size_t numBlocks) {
+   for (size_t i = 0; i < numBlocks; i++) {
+            //  |0000|1111|
+            //  +---------+
+            //  |0000|....|
+            //  |.111|1...|
+            //  |..22|22..|
+            //  |...3|333.|
+            out[0] = (4.0f * in[0] +  0.0f * in[1]) * (1.0f / 4.0f);
+            out[1] = (3.0f * in[0] +  1.0f * in[1]) * (1.0f / 4.0f);
+            out[2] = (2.0f * in[0] +  2.0f * in[1]) * (1.0f / 4.0f);
+            out[3] = (1.0f * in[0] +  3.0f * in[1]) * (1.0f / 4.0f);
+            in += 1;
+            out += 4;
         }
 }
 
@@ -217,11 +266,30 @@ constexpr void SamplerBase<Rate_10_0_Mhz, Rate_20_0_Mhz>::sample(float* in, floa
             //  +-----------------+
             //  |00|..|
             //  |.1|1.|
-            //  |.....|
             out[0] = in[0];   
             out[1] = (in[0] + in[1]) / 2.0f;
             in += 1;
             out += 2;
+        }
+}
+
+// 10.0 Mhz to 24.0 Mhz (24 streams) upsampling function
+template<>
+constexpr void SamplerBase<Rate_10_0_Mhz, Rate_24_0_Mhz>::sample(float* in, float* out, size_t numBlocks) {
+    for (size_t i = 0; i < numBlocks; i++) {
+            //  |00|11|
+            //  +-----------------+
+            //  |00|..|
+            //  |.1|1.|
+            for (int j = 0; j < 12; j++) {
+                const auto offset = 5 * j;
+                const auto k = offset / 12;
+                const auto l = 12 - (offset % 12);
+                const auto r = 12 - l;
+                out[j] = ((float)l * in[k] + (float)r * in[k+1]) * (1.0f / 12.0f); 
+            }
+            in += 5;
+            out += 12;
         }
 }
 
@@ -233,7 +301,6 @@ constexpr void SamplerBase<Rate_12_0_Mhz, Rate_24_0_Mhz>::sample(float* in, floa
             //  +-----------------+
             //  |00|..|
             //  |.1|1.|
-            //  |.....|
             out[0] = in[0];   
             out[1] = (in[0] + in[1]) / 2.0f;
             in += 1;
@@ -248,7 +315,6 @@ constexpr void SamplerBase<Rate_20_0_Mhz, Rate_40_0_Mhz>::sample(float* in, floa
             //  +-----------------+
             //  |00|..|
             //  |.1|1.|
-            //  |.....|
             out[0] = in[0];   
             out[1] = (in[0] + in[1]) / 2.0f;
             in += 1;
@@ -263,7 +329,6 @@ constexpr void SamplerBase<Rate_24_0_Mhz, Rate_48_0_Mhz>::sample(float* in, floa
             //  +-----------------+
             //  |00|..|
             //  |.1|1.|
-            //  |.....|
             out[0] = in[0];   
             out[1] = (in[0] + in[1]) / 2.0f;
             in += 1;

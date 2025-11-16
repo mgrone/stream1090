@@ -92,6 +92,11 @@ namespace CRC {
 			for (int i = 0; i < 16; i++) {
 				insert(encodeFixOp(129,i));
 			}
+
+			// try inserting 101 bit errors into the table. Not all of them may fit
+			for (int i = 0; i < 110-5; i++) {
+				insert(encodeFixOp(0x5,i));
+			}
 		}
 	};
 

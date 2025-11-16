@@ -24,6 +24,14 @@ public:
 		// nothing
 	}
 
+	~DemodCore() {
+		#if defined(STATS_ENABLED) && STATS_ENABLED
+		#if defined(STATS_END_ONLY) && STATS_END_ONLY
+			Stats::printStatsOnExit(m_statsLog, std::cerr);
+		#endif
+		#endif
+	}
+
 	void sendFrameLongAligned(const uint8_t downlinkFormat, CRC::crc_t, const Bits128& frame) {
 		if (((m_currTime - m_prevTimeLongSent) < NumStreams) && (m_prevFrameLongSent == frame)) {
 			logStatsDup(downlinkFormat);
@@ -329,7 +337,7 @@ public:
 
 		if (m_cache.notOlderThan(e, m_currTime, m_notTrustedTimeOut)) {
 			// log that this message is a good message
-			// we consider this a valid comm-b message
+			// we consider this a valid message
 			m_cache.markAsSeen(e, m_currTime);
 			// and output the message
 			sendFrameShortAligned(11, 0, frameShort);
@@ -393,8 +401,10 @@ private:
 	Stats::StatsLog m_statsLog;
 	void logStats(Stats::EventType evt) {
 		m_statsLog.log(evt);
-		if (evt == Stats::NUM_ITERATIONS)
-			Stats::printTick(m_statsLog, std::cerr);
+		#if !(defined(STATS_END_ONLY) && STATS_END_ONLY)
+			if (evt == Stats::NUM_ITERATIONS)
+				Stats::printTick(m_statsLog, std::cerr);
+		#endif
 	}
 
 	void logStatsSent(int df) {
@@ -462,6 +472,12 @@ template<>
 inline uint64_t DemodCore<8>::currTimeTo12MhzTimeStamp() {
 	// for 8 Mhz we have 1.5 * 8 = 12
 	return m_currTime + (m_currTime >> 1);
+}
+
+template<>
+inline uint64_t DemodCore<16>::currTimeTo12MhzTimeStamp() {
+	// for 16 Mhz we have 0.75 * 16 = (0.5 + 0.25) * 16 = 12
+	return (m_currTime >> 1) + (m_currTime >> 2);
 }
 
 template<>
