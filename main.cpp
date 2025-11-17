@@ -10,7 +10,7 @@
 #include <unistd.h>
 #include "SampleStream.hpp"
 
-#define STREAM1090_VERSION "161125"
+#define STREAM1090_VERSION "171125"
 
 #if !defined(COMPILER_INPUT_SAMPLE_RATE)
     #define COMPILER_INPUT_SAMPLE_RATE 0
@@ -134,7 +134,7 @@ void printHelp() {
 
 int main(int argc, char** argv) {
     // Parse command line options.
-    int upsampling = 0;
+    int upsampling = compilerInputSampleRate / 1000000;
     (void)upsampling;
     int opt;
     while ((opt = getopt(argc, argv, "abcdfu:h")) != -1) {
