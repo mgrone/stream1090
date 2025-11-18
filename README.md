@@ -34,7 +34,7 @@ If you have compiled a previous version, it is important that you either get rid
 ```make clean && cmake ../ --fresh```
 in the build folder. There are several changes from version to version that may require an update of the Makefile. 
  
-## RTL-based SDRs
+## RTL_SDR-based SDRs
 As a next step, we need to feed stream1090 which expects 8-bit unsigned IQ pairs at a rate of 2.4Mhz at stdin. For this install rtl_sdr
 
 ```sudo apt install rtl-sdr```
@@ -100,6 +100,10 @@ Then start feeding it with socat either locally or from a different machine.
 If you want to disable the statistics completely, rebuild the project and set the corresponding option for cmake:
 
 ```cmake ../ -DENABLE_STATS=OFF```
+
+You can find a more well described manual over here: 
+https://discussions.flightaware.com/t/stream1090/99603/73?u=mgrone
+Cudos to the guy! 
 
 ## Notes on dump1090.
 I have not tried it, but others did and it seems to work just fine. Just make sure to open the raw input port.
