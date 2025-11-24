@@ -10,7 +10,7 @@
 #include <unistd.h>
 #include "SampleStream.hpp"
 
-#define STREAM1090_VERSION "171125"
+#define STREAM1090_VERSION "251124"
 
 #if !defined(COMPILER_INPUT_SAMPLE_RATE)
     #define COMPILER_INPUT_SAMPLE_RATE 0
@@ -20,6 +20,7 @@ constexpr int compilerInputSampleRate = COMPILER_INPUT_SAMPLE_RATE;
 
 template<typename Sampler>
 void printSamplerConfig() {
+    std::cerr << "[Stream1090] build " << STREAM1090_VERSION << std::endl;
     std::cerr << "[Stream1090] Input sampling speed: " << (double)Sampler::InputSampleRate / 1000000.0 << " MHz" << std::endl;
     std::cerr << "[Stream1090] Output sampling speed: " << Sampler::OutputSampleRate / 1000000 << " MHz" << std::endl;
     std::cerr << "[Stream1090] Input to output ratio: " << Sampler::RatioInput << ":" << Sampler::RatioOutput << std::endl;

@@ -11,6 +11,8 @@
 
 class ICAOTable {
 public:
+	static constexpr auto TTL_not_trusted { 5 };
+	static constexpr auto TTL_trusted { 30 };
     // number if bits used for the look up table 
 	static constexpr auto NumBits { 16 };
 
@@ -23,9 +25,16 @@ public:
     // icao address entry
     struct Entry {
         // flag indicating if we trust the address or not (with some padding)
+		// this will be removed in the future.
         uint32_t trusted : 5;
         // icao address together with the transponder capabilities
         uint32_t icao : 27;
+
+		// time to live for an untrusted entry
+		uint16_t ttl;
+
+		// time to live for the trusted version
+		uint16_t ttl_trusted;
     };
 
     // simple struct keeping an index
@@ -47,24 +56,13 @@ public:
 
 	ICAOTable() {
 		m_table = std::make_unique<Entry[]>(Size);
-		m_time  = std::make_unique<uint64_t[]>(Size);
-		std::fill(m_table.get(), m_table.get() + Size, Entry{0x0, 0x7ffffff});
-		std::fill(m_time.get(), m_time.get() + Size, 0);
+		std::fill(m_table.get(), m_table.get() + Size, Entry{0x0, 0x0, 0, 0});
 	}
 
-	void insertWithCA(uint32_t icaoWithCA, uint64_t currTime) {
+	void insertWithCA(uint32_t icaoWithCA) {
 		const auto key = icaoWithCA & HashMask; 
 		m_table[key].icao = icaoWithCA;
 		m_table[key].trusted = 0x0;
-		m_time[key] = currTime;
-	}
-
-    void markAsTrusted(const Iterator& entry) const {
-        m_table[entry.key].trusted = 0x1;
-    }
-
-	void markAsSeen(const Iterator& entry, uint64_t currTime) {
-		m_time[entry.key] = currTime;
 	}
 
 	Iterator findWithCA(uint32_t icaoWithCA) const {
@@ -77,23 +75,60 @@ public:
 		return ((m_table[key].icao & 0xffffffu) == icao) ? Iterator(key) : Iterator();
 	}
 
-	uint64_t lastSeen(const Iterator& entry) const {
-		return (m_time[entry.key]); 
+	void tick() {
+		// the counter will wrap around every second exactly once
+		m_time1Mhz = (m_time1Mhz + 1) % 1000000;
+		
+		// if the counter has a value greater than number of entries,
+		// we are done here.
+		if (m_time1Mhz >= (0x1 << NumBits))
+			return;
+
+		// to a tick for the next entry otherwise
+		doTickForEntry(m_time1Mhz);
 	}
 
-    bool isTrusted(const Iterator& entry) const {
-        return (m_table[entry.key].trusted);
-    }
-
-	bool notOlderThan(const Iterator& entry, uint64_t currTime, uint64_t timeout) const {
-		return ((currTime - lastSeen(entry)) < timeout);
+	void markAsTrustedSeen(const Iterator& entry) {
+		m_table[entry.key].ttl_trusted = TTL_trusted;
+		m_table[entry.key].ttl = TTL_not_trusted;
 	}
 
+	void markAsSeen(const Iterator& entry) {
+		m_table[entry.key].ttl = TTL_not_trusted;
+	}
+
+	bool isTrusted(const Iterator& entry) const {
+		return isAlive(entry) && (m_table[entry.key].ttl_trusted > 0);
+	}
+
+	bool isAlive(const Iterator& entry) const {
+		return m_table[entry.key].ttl > 0;
+	}
 private:
-    // the table with the icao addresses 
-	std::unique_ptr<Entry[]> m_table;
+	void doTickForEntry(uint16_t index) {
+		auto& entry = m_table[index];
+		if (entry.icao == 0x0)
+			return;
 
-    // a separate table for the last seen time in sample time
-    // this is 64 bit because for high sample speeds 32 bit will wrap around quite fast.
-	std::unique_ptr<uint64_t[]> m_time;
+		if (entry.ttl_trusted > 0) {
+			entry.ttl_trusted--;
+		} else {			
+			entry.trusted = 0x0;
+		}
+
+		if (entry.ttl > 0) {
+			entry.ttl--;
+		} else {
+			entry.trusted = 0x0;
+			entry.ttl_trusted = 0;
+			entry.icao = 0x0;			
+		}
+	}
+
+	
+	// runs from 0 to 999 999
+	uint32_t m_time1Mhz { 0 };
+
+    // the table with the icao addresses including transponder CA 
+	std::unique_ptr<Entry[]> m_table;
 };

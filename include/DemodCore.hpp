@@ -72,8 +72,9 @@ public:
 	void shiftInNewBits(uint32_t* cmp) {
 		m_shiftRegisters.shiftInNewBits(cmp); 
 		// the streams and crc's are ready
+		m_cache.tick();
 		for (auto i = 0; i < NumStreams; i++) {
-			if (RegLayout::SameStart) {
+			if constexpr(RegLayout::SameStart) {
 				handleStream(i);
 			} else { 
 				if (!handleStreamShort(i)) {
@@ -144,8 +145,8 @@ public:
 
 	// Dispatcher function for handling messages based on the downlink format  
 	bool handleStream(int streamIndex) {
-
 		const auto downlinkFormat = m_shiftRegisters.getDF(streamIndex);
+		
 		switch (downlinkFormat)
 		{
 		case 0: // acas
@@ -193,13 +194,13 @@ public:
 			// if we know this plane
 			if (e.isValid()) {
 				// if we trust this address and the we have seen it not that long ago
-				if (m_cache.isTrusted(e) && m_cache.notOlderThan(e, m_currTime, m_trustedTimeOut)) {
+				if (m_cache.isTrusted(e)) {
 					// mark the plane as seen
-					m_cache.markAsSeen(e, m_currTime);
+					m_cache.markAsTrustedSeen(e);
 					// and send the 112 bit message to the output
 					sendFrameLongAligned(downlinkFormat, crc, frame);
 					return true;
-				} else if (m_cache.notOlderThan(e, m_currTime, m_notTrustedTimeOut)) {
+				} else if (m_cache.isAlive(e)) {
 					// we have seen this entry before and it has been put there by DF11.
 					// Good enough. Promote it and insert the address into the trusted table. 
 					// -----------------------------------------------
@@ -208,15 +209,13 @@ public:
 					//  After many experiments, this turned out to be
 					//  the way to go. 
 					// ---------------------------------------------- 
-					m_cache.markAsTrusted(e);
-					// mark the plane as seen
-					m_cache.markAsSeen(e, m_currTime);
+					m_cache.markAsTrustedSeen(e);
 					// and send the 112 bit message to the output
 					sendFrameLongAligned(downlinkFormat, crc, frame);
 					return true;
 				}
 			} else {
-				m_cache.insertWithCA(icaoWithCA, m_currTime);
+				m_cache.insertWithCA(icaoWithCA);
 			}	
 		} else {
 			// the crc is not zero, so we might have a broken message
@@ -239,12 +238,11 @@ public:
 				if (!e.isValid())
 					return false;
 
-				if (m_cache.notOlderThan(e, m_currTime, m_notTrustedTimeOut) || 
-		   			(m_cache.isTrusted(e) && m_cache.notOlderThan(e, m_currTime, m_trustedTimeOut))) {
+				if (m_cache.isTrusted(e)) {
 					// log that fixing the message was a success
 					logStats(Stats::DF17_REPAIR_SUCCESS);
 					// and keep the trusted entry alive
-					m_cache.markAsSeen(e, m_currTime);
+					m_cache.markAsSeen(e);
 					// send the 112 bit message to the output
 					sendFrameLongAligned(downlinkFormat, crc, toRepair);
 					return true;
@@ -272,12 +270,11 @@ public:
 		if (!e.isValid())
 			return false;
 
-		if (m_cache.notOlderThan(e, m_currTime, m_notTrustedTimeOut) || 
-		   (m_cache.isTrusted(e) && m_cache.notOlderThan(e, m_currTime, m_trustedTimeOut))) {
+		if (m_cache.isTrusted(e)) {
 			// log that this message is a good message
-			logStats(Stats::ACAS_SURV_GOOD_MESSAGE);
+			logStats(Stats::COMM_B_GOOD_MESSAGE);
 			// we consider this a valid comm-b message
-			m_cache.markAsSeen(e, m_currTime);
+			m_cache.markAsSeen(e);
 			// and output the message
 			sendFrameLongAligned(downlinkFormat, crc, frame);
 			// we are done
@@ -306,12 +303,11 @@ public:
 		if (!e.isValid())
 			return false;
 
-		if (m_cache.notOlderThan(e, m_currTime, m_notTrustedTimeOut) || 
-		   (m_cache.isTrusted(e) && m_cache.notOlderThan(e, m_currTime, m_trustedTimeOut))) {
+		if (m_cache.isTrusted(e)) {
 			// log that this message is a good message
 			logStats(Stats::ACAS_SURV_GOOD_MESSAGE);
 			// we consider this a valid comm-b message
-			m_cache.markAsSeen(e, m_currTime);
+			m_cache.markAsSeen(e);
 			// and output the message
 			sendFrameShortAligned(downlinkFormat, crc, frameShort);
 			// we are done
@@ -321,7 +317,6 @@ public:
 	}
 
 	/// @brief Helper function for all-call replies (DF11) with a crc of zero. Either received correctly or repaired with 1-bit error correction
-	/// @param frame the frame itself
 	/// @return returns true if a message has been send to the output
 	bool handleDF11ShortMessageWithZeroCRC(const uint64_t& frameShort) {
 		const auto icaoWithCA = ModeS::extractICAOWithCA_Short(frameShort);
@@ -330,27 +325,25 @@ public:
 		// if the plane is not in table,
 		if (!e.isValid()) {
 			// put it there.
-			m_cache.insertWithCA(icaoWithCA, m_currTime);
+			m_cache.insertWithCA(icaoWithCA);
 			// we stop here and do not send the message
 			return false;
 		}
 
-		if (m_cache.notOlderThan(e, m_currTime, m_notTrustedTimeOut)) {
+		if (m_cache.isAlive(e)) {
 			// log that this message is a good message
 			// we consider this a valid message
-			m_cache.markAsSeen(e, m_currTime);
+			m_cache.markAsSeen(e);
 			// and output the message
 			sendFrameShortAligned(11, 0, frameShort);
 			// we are done
 			return true;
 		} 
-		m_cache.markAsSeen(e, m_currTime);
+		m_cache.markAsSeen(e);
 		return false;
 	}
 
 	/// @brief This function handles all-call replies (downlink format 11).
-	/// @param crc the crc of the current frame
-	/// @param frame the frame itself
 	/// @return returns true if a message has been send to the output
 	bool handleDF11ShortMessage(int streamIndex) {
 		auto frameShort = m_shiftRegisters.extractAlignedFrameShort(streamIndex);
@@ -380,10 +373,10 @@ public:
 				// look up the address in the trusted list
 				const auto e = m_cache.findWithCA(icaoWithCA);
 				// if it is there and we consider this as an active trusted transponder
-				if (e.isValid() && m_cache.isTrusted(e) && m_cache.notOlderThan(e, m_currTime, m_notTrustedTimeOut)) {
+				if (e.isValid() && m_cache.isTrusted(e)) {
 					// Hence, we trust the address including the CA field. Downlink format is correct. 
 					// make sure to have this sender address in the list of known but not thrustworthy addresses
-					m_cache.markAsSeen(e, m_currTime);
+					m_cache.markAsSeen(e);
 					// The only remaining data in this short message is the parity block. Fix it and output the message
 					sendFrameShortAligned(11, 0, frameShort ^ crc);
 					// we are done here
@@ -458,7 +451,7 @@ private:
 	
 	// the current time measured in samples.
 	uint64_t m_currTime{ 0 };
-
+	
 #if defined(MSG_RIGHT_ALIGN) && MSG_RIGHT_ALIGN
 	using RegLayout = RegisterLayout_Right;
 #else
