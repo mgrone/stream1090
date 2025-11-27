@@ -22,6 +22,21 @@ namespace ModeS {
 		return ((frameLong.high() >> 16) & (0x7ffffffull));
 	}
 
+	constexpr inline uint16_t extractSquawkAlt_Long(const Bits128& frameLong) {
+		return ((frameLong.high() >> 16) & 0x1fff);
+	}
+
+	constexpr inline uint16_t extractSquawkAlt_Short(const uint64_t& frameShort) {
+		return ((frameShort >> 24) & 0x1fff);
+	}
+
+	constexpr inline uint16_t convertToFeet(uint16_t altBits) {
+		if (!(altBits & (0x1 << 6)) && (altBits & (0x1 << 4))) {
+			return ((altBits & 0xf) |  ((altBits >> 1) & (0x1 << 5)) | ((altBits >> 2) & (0x3f << 6))) + 1;
+		}
+		return 0;		
+	}
+
 	inline void printFrameShortMLAT(std::ostream& out, uint64_t timeStamp, const uint64_t& frameShort) {
 		// timestamp + frame = @ + 48 bit timestamp + 56 bit frame
 		out << '@' << std::hex << std::setfill('0') << std::setw(12) << (timeStamp & 0xffffffffffffull) << std::setw(14) << (frameShort & 0xffffffffffffffull) << ";" << std::endl;

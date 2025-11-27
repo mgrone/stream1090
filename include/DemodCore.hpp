@@ -32,29 +32,54 @@ public:
 		#endif
 	}
 
-	void sendFrameLongAligned(const uint8_t downlinkFormat, CRC::crc_t, const Bits128& frame) {
+	bool sendFrameLongAligned(const uint8_t downlinkFormat, CRC::crc_t, const Bits128& frame, const ICAOTable::Iterator& it) {
 		if (((m_currTime - m_prevTimeLongSent) < NumStreams) && (m_prevFrameLongSent == frame)) {
 			logStatsDup(downlinkFormat);
-			return;
+			return false;
 		}
 
+		if ((downlinkFormat == 20) || (downlinkFormat == 16)) {
+			const auto alt = ModeS::convertToFeet( ModeS::extractSquawkAlt_Long(frame));
+			if (!((alt > 0) && m_cache.checkAltitude(it, alt))) {	
+				return false;
+			}
+		}
+		
+		if ((downlinkFormat == 21) && !m_cache.checkSquawk(it, ModeS::extractSquawkAlt_Long(frame))) {
+			return false;
+		}
+		
 		logStatsSent(downlinkFormat);
 		m_prevFrameLongSent = frame;
 		m_prevTimeLongSent = m_currTime;
+
 
 #if defined(OUTPUT_RAW) && OUTPUT_RAW
 		ModeS::printFrameLongRaw(std::cout, frame);
 #else
 		ModeS::printFrameLongMLAT(std::cout, currTimeTo12MhzTimeStamp() + RegLayout::OffsetMLAT_Long , frame);
 #endif
+		return true;
 	}
 
-	void sendFrameShortAligned(const uint8_t downlinkFormat, CRC::crc_t, const uint64_t& frameShort) {
+	bool sendFrameShortAligned(const uint8_t downlinkFormat, CRC::crc_t, const uint64_t& frameShort, const ICAOTable::Iterator& it) {
 		if (((m_currTime - m_prevTimeShortSent) < NumStreams) && (m_prevFrameShortSent == frameShort)) {
 			logStatsDup(downlinkFormat);
-			return;
+			return false;
+		}
+
+		if ((downlinkFormat == 4) || (downlinkFormat == 0)) {
+			const auto alt = ModeS::convertToFeet( ModeS::extractSquawkAlt_Short(frameShort));
+			if (!((alt > 0) && m_cache.checkAltitude(it, alt))) {
+				return false;
+			}
+		}
+
+		if ((downlinkFormat == 5) && !m_cache.checkSquawk(it, ModeS::extractSquawkAlt_Short(frameShort))) {
+			return false;
 		}
 		
+
 		logStatsSent(downlinkFormat);
 		m_prevFrameShortSent = frameShort;
 		m_prevTimeShortSent = m_currTime;
@@ -64,6 +89,7 @@ public:
 #else 
 		ModeS::printFrameShortMLAT(std::cout, currTimeTo12MhzTimeStamp() + RegLayout::OffsetMLAT_Short, frameShort);
 #endif
+		return true;
 	}
 	
 	// This is the main entry function called by the SampleStream. 
@@ -198,8 +224,7 @@ public:
 					// mark the plane as seen
 					m_cache.markAsTrustedSeen(e);
 					// and send the 112 bit message to the output
-					sendFrameLongAligned(downlinkFormat, crc, frame);
-					return true;
+					return sendFrameLongAligned(downlinkFormat, crc, frame, e);
 				} else if (m_cache.isAlive(e)) {
 					// we have seen this entry before and it has been put there by DF11.
 					// Good enough. Promote it and insert the address into the trusted table. 
@@ -211,11 +236,10 @@ public:
 					// ---------------------------------------------- 
 					m_cache.markAsTrustedSeen(e);
 					// and send the 112 bit message to the output
-					sendFrameLongAligned(downlinkFormat, crc, frame);
-					return true;
+					return sendFrameLongAligned(downlinkFormat, crc, frame, e);
 				}
 			} else {
-				m_cache.insertWithCA(icaoWithCA);
+				m_cache.markAsTrustedSeen(m_cache.insertWithCA(icaoWithCA));
 			}	
 		} else {
 			// the crc is not zero, so we might have a broken message
@@ -242,10 +266,9 @@ public:
 					// log that fixing the message was a success
 					logStats(Stats::DF17_REPAIR_SUCCESS);
 					// and keep the trusted entry alive
-					m_cache.markAsSeen(e);
+					m_cache.markAsTrustedSeen(e);
 					// send the 112 bit message to the output
-					sendFrameLongAligned(downlinkFormat, crc, toRepair);
-					return true;
+					return sendFrameLongAligned(downlinkFormat, crc, toRepair, e);
 				}				
 			}
 			logStats(Stats::DF17_REPAIR_FAILED);
@@ -270,15 +293,11 @@ public:
 		if (!e.isValid())
 			return false;
 
-		if (m_cache.isTrusted(e)) {
+		if (m_cache.isAlive(e)) {
 			// log that this message is a good message
 			logStats(Stats::COMM_B_GOOD_MESSAGE);
-			// we consider this a valid comm-b message
-			m_cache.markAsSeen(e);
-			// and output the message
-			sendFrameLongAligned(downlinkFormat, crc, frame);
-			// we are done
-			return true;
+			// output the message
+			return sendFrameLongAligned(downlinkFormat, crc, frame, e);
 		} 
 		return false;
 	}
@@ -303,15 +322,11 @@ public:
 		if (!e.isValid())
 			return false;
 
-		if (m_cache.isTrusted(e)) {
+		if (m_cache.isAlive(e)) {
 			// log that this message is a good message
 			logStats(Stats::ACAS_SURV_GOOD_MESSAGE);
-			// we consider this a valid comm-b message
-			m_cache.markAsSeen(e);
-			// and output the message
-			sendFrameShortAligned(downlinkFormat, crc, frameShort);
-			// we are done
-			return true;
+			// output the message
+			return sendFrameShortAligned(downlinkFormat, crc, frameShort, e);		
 		} 
 		return false;
 	}
@@ -325,7 +340,7 @@ public:
 		// if the plane is not in table,
 		if (!e.isValid()) {
 			// put it there.
-			m_cache.insertWithCA(icaoWithCA);
+			m_cache.markAsSeen(m_cache.insertWithCA(icaoWithCA));
 			// we stop here and do not send the message
 			return false;
 		}
@@ -335,9 +350,7 @@ public:
 			// we consider this a valid message
 			m_cache.markAsSeen(e);
 			// and output the message
-			sendFrameShortAligned(11, 0, frameShort);
-			// we are done
-			return true;
+			return sendFrameShortAligned(11, 0, frameShort, e);
 		} 
 		m_cache.markAsSeen(e);
 		return false;
@@ -378,9 +391,7 @@ public:
 					// make sure to have this sender address in the list of known but not thrustworthy addresses
 					m_cache.markAsSeen(e);
 					// The only remaining data in this short message is the parity block. Fix it and output the message
-					sendFrameShortAligned(11, 0, frameShort ^ crc);
-					// we are done here
-					return true;
+					return sendFrameShortAligned(11, 0, frameShort ^ crc, e);
 				}
 			}
 		}
@@ -451,7 +462,7 @@ private:
 	
 	// the current time measured in samples.
 	uint64_t m_currTime{ 0 };
-	
+
 #if defined(MSG_RIGHT_ALIGN) && MSG_RIGHT_ALIGN
 	using RegLayout = RegisterLayout_Right;
 #else

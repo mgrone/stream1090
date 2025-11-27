@@ -11,8 +11,9 @@
 
 class ICAOTable {
 public:
-	static constexpr auto TTL_not_trusted { 5 };
+	static constexpr auto TTL_not_trusted { 10 };
 	static constexpr auto TTL_trusted { 30 };
+	static constexpr auto ALT_delta_25ft { 80 };
     // number if bits used for the look up table 
 	static constexpr auto NumBits { 16 };
 
@@ -37,6 +38,16 @@ public:
 		uint16_t ttl_trusted;
     };
 
+	struct SquawkAlt {
+		// the last sqauwk code received
+		uint16_t squawk_cnt : 3;
+		uint16_t squawk : 13;
+
+		// the last altitude in feet received
+		uint16_t altitude_cnt : 3;
+		uint16_t altitude : 13;
+	};
+
     // simple struct keeping an index
 	struct Iterator {
         // index in the table
@@ -57,12 +68,16 @@ public:
 	ICAOTable() {
 		m_table = std::make_unique<Entry[]>(Size);
 		std::fill(m_table.get(), m_table.get() + Size, Entry{0x0, 0x0, 0, 0});
+
+		m_squawkAlt = std::make_unique<SquawkAlt[]>(Size);
+		std::fill(m_squawkAlt.get(), m_squawkAlt.get() + Size, SquawkAlt{0, 0, 0, 0});
 	}
 
-	void insertWithCA(uint32_t icaoWithCA) {
+	Iterator insertWithCA(uint32_t icaoWithCA) {
 		const auto key = icaoWithCA & HashMask; 
 		m_table[key].icao = icaoWithCA;
 		m_table[key].trusted = 0x0;
+		return Iterator(key);
 	}
 
 	Iterator findWithCA(uint32_t icaoWithCA) const {
@@ -84,7 +99,7 @@ public:
 		if (m_time1Mhz >= (0x1 << NumBits))
 			return;
 
-		// to a tick for the next entry otherwise
+		// do a tick for the next entry otherwise
 		doTickForEntry(m_time1Mhz);
 	}
 
@@ -104,6 +119,46 @@ public:
 	bool isAlive(const Iterator& entry) const {
 		return m_table[entry.key].ttl > 0;
 	}
+
+	bool checkSquawk(const Iterator& entry, uint16_t newSquawk) {
+		if (m_squawkAlt[entry.key].squawk == newSquawk) {
+			m_squawkAlt[entry.key].squawk_cnt = 1;
+			return true;
+		}
+
+		if (m_squawkAlt[entry.key].squawk_cnt == 0) {
+			m_squawkAlt[entry.key].squawk = newSquawk;
+		} else {
+			m_squawkAlt[entry.key].squawk_cnt = 0;
+		}
+		return false;
+	}
+
+	bool checkAltitude(const Iterator& entry, uint16_t newAlt) {
+		if (m_squawkAlt[entry.key].altitude == 0) {
+			m_squawkAlt[entry.key].altitude = newAlt;
+			m_squawkAlt[entry.key].altitude_cnt = 0;
+			return false;
+		}
+
+		const auto delta = abs((int)m_squawkAlt[entry.key].altitude - (int)newAlt);
+		if ((delta < ALT_delta_25ft)) {
+			m_squawkAlt[entry.key].altitude = newAlt;
+			m_squawkAlt[entry.key].altitude_cnt = 1;
+			return true;
+		}
+
+		if (m_squawkAlt[entry.key].altitude_cnt == 1) {
+			m_squawkAlt[entry.key].altitude_cnt = 0;
+			return false;
+		}
+
+		if (m_squawkAlt[entry.key].altitude_cnt == 0) {
+			m_squawkAlt[entry.key].altitude = 0;
+			return false;
+		}
+		return false;
+	}
 private:
 	void doTickForEntry(uint16_t index) {
 		auto& entry = m_table[index];
@@ -119,10 +174,17 @@ private:
 		if (entry.ttl > 0) {
 			entry.ttl--;
 		} else {
-			entry.trusted = 0x0;
-			entry.ttl_trusted = 0;
-			entry.icao = 0x0;			
+			doResetEntry(index);	
 		}
+	}
+
+	void doResetEntry(uint16_t index) {
+		auto& entry = m_table[index];
+		entry.trusted = 0x0;
+		entry.ttl_trusted = 0;
+		entry.icao = 0x0;
+
+		m_squawkAlt[index] = SquawkAlt{0, 0, 0, 0};
 	}
 
 	
@@ -131,4 +193,7 @@ private:
 
     // the table with the icao addresses including transponder CA 
 	std::unique_ptr<Entry[]> m_table;
+
+	// the table with the icao addresses including transponder CA 
+	std::unique_ptr<SquawkAlt[]> m_squawkAlt;
 };
