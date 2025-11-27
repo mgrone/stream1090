@@ -10,7 +10,7 @@
 #include <unistd.h>
 #include "SampleStream.hpp"
 
-#define STREAM1090_VERSION "251124"
+#define STREAM1090_VERSION "251127"
 
 #if !defined(COMPILER_INPUT_SAMPLE_RATE)
     #define COMPILER_INPUT_SAMPLE_RATE 0
