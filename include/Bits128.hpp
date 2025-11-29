@@ -34,6 +34,10 @@ public:
 	}
 
 	constexpr void shiftLeft(int i) {
+		if (i <= 0) {
+			return;
+		}
+
 		if (i < 64) {
 			m_bits[1] = (m_bits[1] << i) | (m_bits[0] >> (64 - i));
 			m_bits[0] <<= i;
@@ -45,6 +49,10 @@ public:
 	}
 
 	constexpr void shiftRight(int i) {
+		if (i <= 0) {
+			return;
+		}
+		
 		if (i < 64) {
 			m_bits[0] = (m_bits[0] >> i) | (m_bits[1] << (64 - i));
 			m_bits[1] >>= i;
