@@ -13,7 +13,8 @@ situations, a higher overall message rate can be achieved compared to a preamble
    
 ## Hardware requirements
 - RTL-based SDR dongle or airspy with antenna etc. (different formats and input sampling speeds are available. See below.)
-- Optional: RaspberryPi 5 or 4 (3B seems to work with rtl-based dongles).
+- Optional: RaspberryPi 5 or 4
+- Optional: For rtl_sdr (not airspy), a RaspberryPi 3B and Zero 2 W works without cooling.
 
 # Installation
 Stream1090 is written in C++ and self-contained. You will need cmake (3.10 or higher) and some C++ compiler that supports C++20.
