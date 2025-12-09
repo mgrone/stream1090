@@ -13,7 +13,7 @@ class ICAOTable {
 public:
 	static constexpr auto TTL_not_trusted { 10 };
 	static constexpr auto TTL_trusted { 30 };
-	static constexpr auto ALT_delta_25ft { 80 };
+	static constexpr auto ALT_delta_25ft { 40 };
     // number if bits used for the look up table 
 	static constexpr auto NumBits { 16 };
 
@@ -25,11 +25,8 @@ public:
   
     // icao address entry
     struct Entry {
-        // flag indicating if we trust the address or not (with some padding)
-		// this will be removed in the future.
-        uint32_t trusted : 5;
         // icao address together with the transponder capabilities
-        uint32_t icao : 27;
+        uint32_t icao;
 
 		// time to live for an untrusted entry
 		uint16_t ttl;
@@ -67,7 +64,7 @@ public:
 
 	ICAOTable() {
 		m_table = std::make_unique<Entry[]>(Size);
-		std::fill(m_table.get(), m_table.get() + Size, Entry{0x0, 0x0, 0, 0});
+		std::fill(m_table.get(), m_table.get() + Size, Entry{0x0, 0, 0});
 
 		m_squawkAlt = std::make_unique<SquawkAlt[]>(Size);
 		std::fill(m_squawkAlt.get(), m_squawkAlt.get() + Size, SquawkAlt{0, 0, 0, 0});
@@ -75,8 +72,8 @@ public:
 
 	Iterator insertWithCA(uint32_t icaoWithCA) {
 		const auto key = icaoWithCA & HashMask; 
+		doResetEntry(key);
 		m_table[key].icao = icaoWithCA;
-		m_table[key].trusted = 0x0;
 		return Iterator(key);
 	}
 
@@ -121,6 +118,10 @@ public:
 	}
 
 	bool checkSquawk(const Iterator& entry, uint16_t newSquawk) {
+		if (newSquawk == 0) {
+			return false;
+		}
+
 		if (m_squawkAlt[entry.key].squawk == newSquawk) {
 			m_squawkAlt[entry.key].squawk_cnt = 1;
 			return true;
@@ -135,6 +136,10 @@ public:
 	}
 
 	bool checkAltitude(const Iterator& entry, uint16_t newAlt) {
+		if (newAlt == 0) {
+			return false;
+		}
+
 		if (m_squawkAlt[entry.key].altitude == 0) {
 			m_squawkAlt[entry.key].altitude = newAlt;
 			m_squawkAlt[entry.key].altitude_cnt = 0;
@@ -167,8 +172,6 @@ private:
 
 		if (entry.ttl_trusted > 0) {
 			entry.ttl_trusted--;
-		} else {			
-			entry.trusted = 0x0;
 		}
 
 		if (entry.ttl > 0) {
@@ -180,10 +183,9 @@ private:
 
 	void doResetEntry(uint16_t index) {
 		auto& entry = m_table[index];
-		entry.trusted = 0x0;
-		entry.ttl_trusted = 0;
 		entry.icao = 0x0;
-
+		entry.ttl_trusted = 0;
+		entry.ttl = 0;
 		m_squawkAlt[index] = SquawkAlt{0, 0, 0, 0};
 	}
 

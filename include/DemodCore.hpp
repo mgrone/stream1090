@@ -42,11 +42,15 @@ public:
 			const auto alt = ModeS::convertToFeet( ModeS::extractSquawkAlt_Long(frame));
 			if (!((alt > 0) && m_cache.checkAltitude(it, alt))) {	
 				return false;
+			} else {
+				m_cache.markAsSeen(it);
 			}
 		}
 		
 		if ((downlinkFormat == 21) && !m_cache.checkSquawk(it, ModeS::extractSquawkAlt_Long(frame))) {
 			return false;
+		} else {
+			m_cache.markAsSeen(it);
 		}
 		
 		logStatsSent(downlinkFormat);
@@ -72,14 +76,17 @@ public:
 			const auto alt = ModeS::convertToFeet( ModeS::extractSquawkAlt_Short(frameShort));
 			if (!((alt > 0) && m_cache.checkAltitude(it, alt))) {
 				return false;
+			} else {
+				m_cache.markAsSeen(it);
 			}
 		}
 
 		if ((downlinkFormat == 5) && !m_cache.checkSquawk(it, ModeS::extractSquawkAlt_Short(frameShort))) {
 			return false;
+		} else {
+			m_cache.markAsSeen(it);
 		}
 		
-
 		logStatsSent(downlinkFormat);
 		m_prevFrameShortSent = frameShort;
 		m_prevTimeShortSent = m_currTime;
@@ -333,14 +340,16 @@ public:
 
 	/// @brief Helper function for all-call replies (DF11) with a crc of zero. Either received correctly or repaired with 1-bit error correction
 	/// @return returns true if a message has been send to the output
-	bool handleDF11ShortMessageWithZeroCRC(const uint64_t& frameShort) {
+	bool handleDF11ShortMessageWithZeroCRC(const uint64_t& frameShort, bool repaired) {
 		const auto icaoWithCA = ModeS::extractICAOWithCA_Short(frameShort);
 		const auto e = m_cache.findWithCA(icaoWithCA);
 		
 		// if the plane is not in table,
 		if (!e.isValid()) {
 			// put it there.
-			m_cache.markAsSeen(m_cache.insertWithCA(icaoWithCA));
+			if (!repaired) {
+				m_cache.insertWithCA(icaoWithCA);
+			}
 			// we stop here and do not send the message
 			return false;
 		}
@@ -368,7 +377,7 @@ public:
 	
 		if (crc == 0) {
 			logStats(Stats::DF11_ICAO_CA_FOUND_GOOD_CRC);
-			return handleDF11ShortMessageWithZeroCRC(frameShort);
+			return handleDF11ShortMessageWithZeroCRC(frameShort, false);
 		} else  {
 			// ask the 1 bit error correction table for short messages for help
 			const auto fix_op = CRC::df11ErrorTable.lookup(crc);
@@ -378,7 +387,7 @@ public:
 				CRC::applyFixOp(fix_op, frameShort, 0);
 				logStats(Stats::DF11_ICAO_CA_FOUND_1_BIT_FIX);
 				// we are good now and proceed as with the normal zero crc case
-				return handleDF11ShortMessageWithZeroCRC(frameShort);
+				return handleDF11ShortMessageWithZeroCRC(frameShort, true);
 			} else {
 				// the crc is not good and no repairs with the error table. We do now a dirty trick here.
 				// get the address including the CA field

@@ -19,7 +19,8 @@
 // The input format for the sample stream
 enum SampleStreamInputFormat {
     IQ_RTL_SDR, // the default output of from rtl_sdr
-    IQ_AIRSPY_RX, // the default output of airspy_rx 
+    IQ_AIRSPY_RX, // the default output of airspy_rx
+    IQ_AIRSPY_RX_RAW, // the raw output of airspy_rx 
     MAG_FLOAT32, // for custom input when you want to read the magnitude as float directly
 };
 
@@ -55,6 +56,44 @@ public:
         }
     }
 private:
+    std::unique_ptr<uint16_t[]> m_inputBuffer;
+};
+
+
+// Partial specialization for airspy uint32 RAW input
+template<typename Sampler>
+class InputReader<Sampler, IQ_AIRSPY_RX_RAW> {
+    public:
+    // default constructor
+    InputReader() {
+        // we will need a buffer that holds Sampler::InputBufferSize many IQ pairs.
+        // Each pair consists of two 16-bit signed ints
+        m_inputBuffer = std::make_unique<uint16_t[]>(Sampler::InputBufferSize << 1);
+    }
+
+    void readMagnitude(std::istream& inputStream, float* out) {
+        // Sampler::InputBufferSize * 2 many 16 bit ints from the input stream
+        inputStream.read(reinterpret_cast<char*>(m_inputBuffer.get()), (Sampler::InputBufferSize) * sizeof(int16_t) * 2);
+
+        // call the helper function to compute the magnitude
+        computeMagnitude(m_inputBuffer.get(), out, Sampler::InputBufferSize);
+    }
+    
+    private:
+
+    void computeMagnitude(uint16_t* iq_single, float* out, size_t num) {
+        for (size_t i = 0; i < num; i++) {
+            // convert two 16-bit unsigned integers to float.
+            // however, airspy does not use the full 16 bits.
+            // only the lower 12 bits for each I and Q are used.
+            const float f_i = ((float)(*iq_single++) - 2047.5f) / 2047.5f;
+			const float f_q = ((float)(*iq_single++) - 2047.5f) / 2047.5f;
+			const float sq = f_i * f_i + f_q * f_q;
+            out[i] = sqrtf(sq); 
+        }
+    }
+
+    // input buffer holding Sampler::InputBufferSize * 2 many ints
     std::unique_ptr<uint16_t[]> m_inputBuffer;
 };
 
