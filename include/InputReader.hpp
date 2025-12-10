@@ -124,8 +124,8 @@ class InputReader<Sampler, IQ_AIRSPY_RX> {
             // convert the two 16-bit integers to float.
             // however, airspy does not use the full 16 bits.
             // only 12 bits for each I and Q are used.
-            const float f_i = (float)(*iq_single++) / 2048.0f;
-			const float f_q = (float)(*iq_single++) / 2048.0f;
+            const float f_i = ((float)(*iq_single++) + 0.5f) / 2047.5f;
+			const float f_q = ((float)(*iq_single++) + 0.5f) / 2047.5f;
 			const float sq = f_i * f_i + f_q * f_q;
             out[i] = sqrtf(sq); 
         }
