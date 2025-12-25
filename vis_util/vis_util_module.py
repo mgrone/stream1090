@@ -1,17 +1,18 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.patches import Patch
-from matplotlib.lines import Line2D
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Optional, List, Tuple
 
 
 # ============================================================
-#  Constants
+#  Constants (µs-based)
 # ============================================================
 
-TS_OFFSET_12MHZ = -1625 #-1632 #-1627.5          # AVR timestamp is 128 us too late
-CLK_12MHZ = 12_000_000.0         # timestamp clock
+TS_OFFSET_12MHZ = -1626
+CLK_12MHZ = 12_000_000.0  # Hz
+
+# 1 tick = 1 / 12 µs
+# t_msg_us = ts12_corrected / 12.0
 
 
 # ============================================================
@@ -30,23 +31,26 @@ class SampleFormat:
 class SampleStream:
     filename: str
     fs: float                     # complex sample rate in Hz
-    ts12_start: int               # timestamp of first sample (12 MHz ticks)
     fmt: SampleFormat
     memmap: np.memmap             # uint16 words: [I0, Q0, I1, Q1, ...]
 
 
 @dataclass
 class AdsbMessage:
-    ts12_raw: int                 # raw timestamp from AVR
-    ts12_corrected: int           # corrected timestamp
-    hexmsg: str                   # ADS-B hex payload
+    ts12_raw: int
+    ts12_corrected: int
+    hexmsg: str
+    t_msg_us: float               # absolute message time (preamble start) in µs
 
 
 # ============================================================
-#  AVR Parsing
+#  AVR Parsing → Message Time in µs
 # ============================================================
 
 def parse_avr_line(line: str) -> Optional[AdsbMessage]:
+    """
+    Parse a single AVR line into an AdsbMessage with t_msg_us in µs.
+    """
     line = line.strip()
     if not line.startswith("@") or not line.endswith(";"):
         return None
@@ -58,11 +62,23 @@ def parse_avr_line(line: str) -> Optional[AdsbMessage]:
     ts12_raw = int(ts_hex, 16)
     ts12_corrected = ts12_raw + TS_OFFSET_12MHZ
 
-    return AdsbMessage(ts12_raw, ts12_corrected, hexmsg)
+    # t_msg_us = ts12_corrected / 12.0  (since 12 MHz → 12 ticks per µs)
+    t_msg_us = ts12_corrected / 12.0
+
+    return AdsbMessage(ts12_raw, ts12_corrected, hexmsg, t_msg_us)
+
+
+def parse_avr_lines(lines: List[str]) -> List[AdsbMessage]:
+    msgs: List[AdsbMessage] = []
+    for line in lines:
+        m = parse_avr_line(line)
+        if m is not None:
+            msgs.append(m)
+    return msgs
 
 
 # ============================================================
-#  Hex → Bits
+#  Hex → Bits and durations
 # ============================================================
 
 def hex_to_bits(hexmsg: str) -> np.ndarray:
@@ -77,13 +93,15 @@ def hex_to_bits(hexmsg: str) -> np.ndarray:
     return bits
 
 
-def compute_message_window_us(bits: np.ndarray) -> float:
-    """Core window (no margins): preamble (8 us) + message bits (56 or 112 us)."""
+def compute_message_core_duration_us(bits: np.ndarray) -> float:
+    """
+    Core duration in µs: preamble (8 µs) + message bits (56 or 112 µs).
+    """
     preamble_us = 8.0
     num_bits = len(bits)
     if num_bits not in (56, 112):
         raise ValueError(f"Unexpected ADS-B message length: {num_bits} bits")
-    return preamble_us + num_bits
+    return preamble_us + float(num_bits)
 
 
 # ============================================================
@@ -92,75 +110,23 @@ def compute_message_window_us(bits: np.ndarray) -> float:
 
 def load_sample_stream(filename: str,
                        fs: float,
-                       ts12_start: int,
                        fmt: SampleFormat) -> SampleStream:
+    """
+    Load a sample stream from a file as a memmap of words.
+    All streams are assumed to start at time t = 0 (physical time).
+    """
     mm = np.memmap(filename, dtype=fmt.dtype, mode="r")
-    return SampleStream(filename, fs, ts12_start, fmt, mm)
+    return SampleStream(filename, fs, fmt, mm)
 
 
 # ============================================================
-#  Timestamp → Complex Sample Index
+#  IQ Reconstruction and Magnitude
 # ============================================================
 
-def ts12_to_sample_float(ts12: int, stream: SampleStream) -> float:
-    """Return fractional complex-sample index."""
-    return (ts12 - stream.ts12_start) * (stream.fs / CLK_12MHZ)
-
-
-# ============================================================
-#  Window Extraction (even-aligned)
-# ============================================================
-
-def extract_window(stream: SampleStream,
-                   center_complex: float,
-                   window_us: float,
-                   pre_margin_us: float = 20.0,
-                   post_margin_us: float = 20.0):
+def reconstruct_iq(raw: np.ndarray, fmt: SampleFormat) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Extract a window around a fractional complex sample index with margins.
-    Returns (raw_window_words, start_word_index, start_complex_effective).
+    Convert raw interleaved IQ samples into float32 I/Q arrays in [-1, +1].
     """
-
-    window_c = stream.fs * (window_us * 1e-6)
-    pre_c    = stream.fs * (pre_margin_us * 1e-6)
-    post_c   = stream.fs * (post_margin_us * 1e-6)
-
-    # Continuous complex indices
-    start_c = center_complex - pre_c
-    end_c   = center_complex + window_c + post_c
-
-    # Continuous → integer word indices (2 words per complex sample)
-    start_w = int(np.floor(2.0 * start_c))
-    end_w   = int(np.ceil(2.0 * end_c))
-
-    # Enforce even alignment (I/Q pairs)
-    if start_w % 2 != 0:
-        start_w -= 1
-    if end_w % 2 != 0:
-        end_w += 1
-
-    # Clamp
-    start_w = max(start_w, 0)
-    end_w   = min(end_w, len(stream.memmap))
-
-    raw_window = stream.memmap[start_w:end_w]
-
-    # Effective complex index of the first I in the window
-    start_c_effective = start_w / 2.0
-
-    return raw_window, start_w, start_c_effective
-
-
-
-# ============================================================
-#  IQ Reconstruction
-# ============================================================
-def reconstruct_iq(raw: np.ndarray, fmt: "SampleFormat"):
-    """
-    Convert raw interleaved IQ samples into float32 I/Q arrays in [-1, +1],
-    using the bit depth specified in SampleFormat.
-    """
-
     if not fmt.is_interleaved_iq:
         raise ValueError("Only interleaved IQ formats are supported")
 
@@ -172,221 +138,370 @@ def reconstruct_iq(raw: np.ndarray, fmt: "SampleFormat"):
     I_raw = raw[0::2]
     Q_raw = raw[1::2]
 
-    # ------------------------------------------------------------
-    # Normalize using fmt.bits
-    # ------------------------------------------------------------
-    max_val = float(1 << (fmt.bits - 1))  # 2^(bits-1)
+    max_val = float(1 << (fmt.bits - 1))
 
     if np.issubdtype(raw.dtype, np.unsignedinteger):
-        # Unsigned → shift to signed range
+        # Unsigned → shift to signed
         offset = max_val
         I = (I_raw.astype(np.float32) - offset) / max_val
         Q = (Q_raw.astype(np.float32) - offset) / max_val
-
     elif np.issubdtype(raw.dtype, np.signedinteger):
-        # Signed → direct normalization
         I = I_raw.astype(np.float32) / max_val
         Q = Q_raw.astype(np.float32) / max_val
-
     else:
         raise ValueError(f"Unsupported dtype in SampleFormat: {fmt.dtype}")
 
     return I, Q
 
 
-# ============================================================
-#  Magnitude
-# ============================================================
-
 def compute_magnitude(I: np.ndarray, Q: np.ndarray) -> np.ndarray:
     return np.sqrt(I*I + Q*Q)
 
-# ============================================================
-#  Bit Centers (purely rax.bar(x, mag1, width=1.0, color="tab:blue", alpha=0.9, zorder=2)elative, margin-aware)
-# ============================================================
-
-def bit_centers_in_samples(bits: np.ndarray,
-                           fs: float,
-                           pre_margin_us: float) -> np.ndarray:
-    """
-    Return bit-center positions in complex-sample indices,
-    relative to the extracted window (same domain as mag1),
-    assuming:
-      - window time axis starts at -pre_margin_us
-      - message (with preamble) starts at t=0
-    """
-
-    num_bits = len(bits)
-    preamble_us = 8.0
-
-    # Time (in us) of bit k center relative to window start:
-    # t = pre_margin + preamble + (k + 0.5) * 1us
-    bit_center_us = (
-        pre_margin_us
-        + preamble_us
-        + (np.arange(num_bits) + 0.5) * 1.0
-    )
-
-    # Convert to complex-sample indices
-    bit_centers = bit_center_us * (fs * 1e-6)
-
-    return bit_centers
-
 
 # ============================================================
-#  Visualization (margin-aware shading + markers)
+#  Global Time Window (covers all messages)
 # ============================================================
 
-def mag_to_dbfs(mag):
-    return 20 * np.log10(mag + 1e-12)
-
-
-def plot_mag_with_bits_single_panel(mag1: np.ndarray,
-                                    bits: np.ndarray,
-                                    fs: float,
-                                    pre_margin_us: float,
-                                    title: str = "ADS-B Diagnostic View"):
+def compute_global_time_window_us(msgs: List[AdsbMessage],
+                                  pre_margin_us: float,
+                                  post_margin_us: float) -> Tuple[float, float]:
     """
-    Single-panel diagnostic plot:
-      - preamble pulses behind magnitude bars
-      - bit spans behind magnitude bars
-      - half-bit boundaries
-      - preamble shading
-      - legend
-      - dBFS y-axis labels
+    Compute a single global time window [t_win_start_us, t_win_end_us]
+    in µs that covers all messages plus margins.
     """
+    if not msgs:
+        raise ValueError("No messages provided")
 
+    t_min_us = min(m.t_msg_us for m in msgs)
+    t_max_us = max(m.t_msg_us for m in msgs)
+
+    # Compute worst-case core duration across messages
+    core_durations_us = []
+    for m in msgs:
+        bits = hex_to_bits(m.hexmsg)
+        core_durations_us.append(compute_message_core_duration_us(bits))
+    core_max_us = max(core_durations_us)
+
+    t_win_start_us = t_min_us - pre_margin_us
+    t_win_end_us = t_max_us + core_max_us + post_margin_us
+
+    return t_win_start_us, t_win_end_us
+
+
+# ============================================================
+#  Per-Stream Extraction for Global Time Window
+# ============================================================
+
+def extract_stream_window_for_time_us(stream: SampleStream,
+                                      t_win_start_us: float,
+                                      t_win_end_us: float) -> Tuple[np.ndarray, np.ndarray, int, int]:
+
+    fs = stream.fs
+
+    if stream.fmt.is_interleaved_iq:
+        n_start = int(np.floor(t_win_start_us * (fs / 1e6)))
+        n_end   = int(np.ceil(t_win_end_us  * (fs / 1e6)))
+
+        total_complex = len(stream.memmap) // 2
+        n_start = max(n_start, 0)
+        n_end   = min(n_end, total_complex)
+
+        start_word = 2 * n_start
+        end_word   = 2 * n_end
+
+        raw_window = stream.memmap[start_word:end_word]
+
+        I, Q = reconstruct_iq(raw_window, stream.fmt)
+        mag1 = compute_magnitude(I, Q)
+
+    else:
+        # Magnitude-only stream
+        n_start = int(np.floor(t_win_start_us * (fs / 1e6)))
+        n_end   = int(np.ceil(t_win_end_us  * (fs / 1e6)))
+
+        total_mag = len(stream.memmap)
+        n_start = max(n_start, 0)
+        n_end   = min(n_end, total_mag)
+
+        raw_window = stream.memmap[n_start:n_end]
+
+        mag1 = raw_window.astype(np.float32)
+
+    # Time axis in µs
+    n = np.arange(n_start, n_end, dtype=np.float64)
+    t_sample_us = n * (1e6 / fs)
+    t_rel_us = t_sample_us - t_win_start_us
+
+    return mag1, t_rel_us, n_start, n_end
+
+
+
+# ============================================================
+#  Plotting Utilities (µs axis)
+# ============================================================
+def mag_to_dbfs(mag: np.ndarray) -> np.ndarray:
+    return 20 * np.log10(np.maximum(mag, 1e-12))
+
+
+def plot_stream_single(
+    t_rel_us: np.ndarray,
+    mag1: np.ndarray,
+    msgs: List[AdsbMessage],
+    t_win_start_us: float,
+    fs: float,
+    title: str
+):
     fig, ax = plt.subplots(figsize=(14, 4))
 
-    x = np.arange(len(mag1))
+    sample_period_us = 1e6 / fs
+    t_centers = t_rel_us + sample_period_us * 0.5
 
-    preamble_us = 8.0
-    message_us  = float(len(bits))
-
-    # Convert to complex-sample counts
-    pre_margin_samples = int(round(fs * pre_margin_us * 1e-6))
-    preamble_samples   = int(round(fs * preamble_us * 1e-6))
-    message_samples    = int(round(fs * message_us * 1e-6))
-
-    preamble_start = pre_margin_samples
-    preamble_end   = preamble_start + preamble_samples
-
-    # ------------------------------------------------------------
-    # PREAMBLE PULSES (drawn behind bars)
-    # ------------------------------------------------------------
-    pulse_times_us = [
-        (0.0, 0.5),
-        (1.0, 1.5),
-        (3.5, 4.0),
-        (4.5, 5.0),
-    ]
-
-    for start_us, end_us in pulse_times_us:
-        xs = (pre_margin_us + start_us) * (fs * 1e-6)
-        xe = (pre_margin_us + end_us)   * (fs * 1e-6)
-        ax.axvspan(xs, xe, color="gray", alpha=0.4, zorder=1)
+    ax.bar(
+        t_centers,
+        mag1,
+        width=sample_period_us,
+        align="center",
+        color="tab:blue",
+        alpha=0.9,
+        zorder=2
+    )
 
     # ------------------------------------------------------------
-    # BIT SPANS (drawn behind bars)
+    # Secondary axis: dBFS labels from linear ticks
     # ------------------------------------------------------------
-    bit_start_us = pre_margin_us + preamble_us + np.arange(len(bits)) * 1.0
-    bit_end_us   = bit_start_us + 1.0
+    ax2 = ax.twinx()
+    ax2.set_ylabel("Magnitude (dBFS)")
 
-    bit_start_samples = bit_start_us * (fs * 1e-6)
-    bit_end_samples   = bit_end_us   * (fs * 1e-6)
-
-    for b, xs, xe in zip(bits, bit_start_samples, bit_end_samples):
-        color = "tab:green" if b == 1 else "tab:red"
-        ax.axvspan(xs, xe, color=color, alpha=0.25, zorder=1)
-
-    # ------------------------------------------------------------
-    # HALF-BIT BOUNDARIES
-    # ------------------------------------------------------------
-    half_bit_us = bit_start_us + 0.5
-    half_bit_samples = half_bit_us * (fs * 1e-6)
-
-    for xb in half_bit_samples:
-        ax.axvline(x=xb, color="black", linestyle="--",
-                   alpha=0.3, linewidth=0.8, zorder=1)
-
-    # ------------------------------------------------------------
-    # PREAMBLE SHADING (behind bars)
-    # ------------------------------------------------------------
-    ax.axvspan(preamble_start, preamble_end,
-               color="lightgray", alpha=0.3, zorder=0)
-
-    # ------------------------------------------------------------
-    # MAGNITUDE BARS (drawn last, on top)
-    # ------------------------------------------------------------
-    ax.bar(x, mag1, width=1.0, color="tab:blue", alpha=0.9,
-           zorder=2, align="edge")
-
-    # ------------------------------------------------------------
-    # dBFS y-axis labels
-    # ------------------------------------------------------------
+    # Get current linear ticks
     yticks = ax.get_yticks()
-    ax.set_yticklabels([f"{mag_to_dbfs(y):.1f}" for y in yticks])
-    ax.set_ylabel("Magnitude (dBFS)")
+
+    # Convert each tick to dBFS
+    dbfs_labels = [f"{mag_to_dbfs(np.array([y]))[0]:.1f}" for y in yticks]
+
+    # Apply to secondary axis
+    ax2.set_yticks(yticks)
+    ax2.set_ylim(ax.get_ylim())
+    ax2.set_yticklabels(dbfs_labels)
 
     # ------------------------------------------------------------
-    # LEGEND
+    # ADS-B overlays
     # ------------------------------------------------------------
-    from matplotlib.patches import Patch
-    from matplotlib.lines import Line2D
+    preamble_us = 8.0
 
-    legend_elements = [
-        Patch(facecolor="tab:blue", edgecolor="none", alpha=0.9, label="Magnitude"),
-        Patch(facecolor="gray", edgecolor="none", alpha=0.4, label="Preamble pulses"),
-        Patch(facecolor="tab:green", edgecolor="none", alpha=0.25, label="Bit = 1"),
-        Patch(facecolor="tab:red", edgecolor="none", alpha=0.25, label="Bit = 0"),
-        Line2D([0], [0], color="black", linestyle="--", alpha=0.3,
-               label="Half-bit boundary"),
-        Patch(facecolor="lightgray", edgecolor="none", alpha=0.3, label="Preamble region"),
-    ]
+    for m in msgs:
+        bits = hex_to_bits(m.hexmsg)
+        num_bits = len(bits)
+        t_msg_rel_us = m.t_msg_us - t_win_start_us
 
-    ax.legend(handles=legend_elements, loc="upper right")
+        pulses = [(0.0, 0.5), (1.0, 1.5), (3.5, 4.0), (4.5, 5.0)]
+        for s, e in pulses:
+            ax.axvspan(t_msg_rel_us + s, t_msg_rel_us + e,
+                       color="gray", alpha=0.3, zorder=1)
+
+        bit_start_us = t_msg_rel_us + preamble_us + np.arange(num_bits)
+        bit_end_us   = bit_start_us + 1.0
+
+        for b, xs, xe in zip(bits, bit_start_us, bit_end_us):
+            color = "tab:green" if b == 1 else "tab:red"
+            ax.axvspan(xs, xe, color=color, alpha=0.25, zorder=1)
+
+        for xb in (bit_start_us + 0.5):
+            ax.axvline(x=xb, color="black", linestyle="--",
+                       alpha=0.3, linewidth=0.6, zorder=1)
 
     # ------------------------------------------------------------
-    # Final formatting
+    # Labels and layout
     # ------------------------------------------------------------
+    ax.set_xlabel("Time relative to global window start (µs)")
+    ax.set_ylabel("Magnitude (linear)")
     ax.set_title(title)
-    ax.set_xlabel("Sample index (relative window)")
     ax.grid(True, axis="y", alpha=0.3)
 
     plt.tight_layout()
     plt.show()
 
 
+def plot_streams_overlay(
+    streams_mag_and_time: List[Tuple[str, np.ndarray, np.ndarray, float]],
+    msgs: List[AdsbMessage],
+    t_win_start_us: float,
+    title: str = "ADS-B Multi-Stream Overlay (µs axis)"
+):
+    """
+    Multi-stream overlay plot:
+      - Each stream plotted as bars (linear magnitude)
+      - Bars centered on sample times
+      - Primary y-axis: linear magnitude
+      - Secondary y-axis: dBFS (derived from linear ticks)
+      - ADS-B overlays (preamble, bits, half-bits)
+    """
+
+    fig, ax = plt.subplots(figsize=(14, 4))
+
+    # ------------------------------------------------------------
+    # Plot each stream as a line plot
+    # ------------------------------------------------------------
+    for label, mag1, t_rel_us, fs in streams_mag_and_time:
+        sample_period_us = 1e6 / fs
+        t_centers = t_rel_us + sample_period_us * 0.5
+
+        ax.plot(
+            t_centers,
+            mag1,
+            linewidth=1.0,
+            alpha=0.9,
+            label=label,
+            zorder=2
+        )
+
+
+    # ------------------------------------------------------------
+    # Secondary axis: dBFS labels derived from linear ticks
+    # ------------------------------------------------------------
+    ax2 = ax.twinx()
+    ax2.set_ylabel("Magnitude (dBFS)")
+
+    # Match y-limits exactly
+    ax2.set_ylim(ax.get_ylim())
+
+    # Convert linear ticks → dBFS labels
+    yticks = ax.get_yticks()
+    dbfs_labels = [f"{mag_to_dbfs(np.array([y]))[0]:.1f}" for y in yticks]
+
+    ax2.set_yticks(yticks)
+    ax2.set_yticklabels(dbfs_labels)
+
+    # ------------------------------------------------------------
+    # ADS-B overlays
+    # ------------------------------------------------------------
+    preamble_us = 8.0
+
+    for m in msgs:
+        bits = hex_to_bits(m.hexmsg)
+        num_bits = len(bits)
+
+        t_msg_rel_us = m.t_msg_us - t_win_start_us
+
+        # Preamble pulses
+        pulses = [(0.0, 0.5), (1.0, 1.5), (3.5, 4.0), (4.5, 5.0)]
+        for start_us, end_us in pulses:
+            ax.axvspan(
+                t_msg_rel_us + start_us,
+                t_msg_rel_us + end_us,
+                color="gray",
+                alpha=0.15,
+                zorder=1
+            )
+
+        # Bit spans
+        bit_start_us = t_msg_rel_us + preamble_us + np.arange(num_bits)
+        bit_end_us   = bit_start_us + 1.0
+
+        for b, xs, xe in zip(bits, bit_start_us, bit_end_us):
+            color = "tab:green" if b == 1 else "tab:red"
+            ax.axvspan(xs, xe, color=color, alpha=0.15, zorder=1)
+
+        # Half-bit boundaries
+        for xb in (bit_start_us + 0.5):
+            ax.axvline(
+                x=xb,
+                color="black",
+                linestyle="--",
+                alpha=0.25,
+                linewidth=0.5,
+                zorder=1
+            )
+
+    # ------------------------------------------------------------
+    # Labels, legend, layout
+    # ------------------------------------------------------------
+    ax.set_xlabel("Time relative to global window start (µs)")
+    ax.set_ylabel("Magnitude (linear)")
+    ax.set_title(title)
+    ax.grid(True, axis="y", alpha=0.3)
+    ax.legend(loc="upper right")
+
+    plt.tight_layout()
+    plt.show()
+
+
+
 # ============================================================
-#  High-Level Workflow
+#  High-Level Workflow / Example Usage
 # ============================================================
 
-def inspect_message(stream: SampleStream,
-                    msg: AdsbMessage,
-                    pre_margin_us: float = 20.0,
-                    post_margin_us: float = 20.0):
+if __name__ == "__main__":
+    # --------------------------------------------------------
+    # Example: two streams of the same capture
+    #   - original 10 MHz
+    #   - upsampled 24 MHz (or any other)
+    # --------------------------------------------------------
 
-    bits = hex_to_bits(msg.hexmsg)
-    window_us = compute_message_window_us(bits)
+    # Example AVR lines (you'll replace these with real data)
+    avr_lines = [
+        "@000006182b6e5d3c84819cf8ca;",
+        "@0000061832fc5d4868034df541;",
+        "@0000061836345d40803e167a4d;",
+        "@0000061840905d4cae65d9778e;",
+        #"@000002a12f4c5d4cabdbe93fe7;",
+        #"@000002a138758d4d22c358a584c4d5b10c6d2a4a;",
+    ]
 
-    center_complex = ts12_to_sample_float(msg.ts12_corrected, stream)
+    msgs = parse_avr_lines(avr_lines)
+    if not msgs:
+        raise RuntimeError("No valid AVR messages parsed")
 
-    raw_window, start_w, start_c = extract_window(
-        stream,
-        center_complex=center_complex,
-        window_us=window_us,
+    # Define sample formats
+    fmt_u12 = SampleFormat(
+        name="RAW_U12_IN_U16_IQ",
+        dtype="int16",
+        is_interleaved_iq=True,
+        bits=16
+    )
+
+    # Streams (replace filenames and fs as needed)
+    streams: List[SampleStream] = [
+        load_sample_stream("../../samples/wh_6msps.bin", 6_000_000.0, fmt_u12),
+        #load_sample_stream("../samples/capture_10MHz.bin", 10_000_000.0, fmt_u12),
+        #load_sample_stream("../samples/capture_24MHz.bin", 24_000_000.0, fmt_u12),
+    ]
+
+    pre_margin_us = 20.0
+    post_margin_us = 20.0
+
+    # Global time window covering all messages (µs)
+    t_win_start_us, t_win_end_us = compute_global_time_window_us(
+        msgs,
         pre_margin_us=pre_margin_us,
         post_margin_us=post_margin_us
     )
 
-    I, Q = reconstruct_iq(raw_window, stream.fmt)
-    mag1 = compute_magnitude(I, Q)
-    
-    # Bit centers purely from relative timing
-    bit_centers = bit_centers_in_samples(
-        bits=bits,
-        fs=stream.fs,
-        pre_margin_us=pre_margin_us
-    )
+    # Per-stream extraction + per-stream plot
+    streams_mag_and_time: List[Tuple[str, np.ndarray, np.ndarray]] = []
 
-    return I, Q, mag1, bits, bit_centers, pre_margin_us
+    for stream in streams:
+        mag1, t_rel_us, n_start, n_end = extract_stream_window_for_time_us(
+            stream,
+            t_win_start_us=t_win_start_us,
+            t_win_end_us=t_win_end_us
+        )
+
+        label = f"{stream.filename} (fs={stream.fs/1e6:.1f} MHz)"
+        streams_mag_and_time.append((label, mag1, t_rel_us))
+
+        plot_stream_single(
+            t_rel_us=t_rel_us,
+            mag1=mag1,
+            msgs=msgs,
+            t_win_start_us=t_win_start_us,
+            fs=stream.fs,
+            title=f"Single Stream: {label}"
+        )
+
+    # Combined overlay plot for all streams
+    plot_streams_overlay(
+        streams_mag_and_time=streams_mag_and_time,
+        msgs=msgs,
+        t_win_start_us=t_win_start_us,
+        title="ADS-B Multi-Stream Overlay (µs axis)"
+    )
