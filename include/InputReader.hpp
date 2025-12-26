@@ -20,7 +20,8 @@
 enum SampleStreamInputFormat {
     IQ_RTL_SDR, // the default output of from rtl_sdr
     IQ_AIRSPY_RX, // the default output of airspy_rx
-    IQ_AIRSPY_RX_RAW, // the raw output of airspy_rx 
+    IQ_AIRSPY_RX_RAW, // the raw output of airspy_rx
+    IQ_AIRSPY_RX_RAW_INTER, // raw output interleaved airspy (unused)
     MAG_FLOAT32, // for custom input when you want to read the magnitude as float directly
 };
 
@@ -33,7 +34,6 @@ class InputReader {
     InputReader();
     void readMagnitude(std::istream& inputStream, float* out);
 };
-
 
 // Partial specialization for rtl_sdr input
 template<typename Sampler>
@@ -57,7 +57,8 @@ public:
     }
 private:
     std::unique_ptr<uint16_t[]> m_inputBuffer;
-};
+}; 
+
 
 
 // Partial specialization for airspy uint32 RAW input
@@ -69,6 +70,8 @@ class InputReader<Sampler, IQ_AIRSPY_RX_RAW> {
         // we will need a buffer that holds Sampler::InputBufferSize many IQ pairs.
         // Each pair consists of two 16-bit signed ints
         m_inputBuffer = std::make_unique<uint16_t[]>(Sampler::InputBufferSize << 1);
+        // reset the average for DC removal
+        m_avg = 0.0;
     }
 
     void readMagnitude(std::istream& inputStream, float* out) {
@@ -82,21 +85,72 @@ class InputReader<Sampler, IQ_AIRSPY_RX_RAW> {
     private:
 
     void computeMagnitude(uint16_t* iq_single, float* out, size_t num) {
+        const float scale = 0.5f / (float)num;
         for (size_t i = 0; i < num; i++) {
             // convert two 16-bit unsigned integers to float.
             // however, airspy does not use the full 16 bits.
             // only the lower 12 bits for each I and Q are used.
-            const float f_i = ((float)(*iq_single++) - 2047.5f) / 2047.5f;
-			const float f_q = ((float)(*iq_single++) - 2047.5f) / 2047.5f;
+            const float f_i = ((float)(*iq_single++) - 2047.5f) / 2047.5f - m_avg;
+            m_avg += f_i * scale;
+            const float f_q = ((float)(*iq_single++) - 2047.5f) / 2047.5f - m_avg;
+            m_avg += f_q * scale;
 			const float sq = f_i * f_i + f_q * f_q;
-            out[i] = sqrtf(sq); 
+            out[i] = sqrtf(sq);
         }
     }
 
+    float m_avg;
     // input buffer holding Sampler::InputBufferSize * 2 many ints
     std::unique_ptr<uint16_t[]> m_inputBuffer;
-};
+}; 
 
+// Partial specialization for airspy uint32 RAW input
+template<typename Sampler>
+class InputReader<Sampler, IQ_AIRSPY_RX_RAW_INTER> {
+    public:
+    // default constructor
+    InputReader() {
+        // we will need a buffer that holds Sampler::InputBufferSize many IQ pairs.
+        // Each pair consists of two 16-bit signed ints
+        m_inputBuffer = std::make_unique<uint16_t[]>(Sampler::InputBufferSize);
+        m_avg = 0.0;
+        m_I_sq = 0.0;
+        m_last_mag = 0.0;
+    }
+
+    void readMagnitude(std::istream& inputStream, float* out) {
+        // Sampler::InputBufferSize * 2 many 16 bit ints from the input stream
+        inputStream.read(reinterpret_cast<char*>(m_inputBuffer.get()), (Sampler::InputBufferSize) * sizeof(int16_t));
+
+        // call the helper function to compute the magnitude
+        computeMagnitude(m_inputBuffer.get(), out, Sampler::InputBufferSize);
+    }
+    
+    private:
+
+    void computeMagnitude(uint16_t* iq_single, float* out, size_t num) {
+        const float scale = 0.5f / (float)num;
+        for (size_t i = 0; i < num; i++) {
+            // convert two 16-bit unsigned integers to float.
+            // however, airspy does not use the full 16 bits.
+            // only the lower 12 bits for each I and Q are used.
+            const float f_q = ((float)(*iq_single++) - 2047.5f) / 2047.5f - m_avg;
+            m_avg += f_q * scale;
+            const float f_Q_sq = f_q * f_q;
+			const float sq = m_I_sq + f_Q_sq;
+            const float mag = sqrtf(sq);
+            out[i] = mag + m_last_mag;
+            m_I_sq = f_Q_sq;
+            m_last_mag = mag;
+        }
+    }
+
+    float m_avg;
+    float m_I_sq;
+    float m_last_mag;
+    // input buffer holding Sampler::InputBufferSize * 2 many ints
+    std::unique_ptr<uint16_t[]> m_inputBuffer;
+}; 
 
 // Partial specialization for airspy int16 IQ input
 template<typename Sampler>

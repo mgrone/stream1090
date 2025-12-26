@@ -13,7 +13,7 @@ class ICAOTable {
 public:
 	static constexpr auto TTL_not_trusted { 10 };
 	static constexpr auto TTL_trusted { 30 };
-	static constexpr auto ALT_delta_25ft { 40 };
+	static constexpr auto ALT_delta_25ft { 80 };
     // number if bits used for the look up table 
 	static constexpr auto NumBits { 16 };
 

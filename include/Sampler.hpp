@@ -55,6 +55,9 @@ typedef SamplerBase<Rate_6_0_Mhz, Rate_24_0_Mhz> Sampler_6_0_to_24_0_Mhz;
 typedef SamplerBase<Rate_10_0_Mhz, Rate_20_0_Mhz> Sampler_10_0_to_20_0_Mhz;
 typedef SamplerBase<Rate_10_0_Mhz, Rate_24_0_Mhz> Sampler_10_0_to_24_0_Mhz;
 
+// 12 Mhz upsampler
+typedef SamplerBase<Rate_12_0_Mhz, Rate_24_0_Mhz> Sampler_12_0_to_24_0_Mhz;
+
 // test sampler
 typedef SamplerBase<Rate_3_0_Mhz, Rate_6_0_Mhz> Sampler_3_0_to_6_0_Mhz;
 
@@ -277,16 +280,12 @@ constexpr void SamplerBase<Rate_10_0_Mhz, Rate_20_0_Mhz>::sample(float* in, floa
 template<>
 constexpr void SamplerBase<Rate_10_0_Mhz, Rate_24_0_Mhz>::sample(float* in, float* out, size_t numBlocks) {
     for (size_t i = 0; i < numBlocks; i++) {
-            //  |00|11|
-            //  +-----------------+
-            //  |00|..|
-            //  |.1|1.|
             for (int j = 0; j < 12; j++) {
                 const auto offset = 5 * j;
                 const auto k = offset / 12;
-                const auto l = 12 - (offset % 12);
-                const auto r = 12 - l;
-                out[j] = ((float)l * in[k] + (float)r * in[k+1]) * (1.0f / 12.0f); 
+                const auto l = 9 - (offset % 10);
+                const auto r = 9 - l;
+                out[j] = ((float)l * in[k] + (float)r * in[k+1]) * (1.0f / 9.0f);
             }
             in += 5;
             out += 12;

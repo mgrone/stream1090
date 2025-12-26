@@ -247,6 +247,8 @@ public:
 				}
 			} else {
 				m_cache.markAsTrustedSeen(m_cache.insertWithCA(icaoWithCA));
+				// and send the 112 bit message to the output
+				return sendFrameLongAligned(downlinkFormat, crc, frame, e);
 			}	
 		} else {
 			// the crc is not zero, so we might have a broken message
@@ -275,6 +277,8 @@ public:
 					// and keep the trusted entry alive
 					m_cache.markAsTrustedSeen(e);
 					// send the 112 bit message to the output
+					return sendFrameLongAligned(downlinkFormat, crc, toRepair, e);
+				} else {
 					return sendFrameLongAligned(downlinkFormat, crc, toRepair, e);
 				}				
 			}
