@@ -165,25 +165,25 @@ def compute_magnitude(I: np.ndarray, Q: np.ndarray) -> np.ndarray:
 def compute_global_time_window_us(msgs: List[AdsbMessage],
                                   pre_margin_us: float,
                                   post_margin_us: float) -> Tuple[float, float]:
-    """
-    Compute a single global time window [t_win_start_us, t_win_end_us]
-    in µs that covers all messages plus margins.
-    """
+
     if not msgs:
         raise ValueError("No messages provided")
 
+    # Earliest preamble start
     t_min_us = min(m.t_msg_us for m in msgs)
-    t_max_us = max(m.t_msg_us for m in msgs)
 
-    # Compute worst-case core duration across messages
-    core_durations_us = []
+    # Compute actual end time of each message
+    t_end_list = []
     for m in msgs:
         bits = hex_to_bits(m.hexmsg)
-        core_durations_us.append(compute_message_core_duration_us(bits))
-    core_max_us = max(core_durations_us)
+        duration_us = compute_message_core_duration_us(bits)
+        t_end_list.append(m.t_msg_us + duration_us)
+
+    # Latest actual end time
+    t_max_end_us = max(t_end_list)
 
     t_win_start_us = t_min_us - pre_margin_us
-    t_win_end_us = t_max_us + core_max_us + post_margin_us
+    t_win_end_us   = t_max_end_us + post_margin_us
 
     return t_win_start_us, t_win_end_us
 
@@ -243,14 +243,7 @@ def mag_to_dbfs(mag: np.ndarray) -> np.ndarray:
     return 20 * np.log10(np.maximum(mag, 1e-12))
 
 
-def plot_stream_single(
-    t_rel_us: np.ndarray,
-    mag1: np.ndarray,
-    msgs: List[AdsbMessage],
-    t_win_start_us: float,
-    fs: float,
-    title: str
-):
+def plot_stream_single(t_rel_us, mag1, msgs, t_win_start_us, fs, title, save_path=None):
     fig, ax = plt.subplots(figsize=(14, 4))
 
     sample_period_us = 1e6 / fs
@@ -318,15 +311,14 @@ def plot_stream_single(
     ax.grid(True, axis="y", alpha=0.3)
 
     plt.tight_layout()
-    plt.show()
+    if save_path:
+        plt.savefig(save_path, dpi=150)
+    else:
+        plt.show()
 
 
-def plot_streams_overlay(
-    streams_mag_and_time: List[Tuple[str, np.ndarray, np.ndarray, float]],
-    msgs: List[AdsbMessage],
-    t_win_start_us: float,
-    title: str = "ADS-B Multi-Stream Overlay (µs axis)"
-):
+
+def plot_streams_overlay(streams_mag_and_time, msgs, t_win_start_us, title, save_path=None):
     """
     Multi-stream overlay plot:
       - Each stream plotted as bars (linear magnitude)
@@ -422,86 +414,8 @@ def plot_streams_overlay(
     ax.legend(loc="upper right")
 
     plt.tight_layout()
-    plt.show()
+    if save_path:
+        plt.savefig(save_path, dpi=150)
+    else:
+        plt.show()
 
-
-
-# ============================================================
-#  High-Level Workflow / Example Usage
-# ============================================================
-
-if __name__ == "__main__":
-    # --------------------------------------------------------
-    # Example: two streams of the same capture
-    #   - original 10 MHz
-    #   - upsampled 24 MHz (or any other)
-    # --------------------------------------------------------
-
-    # Example AVR lines (you'll replace these with real data)
-    avr_lines = [
-        "@000006182b6e5d3c84819cf8ca;",
-        "@0000061832fc5d4868034df541;",
-        "@0000061836345d40803e167a4d;",
-        "@0000061840905d4cae65d9778e;",
-        #"@000002a12f4c5d4cabdbe93fe7;",
-        #"@000002a138758d4d22c358a584c4d5b10c6d2a4a;",
-    ]
-
-    msgs = parse_avr_lines(avr_lines)
-    if not msgs:
-        raise RuntimeError("No valid AVR messages parsed")
-
-    # Define sample formats
-    fmt_u12 = SampleFormat(
-        name="RAW_U12_IN_U16_IQ",
-        dtype="int16",
-        is_interleaved_iq=True,
-        bits=16
-    )
-
-    # Streams (replace filenames and fs as needed)
-    streams: List[SampleStream] = [
-        load_sample_stream("../../samples/wh_6msps.bin", 6_000_000.0, fmt_u12),
-        #load_sample_stream("../samples/capture_10MHz.bin", 10_000_000.0, fmt_u12),
-        #load_sample_stream("../samples/capture_24MHz.bin", 24_000_000.0, fmt_u12),
-    ]
-
-    pre_margin_us = 20.0
-    post_margin_us = 20.0
-
-    # Global time window covering all messages (µs)
-    t_win_start_us, t_win_end_us = compute_global_time_window_us(
-        msgs,
-        pre_margin_us=pre_margin_us,
-        post_margin_us=post_margin_us
-    )
-
-    # Per-stream extraction + per-stream plot
-    streams_mag_and_time: List[Tuple[str, np.ndarray, np.ndarray]] = []
-
-    for stream in streams:
-        mag1, t_rel_us, n_start, n_end = extract_stream_window_for_time_us(
-            stream,
-            t_win_start_us=t_win_start_us,
-            t_win_end_us=t_win_end_us
-        )
-
-        label = f"{stream.filename} (fs={stream.fs/1e6:.1f} MHz)"
-        streams_mag_and_time.append((label, mag1, t_rel_us))
-
-        plot_stream_single(
-            t_rel_us=t_rel_us,
-            mag1=mag1,
-            msgs=msgs,
-            t_win_start_us=t_win_start_us,
-            fs=stream.fs,
-            title=f"Single Stream: {label}"
-        )
-
-    # Combined overlay plot for all streams
-    plot_streams_overlay(
-        streams_mag_and_time=streams_mag_and_time,
-        msgs=msgs,
-        t_win_start_us=t_win_start_us,
-        title="ADS-B Multi-Stream Overlay (µs axis)"
-    )

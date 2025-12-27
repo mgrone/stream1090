@@ -41,6 +41,10 @@ def main():
 
     parser.add_argument("--post-margin", type=float, default=20.0,
                         help="Margin after latest message (µs)")
+    
+    # Save to png
+    parser.add_argument("--save", help="Save the plot to this PNG file instead of showing it")
+
 
     args = parser.parse_args()
 
@@ -130,16 +134,17 @@ def main():
             msgs=msgs,
             t_win_start_us=t_win_start_us,
             fs=fs,
-            title=f"Single Stream: {label}"
+            title=f"Single Stream: {label}",
+            save_path=args.save
         )
     else:
         plot_streams_overlay(
             streams_mag_and_time=streams_mag_and_time,
             msgs=msgs,
             t_win_start_us=t_win_start_us,
-            title="ADS-B Multi-Stream Overlay (µs axis)"
+            title="ADS-B Multi-Stream Overlay (µs axis)",
+            save_path=args.save
         )
-
 
 if __name__ == "__main__":
     main()
