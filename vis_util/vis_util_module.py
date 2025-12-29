@@ -62,9 +62,8 @@ def parse_avr_line(line: str) -> Optional[AdsbMessage]:
     ts12_raw = int(ts_hex, 16)
     ts12_corrected = ts12_raw + TS_OFFSET_12MHZ
 
-    # t_msg_us = ts12_corrected / 12.0  (since 12 MHz → 12 ticks per µs)
     t_msg_us = ts12_corrected / 12.0
-
+    print("[vis_util] Message " + line + " with timestamp " + str(np.round(t_msg_us, 3)) + " microseconds")
     return AdsbMessage(ts12_raw, ts12_corrected, hexmsg, t_msg_us)
 
 
@@ -184,7 +183,7 @@ def compute_global_time_window_us(msgs: List[AdsbMessage],
 
     t_win_start_us = t_min_us - pre_margin_us
     t_win_end_us   = t_max_end_us + post_margin_us
-
+    print("[vis_util] Window size: " + str(np.floor(t_win_end_us - t_win_start_us)) + " microseconds")
     return t_win_start_us, t_win_end_us
 
 
@@ -206,6 +205,8 @@ def extract_stream_window_for_time_us(stream: SampleStream,
         n_start = max(n_start, 0)
         n_end   = min(n_end, total_complex)
 
+        print("[vis_util] Loading " + str(n_end - n_start) + " IQ samples")
+              
         start_word = 2 * n_start
         end_word   = 2 * n_end
 
@@ -222,7 +223,7 @@ def extract_stream_window_for_time_us(stream: SampleStream,
         total_mag = len(stream.memmap)
         n_start = max(n_start, 0)
         n_end   = min(n_end, total_mag)
-
+        print("[vis_util] Loading " + str(n_end - n_start) + " magnitude samples")
         raw_window = stream.memmap[n_start:n_end]
 
         mag1 = raw_window.astype(np.float32)
