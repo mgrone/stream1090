@@ -279,7 +279,7 @@ public:
 					// send the 112 bit message to the output
 					return sendFrameLongAligned(downlinkFormat, crc, toRepair, e);
 				} else {
-					return sendFrameLongAligned(downlinkFormat, crc, toRepair, e);
+					//return sendFrameLongAligned(downlinkFormat, crc, toRepair, e);
 				}				
 			}
 			logStats(Stats::DF17_REPAIR_FAILED);

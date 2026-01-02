@@ -11,9 +11,11 @@
 #include <cstdint>
 #include <iostream>
 #include <cstring>
+#include <array>
 
 #include "MathUtils.hpp"
 #include "Sampler.hpp"
+#include "LowPassFilter.hpp"
 
 
 // The input format for the sample stream
@@ -21,7 +23,9 @@ enum SampleStreamInputFormat {
     IQ_RTL_SDR, // the default output of from rtl_sdr
     IQ_AIRSPY_RX, // the default output of airspy_rx
     IQ_AIRSPY_RX_RAW, // the raw output of airspy_rx
+    IQ_AIRSPY_RX_RAW_LOW_PASS, // the raw output of airspy_rx
     IQ_AIRSPY_RX_RAW_INTER, // raw output interleaved airspy (unused)
+    IQ_FLOAT32,
     MAG_FLOAT32, // for custom input when you want to read the magnitude as float directly
 };
 
@@ -60,23 +64,23 @@ private:
 }; 
 
 
-
-// Partial specialization for airspy uint32 RAW input
+// Partial specialization for airspy uint16 RAW input
 template<typename Sampler>
 class InputReader<Sampler, IQ_AIRSPY_RX_RAW> {
+
     public:
     // default constructor
     InputReader() {
         // we will need a buffer that holds Sampler::InputBufferSize many IQ pairs.
-        // Each pair consists of two 16-bit signed ints
+        // Each pair consists of two 16-bit unsigned ints
         m_inputBuffer = std::make_unique<uint16_t[]>(Sampler::InputBufferSize << 1);
         // reset the average for DC removal
         m_avg = 0.0;
     }
 
     void readMagnitude(std::istream& inputStream, float* out) {
-        // Sampler::InputBufferSize * 2 many 16 bit ints from the input stream
-        inputStream.read(reinterpret_cast<char*>(m_inputBuffer.get()), (Sampler::InputBufferSize) * sizeof(int16_t) * 2);
+        // Sampler::InputBufferSize * 2 many 16 bit uints from the input stream
+        inputStream.read(reinterpret_cast<char*>(m_inputBuffer.get()), (Sampler::InputBufferSize) * sizeof(uint16_t) * 2);
 
         // call the helper function to compute the magnitude
         computeMagnitude(m_inputBuffer.get(), out, Sampler::InputBufferSize);
@@ -86,6 +90,7 @@ class InputReader<Sampler, IQ_AIRSPY_RX_RAW> {
 
     void computeMagnitude(uint16_t* iq_single, float* out, size_t num) {
         const float scale = 0.5f / (float)num;
+        // std::cerr << scale << std::endl;
         for (size_t i = 0; i < num; i++) {
             // convert two 16-bit unsigned integers to float.
             // however, airspy does not use the full 16 bits.
@@ -102,6 +107,78 @@ class InputReader<Sampler, IQ_AIRSPY_RX_RAW> {
     float m_avg;
     // input buffer holding Sampler::InputBufferSize * 2 many ints
     std::unique_ptr<uint16_t[]> m_inputBuffer;
+}; 
+
+// Partial specialization for airspy uint16 RAW input
+template<typename Sampler>
+class InputReader<Sampler, IQ_AIRSPY_RX_RAW_LOW_PASS> {
+    static constexpr int NUM_TAPS = LowPassFilter::getNumTaps();
+    
+    static constexpr std::array<float, NUM_TAPS> h = LowPassFilter::getTaps<Sampler::InputSampleRate>();
+
+    public:
+    // default constructor
+    InputReader() {
+        // we will need a buffer that holds Sampler::InputBufferSize many IQ pairs.
+        // Each pair consists of two 16-bit unsigned ints
+        m_inputBuffer = std::make_unique<uint16_t[]>(Sampler::InputBufferSize << 1);
+
+        m_delay = std::make_unique<float[]>(NUM_TAPS);
+        for (auto i = 0; i < NUM_TAPS; i++) {
+            m_delay[i] = 0.0f;
+        }
+        // reset the average for DC removal
+        m_avg = 0.0;
+    }
+
+    void readMagnitude(std::istream& inputStream, float* out) {
+        // Sampler::InputBufferSize * 2 many 16 bit uints from the input stream
+        inputStream.read(reinterpret_cast<char*>(m_inputBuffer.get()), (Sampler::InputBufferSize) * sizeof(uint16_t) * 2);
+
+        // call the helper function to compute the magnitude
+        computeMagnitude(m_inputBuffer.get(), out, Sampler::InputBufferSize);
+    }
+    
+    private:
+
+    
+
+    float applyLowPass(float x) {
+        // shift the delay line by one entry to the left
+        for (int i = NUM_TAPS - 1; i > 0; --i) { 
+            //std::memcpy(m_delay + 1, m_delay, (NUM_TAPS-1) * sizeof(float))
+            m_delay[i] = m_delay[i - 1]; 
+        } 
+        m_delay[0] = x;
+
+        float acc = 0.0f; 
+        for (int i = 0; i < NUM_TAPS; ++i) { 
+            acc += h[i] * m_delay[i]; 
+        } 
+        return acc;
+    }
+
+    void computeMagnitude(uint16_t* iq_single, float* out, size_t num) {
+        const float scale = 0.5f / (float)num;
+        // std::cerr << scale << std::endl;
+        for (size_t i = 0; i < num; i++) {
+            // convert two 16-bit unsigned integers to float.
+            // however, airspy does not use the full 16 bits.
+            // only the lower 12 bits for each I and Q are used.
+            const float f_i = ((float)(*iq_single++) - 2047.5f) / 2047.5f - m_avg;
+            m_avg += f_i * scale;
+            const float f_q = ((float)(*iq_single++) - 2047.5f) / 2047.5f - m_avg;
+            m_avg += f_q * scale;
+			const float sq = f_i * f_i + f_q * f_q;
+            out[i] = applyLowPass(sqrtf(sq));
+        }
+    }
+
+    float m_avg;
+    // input buffer holding Sampler::InputBufferSize * 2 many ints
+    std::unique_ptr<uint16_t[]> m_inputBuffer;
+
+    std::unique_ptr<float[]> m_delay;
 }; 
 
 // Partial specialization for airspy uint32 RAW input
@@ -204,3 +281,38 @@ class InputReader<Sampler, MAG_FLOAT32> {
         inputStream.read(reinterpret_cast<char*>(out), (Sampler::InputBufferSize) * sizeof(float));
     }
 };
+
+
+// Partial specialization for airspy uint32 RAW input
+template<typename Sampler>
+class InputReader<Sampler, IQ_FLOAT32> {
+    public:
+    // default constructor
+    InputReader() {
+        // we will need a buffer that holds Sampler::InputBufferSize many IQ pairs.
+        // Each pair consists of two 16-bit signed ints
+        m_inputBuffer = std::make_unique<float[]>(Sampler::InputBufferSize << 1);
+    }
+
+    void readMagnitude(std::istream& inputStream, float* out) {
+        // Sampler::InputBufferSize * 2 many 16 bit ints from the input stream
+        inputStream.read(reinterpret_cast<char*>(m_inputBuffer.get()), (Sampler::InputBufferSize) * sizeof(float) * 2);
+
+        // call the helper function to compute the magnitude
+        computeMagnitude(m_inputBuffer.get(), out, Sampler::InputBufferSize);
+    }
+    
+    private:
+
+    void computeMagnitude(float* iq_float, float* out, size_t num) {
+        for (size_t i = 0; i < num; i++) {
+            const float f_i = (*iq_float++);
+            const float f_q = (*iq_float++);
+        	const float sq = f_i * f_i + f_q * f_q;
+            out[i] = sqrtf(sq);
+        }
+    }
+
+    // input buffer holding Sampler::InputBufferSize * 2 many ints
+    std::unique_ptr<float[]> m_inputBuffer;
+}; 

@@ -60,7 +60,8 @@ typedef SamplerBase<Rate_12_0_Mhz, Rate_24_0_Mhz> Sampler_12_0_to_24_0_Mhz;
 
 // test sampler
 typedef SamplerBase<Rate_3_0_Mhz, Rate_6_0_Mhz> Sampler_3_0_to_6_0_Mhz;
-
+typedef SamplerBase<Rate_20_0_Mhz, Rate_24_0_Mhz> Sampler_20_0_to_24_0_Mhz;
+typedef SamplerBase<Rate_20_0_Mhz, Rate_40_0_Mhz> Sampler_20_0_to_40_0_Mhz;
 
 // This class serves as descriptor for various values required for managing buffers and iterating over them
 // All values are derived from the sample rates and optional the buffer overlap in case you want to write 
@@ -289,6 +290,22 @@ constexpr void SamplerBase<Rate_10_0_Mhz, Rate_24_0_Mhz>::sample(float* in, floa
             }
             in += 5;
             out += 12;
+        }
+}
+
+// 20.0 Mhz to 24.0 Mhz (24 streams) upsampling function
+template<>
+constexpr void SamplerBase<Rate_20_0_Mhz, Rate_24_0_Mhz>::sample(float* in, float* out, size_t numBlocks) {
+    for (size_t i = 0; i < numBlocks; i++) {
+            for (int j = 0; j < 6; j++) {
+                const auto offset = 5 * j;
+                const auto k = offset / 6;
+                const auto l = 5 - (offset % 6);
+                const auto r = 5 - l;
+                out[j] = ((float)l * in[k] + (float)r * in[k+1]) * (1.0f / 5.0f);
+            }
+            in += 5;
+            out += 6;
         }
 }
 

@@ -10,7 +10,7 @@
 #include <unistd.h>
 #include "SampleStream.hpp"
 
-#define STREAM1090_VERSION "251229"
+#define STREAM1090_VERSION "260103"
 
 
 #if !defined(COMPILER_INPUT_SAMPLE_RATE)
@@ -41,7 +41,7 @@ void printSamplerConfig() {
         printSamplerConfig<sampler>();
         // check which input reader to use
         if (airspyRawInput) {
-            sampleStream.template read<IQ_AIRSPY_RX_RAW>(std::cin);
+            sampleStream.template read<IQ_AIRSPY_RX_RAW_LOW_PASS>(std::cin);
         } else {
             sampleStream.template read<IQ_AIRSPY_RX>(std::cin);
         }
@@ -94,6 +94,16 @@ void printSamplerConfig() {
         printSamplerConfig<Sampler_2_4_to_8_0_Mhz>();
         sampleStream.read<IQ_RTL_SDR>(std::cin);
     }
+
+    // for optimization (under construction)
+    /* void run_main() {
+        // create the default rtl_sdr instance 
+        SampleStream<Sampler_10_0_to_10_0_Mhz> sampleStream;
+        // start reading thhe uint8 iq data from rtl_sdr
+        printSamplerConfig<Sampler_10_0_to_10_0_Mhz>();
+        sampleStream.read<MAG_FLOAT32>(std::cin);
+    } */
+
 #endif
 
 void printDeprecated() {
