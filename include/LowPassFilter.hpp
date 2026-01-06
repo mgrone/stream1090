@@ -14,7 +14,18 @@
 
 namespace LowPassFilter {
     
-    constexpr size_t getNumTaps() { return 31; };
+    template<SampleRate inputRate>
+    constexpr size_t getNumTaps();
+
+    template<>
+    constexpr size_t getNumTaps<Rate_6_0_Mhz>() {
+        return 31;
+    }
+
+    template<>
+    constexpr size_t getNumTaps<Rate_10_0_Mhz>() {
+        return 33;
+    }
 
     template<SampleRate inputRate>
     static constexpr auto getTaps();
@@ -22,7 +33,7 @@ namespace LowPassFilter {
     // best_filter_6M_1
     template<>
     constexpr auto getTaps<Rate_6_0_Mhz>() {
-        return std::array<float, getNumTaps()>{ 
+        return std::array<float, getNumTaps<Rate_6_0_Mhz>()>{ 
             0.04691808f, -0.02944228f,  0.02481813f,  0.00687245f, -0.03778376f, -0.05536104f,
             -0.03637546f, -0.06929483f,  0.04111258f, -0.0142561f,  -0.05956734f, -0.00396889f,
             -0.04647978f, -0.06260861f,  0.38121662f,  0.8284003f,   0.38121662f, -0.06260861f,
@@ -69,7 +80,7 @@ namespace LowPassFilter {
             -0.04380234f }; 
     }*/
 
-    template<>
+    /* template<>
     constexpr auto getTaps<Rate_10_0_Mhz>() {
         return std::array<float, getNumTaps()>{ -0.05987154f, -0.01897968f, -0.08642031f, -0.05984011f, -0.23732726f,  0.09576137f,
             0.04148395f, -0.23463292f,  0.05515707f, -0.07742237f,  0.08236703f, -0.25368702f,
@@ -77,5 +88,26 @@ namespace LowPassFilter {
             -0.5531416f,  -0.25368702f,  0.08236703f, -0.07742237f,  0.05515707f, -0.23463292f,
             0.04148395f,  0.09576137f, -0.23732726f, -0.05984011f, -0.08642031f, -0.01897968f,
             -0.05987154f };
+        }; */
+
+    /* 
+    template<>
+    constexpr auto getTaps<Rate_10_0_Mhz>() {
+        return std::array<float, getNumTaps<Rate_10_0_Mhz>()> { -0.05987154f, -0.01897968f, -0.08642031f, -0.05984011f, -0.23732726f,  0.09576137f,
+            0.04148395f, -0.23463292f,  0.05515707f, -0.07742237f,  0.08236703f, -0.25368702f,
+            -0.5531416f,   0.6971091f,   0.80134064f,  0.6162073f,   0.80134064f,  0.6971091f,
+            -0.5531416f,  -0.25368702f,  0.08236703f, -0.07742237f,  0.05515707f, -0.23463292f,
+            0.04148395f,  0.09576137f, -0.23732726f, -0.05984011f, -0.08642031f, -0.01897968f,
+            -0.05987154f };
+        }; */
+
+    template<>
+    constexpr auto getTaps<Rate_10_0_Mhz>() {
+        return std::array<float, getNumTaps<Rate_10_0_Mhz>()> { 0.03865245f, -0.04535105f,  0.0099358f,   0.01301403f, -0.00458248f, -0.05603731f,
+                0.01701145f,  0.03959374f,  0.02553582f, -0.03129709f,  0.00549322f,  0.06224938f,
+                -0.04437256f, -0.12369639f,  0.1783088f,   0.30448487f,  0.22211462f,  0.30448487f,
+                0.1783088f,  -0.12369639f, -0.04437256f,  0.06224938f,  0.00549322f, -0.03129709f,
+                0.02553582f,  0.03959374f,  0.01701145f, -0.05603731f, -0.00458248f,  0.01301403f,
+                0.0099358f,  -0.04535105f,  0.03865245f };
         };
 }

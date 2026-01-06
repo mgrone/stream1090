@@ -112,7 +112,7 @@ class InputReader<Sampler, IQ_AIRSPY_RX_RAW> {
 // Partial specialization for airspy uint16 RAW input
 template<typename Sampler>
 class InputReader<Sampler, IQ_AIRSPY_RX_RAW_LOW_PASS> {
-    static constexpr int NUM_TAPS = LowPassFilter::getNumTaps();
+    static constexpr int NUM_TAPS = LowPassFilter::getNumTaps<Sampler::InputSampleRate>();
     
     static constexpr std::array<float, NUM_TAPS> h = LowPassFilter::getTaps<Sampler::InputSampleRate>();
 
