@@ -1,0 +1,11 @@
+import rs1090
+
+line1 = "@0000000dcd958d7c6a589908859a28041552a7c0;"
+line2 = "@00000004f9d58d7c6a589908859a28041552a7c0;"
+
+#line1 = "@0000001bb18fa8001a8c9d500030a8000041313c;"
+#line2 = "@00000012ddd0a8001a8c9d500030a8000041313c;"
+
+
+print(rs1090.decode(line1[13:].strip(';\n')))
+print(rs1090.decode(line2[13:].strip(';\n')))
