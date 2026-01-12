@@ -20,9 +20,7 @@ class IQLowPass {
             std::fill(std::begin(m_delay_Q), std::end(m_delay_Q), 0.0f);
         }
 
-        static constexpr size_t numTaps = 25;
-        static constexpr size_t bufferSize = 32;
-        static constexpr size_t halfNumTaps = numTaps / 2;
+        
 
         static constexpr float tap(int i) {
             return IQ_TAPS[i];
@@ -58,13 +56,33 @@ class IQLowPass {
             value_Q = sum_Q;
         }
     private:
-        static constexpr std::array<float, 25> IQ_TAPS = { 
+        /*static constexpr std::array<float, 25> IQ_TAPS = { 
         -0.000998606272947510f, 0.001695637278417295f, -0.003054430179754289f, 0.005055504379767936f, -0.007901319195893647f,
         0.011873357051047719f, -0.017411159379930066f,  0.025304817427568772f, -0.037225225204559217f, 0.057533286997004301f,
         -0.102327462004259350f, 0.317034472508947400f,  0.500000000000000000f,  0.317034472508947400f, -0.102327462004259350f,
         0.057533286997004301f, -0.037225225204559217f,  0.025304817427568772f, -0.017411159379930066f,  0.011873357051047719f,
         -0.007901319195893647f, 0.005055504379767936f, -0.003054430179754289f,  0.001695637278417295f, -0.000998606272947510f }; 
+        */
+        
+        
+        static constexpr std::array<float, 7> IQ_TAPS = { 
+             
+            
+            0.1f,
+            -0.1f, 
+            0.7f,
+
+            1.0f,
+
+            0.7f, 
+            -0.1f,
+            0.1f
+        }; 
     
+        static constexpr size_t numTaps = IQ_TAPS.size();
+        static constexpr size_t bufferSize = 32;
+        static constexpr size_t halfNumTaps = numTaps / 2;
+
         float m_delay_I[bufferSize];
         float m_delay_Q[bufferSize];
         int m_new_index = 0;
