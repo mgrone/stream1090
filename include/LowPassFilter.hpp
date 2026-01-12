@@ -32,7 +32,7 @@ class IQLowPass {
             m_delay_Q[m_new_index] = value_Q;
 
             // compute the center index
-            int center_index = (m_new_index + halfNumTaps + 1) & 31;
+            int center_index = (m_new_index + halfNumTaps + 1) & (bufferSize-1);
 
             // deal with this separatly
             float sum_I = m_delay_I[center_index] * tap(halfNumTaps);
@@ -44,14 +44,14 @@ class IQLowPass {
 
             // we iterate inside out
             for (int k = halfNumTaps-1; k >= 0; k--) {
-                i = (i - 1) & 31;
-                j = (j + 1) & 31;
+                i = (i - 1) & (bufferSize-1);
+                j = (j + 1) & (bufferSize-1);
 
                 sum_I += tap(k) * (m_delay_I[i] + m_delay_I[j]);
                 sum_Q += tap(k) * (m_delay_Q[i] + m_delay_Q[j]);
             }
             
-            m_new_index = (m_new_index + 1) & 31;
+            m_new_index = (m_new_index + 1) & (bufferSize-1);
             value_I = sum_I;
             value_Q = sum_Q;
         }
@@ -65,22 +65,10 @@ class IQLowPass {
         */
         
         
-        static constexpr std::array<float, 7> IQ_TAPS = { 
-             
-            
-            0.1f,
-            -0.1f, 
-            0.7f,
-
-            1.0f,
-
-            0.7f, 
-            -0.1f,
-            0.1f
-        }; 
+        static constexpr std::array<float, 7> IQ_TAPS = { 0.1f, -0.1f, 0.7f, 1.07f, 0.7f, -0.1f, 0.1f }; 
     
         static constexpr size_t numTaps = IQ_TAPS.size();
-        static constexpr size_t bufferSize = 32;
+        static constexpr uint8_t bufferSize = 8;
         static constexpr size_t halfNumTaps = numTaps / 2;
 
         float m_delay_I[bufferSize];
