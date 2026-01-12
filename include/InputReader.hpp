@@ -23,8 +23,8 @@ enum SampleStreamInputFormat {
     IQ_RTL_SDR, // the default output of from rtl_sdr
     IQ_AIRSPY_RX, // the default output of airspy_rx
     IQ_AIRSPY_RX_RAW, // the raw output of airspy_rx
-    IQ_AIRSPY_RX_RAW_LOW_PASS, // the raw output of airspy_rx
     IQ_AIRSPY_RX_RAW_INTER, // raw output interleaved airspy (unused)
+    IQ_AIRSPY_RX_RAW_IQ_FILTER,
     IQ_FLOAT32,
     MAG_FLOAT32, // for custom input when you want to read the magnitude as float directly
 };
@@ -109,26 +109,23 @@ class InputReader<Sampler, IQ_AIRSPY_RX_RAW> {
     std::unique_ptr<uint16_t[]> m_inputBuffer;
 }; 
 
+
 // Partial specialization for airspy uint16 RAW input
 template<typename Sampler>
-class InputReader<Sampler, IQ_AIRSPY_RX_RAW_LOW_PASS> {
-    static constexpr int NUM_TAPS = LowPassFilter::getNumTaps<Sampler::InputSampleRate>();
-    
-    static constexpr std::array<float, NUM_TAPS> h = LowPassFilter::getTaps<Sampler::InputSampleRate>();
-
+class InputReader<Sampler, IQ_AIRSPY_RX_RAW_IQ_FILTER> {
     public:
     // default constructor
-    InputReader() {
+    InputReader() : m_dualLowPass() {
         // we will need a buffer that holds Sampler::InputBufferSize many IQ pairs.
         // Each pair consists of two 16-bit unsigned ints
         m_inputBuffer = std::make_unique<uint16_t[]>(Sampler::InputBufferSize << 1);
 
-        m_delay = std::make_unique<float[]>(NUM_TAPS);
-        for (auto i = 0; i < NUM_TAPS; i++) {
-            m_delay[i] = 0.0f;
-        }
         // reset the average for DC removal
-        m_avg = 0.0;
+        m_avg_I = 0.0;
+        m_avg_Q = 0.0;
+
+        // toggle flag to invert signs
+        m_flipSigns = true;
     }
 
     void readMagnitude(std::istream& inputStream, float* out) {
@@ -141,44 +138,37 @@ class InputReader<Sampler, IQ_AIRSPY_RX_RAW_LOW_PASS> {
     
     private:
 
-    
-
-    float applyLowPass(float x) {
-        // shift the delay line by one entry to the left
-        for (int i = NUM_TAPS - 1; i > 0; --i) { 
-            //std::memcpy(m_delay + 1, m_delay, (NUM_TAPS-1) * sizeof(float))
-            m_delay[i] = m_delay[i - 1]; 
-        } 
-        m_delay[0] = x;
-
-        float acc = 0.0f; 
-        for (int i = 0; i < NUM_TAPS; ++i) { 
-            acc += h[i] * m_delay[i]; 
-        } 
-        return acc;
-    }
-
     void computeMagnitude(uint16_t* iq_single, float* out, size_t num) {
-        const float scale = 0.5f / (float)num;
-        // std::cerr << scale << std::endl;
+        //const float scale = 0.5f / (float)num;
+        const float scale = 0.005f;
         for (size_t i = 0; i < num; i++) {
-            // convert two 16-bit unsigned integers to float.
-            // however, airspy does not use the full 16 bits.
-            // only the lower 12 bits for each I and Q are used.
-            const float f_i = ((float)(*iq_single++) - 2047.5f) / 2047.5f - m_avg;
-            m_avg += f_i * scale;
-            const float f_q = ((float)(*iq_single++) - 2047.5f) / 2047.5f - m_avg;
-            m_avg += f_q * scale;
-			const float sq = f_i * f_i + f_q * f_q;
-            out[i] = applyLowPass(sqrtf(sq));
+            float f_i = ((float)(*iq_single++) - 2047.5f) / 2047.5f;
+            float f_q = ((float)(*iq_single++) - 2047.5f) / 2047.5f;
+            
+            f_i -= m_avg_I;
+            f_q -= m_avg_Q;
+            m_avg_I += f_i * scale;
+            m_avg_Q += f_q * scale;
+
+            if (m_flipSigns) {
+                f_i = -f_i;
+                f_q = -f_q;
+            }
+
+            m_dualLowPass.apply(f_i, f_q);
+        	const float sq = f_i * f_i + f_q * f_q;
+            out[i] = sqrtf(sq);
+            m_flipSigns = !m_flipSigns;
         }
     }
 
-    float m_avg;
+    IQLowPass m_dualLowPass;
+
+    bool m_flipSigns;
+    float m_avg_I;
+    float m_avg_Q;
     // input buffer holding Sampler::InputBufferSize * 2 many ints
     std::unique_ptr<uint16_t[]> m_inputBuffer;
-
-    std::unique_ptr<float[]> m_delay;
 }; 
 
 // Partial specialization for airspy uint32 RAW input

@@ -8,16 +8,17 @@
 #include <iostream>
 #include <fstream>
 #include <unistd.h>
+#include <algorithm>
 #include "SampleStream.hpp"
 
-#define STREAM1090_VERSION "260106"
+#define STREAM1090_VERSION "260112"
 
 
 #if !defined(COMPILER_INPUT_SAMPLE_RATE)
     #define COMPILER_INPUT_SAMPLE_RATE 0
 #endif
 
-constexpr int compilerInputSampleRate = COMPILER_INPUT_SAMPLE_RATE;
+constexpr int compilerInputSampleRate = (COMPILER_INPUT_SAMPLE_RATE == 0) ? 2400000 : COMPILER_INPUT_SAMPLE_RATE;
 
 template<typename Sampler>
 void printSamplerConfig() {
@@ -30,135 +31,135 @@ void printSamplerConfig() {
     std::cerr << "[Stream1090] Size of sample buffer: " << Sampler::SampleBufferSize << " samples " << std::endl;  
 }
 
-#if (COMPILER_INPUT_SAMPLE_RATE > 0)
-    template<SampleRate outputRate>
-    void runWithRate(bool airspyRawInput) {
-        constexpr SampleRate inputRate = static_cast<SampleRate>(compilerInputSampleRate);
-        typedef SamplerBase<inputRate, outputRate> sampler;
-        // create an instance sampler  
-        SampleStream<sampler> sampleStream;
-        // start reading the int16 iq data from airspy_rx
-        printSamplerConfig<sampler>();
-        // check which input reader to use
-        if (airspyRawInput) {
-            sampleStream.template read<IQ_AIRSPY_RX_RAW_LOW_PASS>(std::cin);
-        } else {
-            sampleStream.template read<IQ_AIRSPY_RX>(std::cin);
-        }
-    }
-    
-    #if (COMPILER_INPUT_SAMPLE_RATE == 6000000)
-    void run_main(int internalSpeedMode, bool airspyRawInput) {
-        switch (internalSpeedMode) {
-            case 6:
-                runWithRate<Rate_6_0_Mhz>(airspyRawInput);
-            break;
-            case 12: 
-                runWithRate<Rate_12_0_Mhz>(airspyRawInput);
-            break;
-            case 16:
-                runWithRate<Rate_16_0_Mhz>(airspyRawInput);
-            break;
-            case 24:
-                runWithRate<Rate_24_0_Mhz>(airspyRawInput); 
-            break;
-            default:
-                std::cerr << "Unknown internal sample rate " << internalSpeedMode << std::endl;
-            break;
-            }
-    }
-    #endif
-    #if (COMPILER_INPUT_SAMPLE_RATE == 10000000)
-    void run_main(int internalSpeedMode, bool airspyRawInput) {
-        switch (internalSpeedMode) {
-            case 10:
-                runWithRate<Rate_10_0_Mhz>(airspyRawInput);
-            break;
-            case 20: 
-                runWithRate<Rate_20_0_Mhz>(airspyRawInput);
-            break;
-            case 24:
-                runWithRate<Rate_24_0_Mhz>(airspyRawInput);
-            break;
-            default:
-                std::cerr << "Unknown internal sample rate " << internalSpeedMode << std::endl;
-            break;
-            }
-    }
-    #endif
-#else 
-    void run_main() {
-        // create the default rtl_sdr instance 
-        SampleStream<Sampler_2_4_to_8_0_Mhz> sampleStream;
-        // start reading thhe uint8 iq data from rtl_sdr
-        printSamplerConfig<Sampler_2_4_to_8_0_Mhz>();
-        sampleStream.read<IQ_RTL_SDR>(std::cin);
-    }
-
-    // for optimization (under construction)
-    /* void run_main() {
-        // create the default rtl_sdr instance 
-        SampleStream<Sampler_10_0_to_10_0_Mhz> sampleStream;
-        // start reading thhe uint8 iq data from rtl_sdr
-        printSamplerConfig<Sampler_10_0_to_10_0_Mhz>();
-        sampleStream.read<MAG_FLOAT32>(std::cin);
-    } */
-
-#endif
-
 void printDeprecated() {
-    std::cout << "Flags -a, -b, -c, -d, -f have been removed. Please use the corresponding executable instead." << std::endl;
-    std::cout << "If for example your previous sample rate was 6Mhz and you were using the -b flag, then use stream1090_6M -u instead." << std::endl;
+    std::cerr << "Flags -a, -b, -c, -d, -f have been removed. Please use the corresponding executable instead." << std::endl;
+    std::cerr << "If for example your previous sample rate was 6Mhz and you were using the -b flag, then use stream1090_6M -u instead." << std::endl;
 }
 
-void printHelp_0() {
-    std::cout << "Stream 1090 build " << STREAM1090_VERSION << " for standard rtl_sdr output @2.4MHz." << std::endl;
-    std::cout << "Internal sample rate is 8MHz" << std::endl;
-    std::cout << "There are no parameters available" << std::endl;
+template<int inputRate>
+void printHelp();
+
+template<>
+void printHelp<Rate_2_4_Mhz>() {
+    std::cerr << "Stream 1090 build " << STREAM1090_VERSION << " for standard rtl_sdr output @2.4MHz." << std::endl;
+    std::cerr << "Internal sample rate is 8MHz" << std::endl;
+    std::cerr << "-m : Stream1090 expects the magnitude in float32 instead of IQ pairs." << std::endl;
 }
 
-void printHelp_6() {
-    std::cout << "Stream 1090 build " << STREAM1090_VERSION << " for airspy_rx output @" << compilerInputSampleRate / 1000000 << "MHz" << std::endl;
-    std::cout << "The default internal sample rate is "<< compilerInputSampleRate / 1000000 << "MHz (passthrough)" << std::endl;
-    std::cout << "-u <6,12,16,24>: Sets the internal sample rate to 6 MHz, 12 MHz, 16 MHz, or 24 MHz" << std::endl;
-    std::cout << "-r : Stream1090 expects raw airspy_rx output (airspy_rx... -t 5)." << std::endl; 
-    std::cout << "     Requires double the sample rate for airspy_rx (airspy_rx... -a "<< compilerInputSampleRate * 2 << ")" << std::endl;
+template<>
+void printHelp<Rate_6_0_Mhz>() {
+    std::cerr << "Stream 1090 build " << STREAM1090_VERSION << " for airspy_rx output @" << compilerInputSampleRate / 1000000 << "MHz" << std::endl;
+    std::cerr << "The default internal sample rate is "<< compilerInputSampleRate / 1000000 << "MHz (passthrough)" << std::endl;
+    std::cerr << "-u <6,12,16,24>: Sets the internal sample rate to 6 MHz, 12 MHz, 16 MHz, or 24 MHz" << std::endl;
+    std::cerr << "-r : Stream1090 expects raw airspy_rx output (airspy_rx... -t 5)." << std::endl; 
+    std::cerr << "     Requires double the sample rate for airspy_rx (airspy_rx... -a "<< compilerInputSampleRate * 2 << ")" << std::endl;
+    std::cerr << "-q : Similar to -r, but includes a proper low pass filtering for I and Q channels." << std::endl;
+    std::cerr << "-m : Stream1090 expects the magnitude in float32 instead of IQ pairs." << std::endl;
 }
 
-void printHelp_10() {
-    std::cout << "Stream 1090 build " << STREAM1090_VERSION << " for airspy_rx output @" << compilerInputSampleRate / 1000000 << "MHz" << std::endl;
-    std::cout << "The default internal sample rate is "<< compilerInputSampleRate / 1000000 << "MHz (passthrough)" << std::endl;
-    std::cout << "-u <10,20,24>: Sets the internal sample rate to 10 MHz, 20 MHz, or 24 MHz" << std::endl;
-    std::cout << "-r : Stream1090 expects raw airspy_rx output (airspy_rx... -t 5)." << std::endl; 
-    std::cout << "     Requires double the sample rate for airspy_rx (airspy_rx... -a " << compilerInputSampleRate * 2 << ")" << std::endl;
+template<>
+void printHelp<Rate_10_0_Mhz>() {
+    std::cerr << "Stream 1090 build " << STREAM1090_VERSION << " for airspy_rx output @" << compilerInputSampleRate / 1000000 << "MHz" << std::endl;
+    std::cerr << "The default internal sample rate is "<< compilerInputSampleRate / 1000000 << "MHz (passthrough)" << std::endl;
+    std::cerr << "-u <10,20,24>: Sets the internal sample rate to 10 MHz, 20 MHz, or 24 MHz" << std::endl;
+    std::cerr << "-r : Stream1090 expects raw airspy_rx output (airspy_rx... -t 5)." << std::endl; 
+    std::cerr << "     Requires double the sample rate for airspy_rx (airspy_rx... -a " << compilerInputSampleRate * 2 << ")" << std::endl;
+    std::cerr << "-q : Similar to -r, but includes a proper low pass filtering for I and Q channels." << std::endl;
+    std::cerr << "-m : Stream1090 expects the magnitude in float32 instead of IQ pairs." << std::endl;
 }
 
 
-void printHelp() {
-    if constexpr(compilerInputSampleRate == 0) {
-        printHelp_0();
-        return;
+template<int inputRate>
+bool check_upsampling_parameter(int upsamplingParameter);
+
+template<>
+bool check_upsampling_parameter<Rate_2_4_Mhz>(int upsamplingParameter) {
+    return (upsamplingParameter == 8);
+}
+
+template<>
+bool check_upsampling_parameter<Rate_6_0_Mhz>(int upsamplingParameter) {
+    const auto allowed = { 6, 12, 16, 24 };
+    return (std::find(std::begin(allowed), std::end(allowed), upsamplingParameter) != std::end(allowed));
+}
+
+template<>
+bool check_upsampling_parameter<Rate_10_0_Mhz>(int upsamplingParameter) {
+    const auto allowed = { 10, 20, 24 };
+    return (std::find(std::begin(allowed), std::end(allowed), upsamplingParameter) != std::end(allowed));
+}
+
+
+template<SampleRate inputRate, SampleRate outputRate, SampleStreamInputFormat inputFormat>
+void run_main_templ() {
+    typedef SamplerBase<inputRate, outputRate> sampler;
+    // create an instance sampler  
+    SampleStream<sampler> sampleStream;
+    // start reading the int16 iq data from airspy_rx
+    printSamplerConfig<sampler>();
+    // check which input reader to use
+    sampleStream.template read<inputFormat>(std::cin);
+}
+
+template<SampleStreamInputFormat inputFormat>
+void run_main(int upsampling) {
+    constexpr SampleRate inputRate = static_cast<SampleRate>(compilerInputSampleRate);
+    if constexpr(inputRate == Rate_2_4_Mhz) {
+        switch (upsampling) {
+            case 8:
+                run_main_templ<inputRate, Rate_8_0_Mhz, inputFormat>();
+                // debugging:
+                //run_main_templ<Rate_12_0_Mhz, Rate_12_0_Mhz, inputFormat>();
+            break;
+            default:
+                std::cerr << "Unknown internal sample rate " << upsampling << std::endl;
+            break;
+        }
+    } else if constexpr(inputRate == Rate_6_0_Mhz) {
+        switch (upsampling) {
+                case 6:
+                    run_main_templ<inputRate, Rate_6_0_Mhz, inputFormat>();
+                break;
+                case 12: 
+                    run_main_templ<inputRate, Rate_12_0_Mhz, inputFormat>();
+                break;
+                case 16:
+                    run_main_templ<inputRate, Rate_16_0_Mhz, inputFormat>();
+                break;
+                case 24:
+                    run_main_templ<inputRate, Rate_24_0_Mhz, inputFormat>();
+                break;
+                default:
+                    std::cerr << "Unknown internal sample rate " << upsampling << std::endl;
+                break;
+                }
+    } else if constexpr(compilerInputSampleRate == Rate_10_0_Mhz) { 
+        switch (upsampling) {
+                case 10:
+                    run_main_templ<inputRate, Rate_10_0_Mhz, inputFormat>();
+                break;
+                case 20: 
+                    run_main_templ<inputRate, Rate_20_0_Mhz, inputFormat>();
+                break;
+                case 24:
+                    run_main_templ<inputRate, Rate_24_0_Mhz, inputFormat>(); 
+                break;
+                default:
+                    std::cerr << "Unknown internal sample rate " << upsampling << std::endl;
+                break;
+                }
+    } else {
+        std::cerr << "Unknown internal sample rate " << upsampling << std::endl;
     }
-    
-    if constexpr(compilerInputSampleRate == Rate_6_0_Mhz) {
-        printHelp_6();
-        return;
-    }
-
-    if constexpr(compilerInputSampleRate == Rate_10_0_Mhz) {
-        printHelp_10();
-        return;
-    }
 }
+
 
 int main(int argc, char** argv) {
     // Parse command line options.
-    int upsampling = compilerInputSampleRate / 1000000;
-    bool airspyRaw = false;
-    (void)airspyRaw;
-    (void)upsampling;
+    int upsampling = (compilerInputSampleRate / 1000000);
+    SampleStreamInputFormat inputFormat = (compilerInputSampleRate == Rate_2_4_Mhz) ? IQ_RTL_SDR : IQ_AIRSPY_RX;
     int opt;
-    while ((opt = getopt(argc, argv, "abcdfru:h")) != -1) {
+    while ((opt = getopt(argc, argv, "abcdfrqmu:h")) != -1) {
         switch (opt) {
             case 'a':
             case 'b':
@@ -169,13 +170,19 @@ int main(int argc, char** argv) {
                 return -1;
                 break;
             case 'r':
-                airspyRaw = true;
+                inputFormat = IQ_AIRSPY_RX_RAW;
+                break;
+            case 'q':
+                inputFormat = IQ_AIRSPY_RX_RAW_IQ_FILTER;
+                break;
+            case 'm':
+                inputFormat = MAG_FLOAT32;
                 break;
             case 'u':
                 upsampling = std::atoi(optarg);
                 break;
             case 'h':
-                printHelp();
+                printHelp<compilerInputSampleRate>();
                 return 0;
             break;
             default:
@@ -184,10 +191,44 @@ int main(int argc, char** argv) {
         }
     }
 
-#if (COMPILER_INPUT_SAMPLE_RATE > 0)
-        run_main(upsampling, airspyRaw);
-#else
-    run_main();
-#endif
+    if constexpr(compilerInputSampleRate == Rate_2_4_Mhz) {
+        upsampling = 8;
+        // standard settings, only distinguish between the input formats
+        switch (inputFormat)
+        {
+        case IQ_RTL_SDR:
+            run_main<IQ_RTL_SDR>(upsampling);
+            break;
+        case MAG_FLOAT32:
+            run_main<MAG_FLOAT32>(upsampling);
+            break;
+        default:
+            break;
+        }
+    } else {
+        if (!check_upsampling_parameter<compilerInputSampleRate>(upsampling)) {
+            std::cerr << "Invalid -u " << upsampling <<" parameter" << std::endl; 
+            return 0;
+        };
+
+        switch (inputFormat)
+        {
+        case IQ_AIRSPY_RX:
+            run_main<IQ_AIRSPY_RX>(upsampling);
+            break;
+        case IQ_AIRSPY_RX_RAW:
+            run_main<IQ_AIRSPY_RX_RAW>(upsampling);
+            break;
+        case IQ_AIRSPY_RX_RAW_IQ_FILTER:
+            run_main<IQ_AIRSPY_RX_RAW_IQ_FILTER>(upsampling);
+            break;
+        case MAG_FLOAT32:
+            run_main<MAG_FLOAT32>(upsampling);
+            break;
+        default:
+            break;
+        }
+    }
+
     return 0;
 }

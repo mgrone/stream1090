@@ -301,15 +301,17 @@ public:
 		// a known, active and trusted address
 		const auto e = m_cache.find(crc);
 		// if this is not in the list of known planes, we have to leave
-		if (!e.isValid())
+		if (!e.isValid()) {
 			return false;
+		}
 
 		if (m_cache.isAlive(e)) {
 			// log that this message is a good message
 			logStats(Stats::COMM_B_GOOD_MESSAGE);
 			// output the message
 			return sendFrameLongAligned(downlinkFormat, crc, frame, e);
-		} 
+		}
+
 		return false;
 	}
 

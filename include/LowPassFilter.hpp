@@ -11,103 +11,61 @@
 #include <cstddef>
 #include "Sampler.hpp"
 
-
-namespace LowPassFilter {
+class IQLowPass {
     
-    template<SampleRate inputRate>
-    constexpr size_t getNumTaps();
+    public:
+        IQLowPass() {
+            m_new_index = 0;
+            std::fill(std::begin(m_delay_I), std::end(m_delay_I), 0.0f);
+            std::fill(std::begin(m_delay_Q), std::end(m_delay_Q), 0.0f);
+        }
 
-    template<>
-    constexpr size_t getNumTaps<Rate_6_0_Mhz>() {
-        return 31;
-    }
+        static constexpr size_t numTaps = 25;
+        static constexpr size_t bufferSize = 32;
+        static constexpr size_t halfNumTaps = numTaps / 2;
 
-    template<>
-    constexpr size_t getNumTaps<Rate_10_0_Mhz>() {
-        return 33;
-    }
+        static constexpr float tap(int i) {
+            return IQ_TAPS[i];
+        }
 
-    template<SampleRate inputRate>
-    static constexpr auto getTaps();
+        void apply(float& value_I, float& value_Q) {
+            // insert the new element at new index pos
+            m_delay_I[m_new_index] = value_I;
+            m_delay_Q[m_new_index] = value_Q;
 
-    // best_filter_6M_1
-    template<>
-    constexpr auto getTaps<Rate_6_0_Mhz>() {
-        return std::array<float, getNumTaps<Rate_6_0_Mhz>()>{ 
-            0.04691808f, -0.02944228f,  0.02481813f,  0.00687245f, -0.03778376f, -0.05536104f,
-            -0.03637546f, -0.06929483f,  0.04111258f, -0.0142561f,  -0.05956734f, -0.00396889f,
-            -0.04647978f, -0.06260861f,  0.38121662f,  0.8284003f,   0.38121662f, -0.06260861f,
-            -0.04647978f, -0.00396889f, -0.05956734f, -0.0142561f,   0.04111258f, -0.06929483f,
-            -0.03637546f, -0.05536104f, -0.03778376f,  0.00687245f,  0.02481813f, -0.02944228f,
-            0.04691808f }; 
-    }
+            // compute the center index
+            int center_index = (m_new_index + halfNumTaps + 1) & 31;
 
-    // best_filter_6M_2
-    /* template<>
-    constexpr auto getTaps<Rate_6_0_Mhz>() {
-        return std::array<float, getNumTaps()>{ 
-            -1.52463711e-02f,  3.94902828e-03f,  5.83078951e-05f,  4.56780882e-03f,
-            -1.80472443e-02f, -4.49779052e-03f, -7.45157253e-03f, -1.28041669e-02f,
-            2.82423400e-03f,  4.68200623e-02f,  7.34374402e-03f,  2.66519989e-02f,
-            -6.76337348e-03f,  8.24102969e-02f,  2.44663387e-01f,  2.91043301e-01f,
-            2.44663387e-01f,  8.24102969e-02f, -6.76337348e-03f,  2.66519989e-02f,
-            7.34374402e-03f,  4.68200623e-02f,  2.82423400e-03f, -1.28041669e-02f,
-            -7.45157253e-03f, -4.49779052e-03f, -1.80472443e-02f,  4.56780882e-03f,
-            5.83078951e-05f,  3.94902828e-03f, -1.52463711e-02f }; 
-    } */
+            // deal with this separatly
+            float sum_I = m_delay_I[center_index] * tap(halfNumTaps);
+            float sum_Q = m_delay_Q[center_index] * tap(halfNumTaps);
 
-    // best_filter_10M_2
-    /*template<>
-    constexpr auto getTaps<Rate_10_0_Mhz>() {
-        return std::array<float, getNumTaps()>{ 
-            0.00055077f, -0.01847956f,  0.00234699f, -0.01789507f,  0.00318175f,  0.05594195f, 
-            0.01237755f, -0.06771679f, 0.05199363f, -0.02546499f, 0.16795284f, -0.07870515f,
-            -0.16818146f, 0.2712337f, 0.2018848f, 0.21795812f, 0.2018848f, 0.2712337f,
-            -0.16818146f, -0.07870515f,  0.16795284f, -0.02546499f,  0.05199363f, -0.06771679f, 
-            0.01237755f,  0.05594195f,  0.00318175f, -0.01789507f, 0.00234699f, -0.01847956f, 
-            0.00055077 }; 
-    } */
+            // init i (left) and j (right) at the center
+            int i = center_index;
+            int j = center_index;
 
-    // best_filter_10M_3
-    /*template<>
-    constexpr auto getTaps<Rate_10_0_Mhz>() {
-        return std::array<float, getNumTaps()>{ 
-            -0.04380234f, -0.04754855f, -0.04717134f, -0.04788126f, -0.11601763f,  0.0854304f,
-            0.0507884f,  -0.14951785f,  0.05291474f, -0.02321622f,  0.0626284f,  -0.06690682f,
-            -0.28698578f,  0.41696212f,  0.4620927f,   0.39646173f,  0.4620927f,   0.41696212f,
-            -0.28698578f, -0.06690682f,  0.0626284f,  -0.02321622f,  0.05291474f, -0.14951785f,
-            0.0507884f,   0.0854304f,  -0.11601763f, -0.04788126f, -0.04717134f, -0.04754855f,
-            -0.04380234f }; 
-    }*/
+            // we iterate inside out
+            for (int k = halfNumTaps-1; k >= 0; k--) {
+                i = (i - 1) & 31;
+                j = (j + 1) & 31;
 
-    /* template<>
-    constexpr auto getTaps<Rate_10_0_Mhz>() {
-        return std::array<float, getNumTaps()>{ -0.05987154f, -0.01897968f, -0.08642031f, -0.05984011f, -0.23732726f,  0.09576137f,
-            0.04148395f, -0.23463292f,  0.05515707f, -0.07742237f,  0.08236703f, -0.25368702f,
-            -0.5531416f,   0.6971091f,   0.80134064f,  0.6162073f,   0.80134064f,  0.6971091f,
-            -0.5531416f,  -0.25368702f,  0.08236703f, -0.07742237f,  0.05515707f, -0.23463292f,
-            0.04148395f,  0.09576137f, -0.23732726f, -0.05984011f, -0.08642031f, -0.01897968f,
-            -0.05987154f };
-        }; */
-
-    /* 
-    template<>
-    constexpr auto getTaps<Rate_10_0_Mhz>() {
-        return std::array<float, getNumTaps<Rate_10_0_Mhz>()> { -0.05987154f, -0.01897968f, -0.08642031f, -0.05984011f, -0.23732726f,  0.09576137f,
-            0.04148395f, -0.23463292f,  0.05515707f, -0.07742237f,  0.08236703f, -0.25368702f,
-            -0.5531416f,   0.6971091f,   0.80134064f,  0.6162073f,   0.80134064f,  0.6971091f,
-            -0.5531416f,  -0.25368702f,  0.08236703f, -0.07742237f,  0.05515707f, -0.23463292f,
-            0.04148395f,  0.09576137f, -0.23732726f, -0.05984011f, -0.08642031f, -0.01897968f,
-            -0.05987154f };
-        }; */
-
-    template<>
-    constexpr auto getTaps<Rate_10_0_Mhz>() {
-        return std::array<float, getNumTaps<Rate_10_0_Mhz>()> { 0.03865245f, -0.04535105f,  0.0099358f,   0.01301403f, -0.00458248f, -0.05603731f,
-                0.01701145f,  0.03959374f,  0.02553582f, -0.03129709f,  0.00549322f,  0.06224938f,
-                -0.04437256f, -0.12369639f,  0.1783088f,   0.30448487f,  0.22211462f,  0.30448487f,
-                0.1783088f,  -0.12369639f, -0.04437256f,  0.06224938f,  0.00549322f, -0.03129709f,
-                0.02553582f,  0.03959374f,  0.01701145f, -0.05603731f, -0.00458248f,  0.01301403f,
-                0.0099358f,  -0.04535105f,  0.03865245f };
-        };
-}
+                sum_I += tap(k) * (m_delay_I[i] + m_delay_I[j]);
+                sum_Q += tap(k) * (m_delay_Q[i] + m_delay_Q[j]);
+            }
+            
+            m_new_index = (m_new_index + 1) & 31;
+            value_I = sum_I;
+            value_Q = sum_Q;
+        }
+    private:
+        static constexpr std::array<float, 25> IQ_TAPS = { 
+        -0.000998606272947510f, 0.001695637278417295f, -0.003054430179754289f, 0.005055504379767936f, -0.007901319195893647f,
+        0.011873357051047719f, -0.017411159379930066f,  0.025304817427568772f, -0.037225225204559217f, 0.057533286997004301f,
+        -0.102327462004259350f, 0.317034472508947400f,  0.500000000000000000f,  0.317034472508947400f, -0.102327462004259350f,
+        0.057533286997004301f, -0.037225225204559217f,  0.025304817427568772f, -0.017411159379930066f,  0.011873357051047719f,
+        -0.007901319195893647f, 0.005055504379767936f, -0.003054430179754289f,  0.001695637278417295f, -0.000998606272947510f }; 
+    
+        float m_delay_I[bufferSize];
+        float m_delay_Q[bufferSize];
+        int m_new_index = 0;
+};
