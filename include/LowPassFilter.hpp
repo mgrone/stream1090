@@ -9,69 +9,123 @@
 #include <numeric>
 #include <array>
 #include <cstddef>
+#include <bit>
 #include "Sampler.hpp"
 
-class IQLowPass {
+// Tap definitions
+namespace LowPassTaps {
+    // template for the tap definitions. Returns a canonical 1-element filter as default
+    template<SampleRate inputRate>
+    constexpr auto getTaps() {
+        return std::array<float, 1>{ 1.0f }; 
+    }
+
+    // the taps for 6 Msps input
+    template<>
+    constexpr auto getTaps<Rate_6_0_Mhz>(){
+        return std::array<float, 7>{ 
+            0.22179523f, 0.43102872f, 0.21158125f, -0.00878011f, 0.04563714f, 0.01970692f, 0.07903092f 
+        };
+    };
+
+    // the taps for 10 Msps
+    template<>
+    constexpr auto getTaps<Rate_10_0_Mhz>(){
+        return std::array<float, 15>{ 
+            -0.00176613f, 0.01442368f, 0.02723286f, -0.01107437f, -0.02798874f, 0.09500009f, 0.25193724f, 0.30447075f,  
+            0.25193724f, 0.09500009f, -0.02798874f, -0.01107437f, 0.02723286f, 0.01442368f, -0.00176613f };
+    };
+
+    // checks if the taps are symmetric
+    template<SampleRate inputRate>
+    constexpr bool areTapsSymmetric() {
+        const auto taps = getTaps<inputRate>(); 
+        for (size_t i = 0; i < taps.size() / 2; i++) {
+            if (taps[i] != taps[taps.size() - 1 - i])
+                return false;
+        }
+        return true;
+    }
+
+    // and if the length is odd
+    template<SampleRate inputRate>
+    constexpr bool areTapsOdd() {
+        return (getTaps<inputRate>().size() % 2) != 0;
+    }
+} // end tap definitions
+
+
+template<SampleRate inputRate>
+class IQLowPassAsym {
+public:
+    IQLowPassAsym() {
+        m_new_index = 0;
+        std::fill(std::begin(m_delay_I), std::end(m_delay_I), 0.0f);
+        std::fill(std::begin(m_delay_Q), std::end(m_delay_Q), 0.0f);
+    }
+
+    void apply(float& value_I, float& value_Q) {
+        m_delay_I[m_new_index] = value_I;
+        m_delay_Q[m_new_index] = value_Q;
+
+        float sum_I = 0.0f;
+        float sum_Q = 0.0f;
+
+        // we check at compile time how we sum up
+        if constexpr(LowPassTaps::areTapsSymmetric<inputRate>()) {
+            // regardless of the length, take the quick way
+            sum_sym(sum_I, sum_Q);        
+        } else {
+            // if they are not symmetric, we have to iterate over all taps
+            sum_not_sym(sum_I, sum_Q);
+        }
+
+        m_new_index = (m_new_index + 1) & (bufferSize - 1);
+        value_I = sum_I;
+        value_Q = sum_Q;
+    }
+
+private:
+    void sum_not_sym(float& sum_I, float& sum_Q) const {
+        // index that wraps around the ring buffer
+        int j = m_new_index;
+        for (size_t k = 0; k < numTaps; k++) {
+            sum_I += IQ_TAPS[k] * m_delay_I[j];
+            sum_Q += IQ_TAPS[k] * m_delay_Q[j];
+            j = (j - 1) & (bufferSize - 1);
+        }
+    }
+
+    void sum_sym(float& sum_I, float& sum_Q) const {
+        constexpr auto halfNumTaps = numTaps >> 1; 
     
-    public:
-        IQLowPass() {
-            m_new_index = 0;
-            std::fill(std::begin(m_delay_I), std::end(m_delay_I), 0.0f);
-            std::fill(std::begin(m_delay_Q), std::end(m_delay_Q), 0.0f);
-        }
-
-        
-
-        static constexpr float tap(int i) {
-            return IQ_TAPS[i];
-        }
-
-        void apply(float& value_I, float& value_Q) {
-            // insert the new element at new index pos
-            m_delay_I[m_new_index] = value_I;
-            m_delay_Q[m_new_index] = value_Q;
-
+        if constexpr(LowPassTaps::areTapsOdd<inputRate>()) {
             // compute the center index
             int center_index = (m_new_index + halfNumTaps + 1) & (bufferSize-1);
-
             // deal with this separatly
-            float sum_I = m_delay_I[center_index] * tap(halfNumTaps);
-            float sum_Q = m_delay_Q[center_index] * tap(halfNumTaps);
-
-            // init i (left) and j (right) at the center
-            int i = center_index;
-            int j = center_index;
-
-            // we iterate inside out
-            for (int k = halfNumTaps-1; k >= 0; k--) {
-                i = (i - 1) & (bufferSize-1);
-                j = (j + 1) & (bufferSize-1);
-
-                sum_I += tap(k) * (m_delay_I[i] + m_delay_I[j]);
-                sum_Q += tap(k) * (m_delay_Q[i] + m_delay_Q[j]);
-            }
-            
-            m_new_index = (m_new_index + 1) & (bufferSize-1);
-            value_I = sum_I;
-            value_Q = sum_Q;
+            sum_I += m_delay_I[center_index] * IQ_TAPS[halfNumTaps];
+            sum_Q += m_delay_Q[center_index] * IQ_TAPS[halfNumTaps];
         }
-    private:
-        /*static constexpr std::array<float, 25> IQ_TAPS = { 
-        -0.000998606272947510f, 0.001695637278417295f, -0.003054430179754289f, 0.005055504379767936f, -0.007901319195893647f,
-        0.011873357051047719f, -0.017411159379930066f,  0.025304817427568772f, -0.037225225204559217f, 0.057533286997004301f,
-        -0.102327462004259350f, 0.317034472508947400f,  0.500000000000000000f,  0.317034472508947400f, -0.102327462004259350f,
-        0.057533286997004301f, -0.037225225204559217f,  0.025304817427568772f, -0.017411159379930066f,  0.011873357051047719f,
-        -0.007901319195893647f, 0.005055504379767936f, -0.003054430179754289f,  0.001695637278417295f, -0.000998606272947510f }; 
-        */
-        
-        
-        static constexpr std::array<float, 7> IQ_TAPS = { 0.1f, -0.1f, 0.7f, 1.07f, 0.7f, -0.1f, 0.1f }; 
-    
-        static constexpr size_t numTaps = IQ_TAPS.size();
-        static constexpr uint8_t bufferSize = 8;
-        static constexpr size_t halfNumTaps = numTaps / 2;
 
-        float m_delay_I[bufferSize];
-        float m_delay_Q[bufferSize];
-        int m_new_index = 0;
+        // init i (left) and j (right)
+        int i = m_new_index;
+        int j = (m_new_index + numTaps + 1) & (bufferSize-1);
+
+        for (size_t k = 0; k < halfNumTaps; k++) {
+            i = (i + 1) & (bufferSize-1);
+            j = (j - 1) & (bufferSize-1);
+
+            sum_I += IQ_TAPS[k] * (m_delay_I[i] + m_delay_I[j]);
+            sum_Q += IQ_TAPS[k] * (m_delay_Q[i] + m_delay_Q[j]);
+        }
+    }  
+
+    static constexpr auto numTaps = LowPassTaps::getTaps<inputRate>().size();
+    static constexpr std::array<float, numTaps> IQ_TAPS = LowPassTaps::getTaps<inputRate>();
+    static constexpr auto bufferSize = std::bit_ceil(numTaps);
+
+    float m_delay_I[bufferSize];
+    float m_delay_Q[bufferSize];
+    int m_new_index;
 };
+

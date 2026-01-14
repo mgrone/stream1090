@@ -228,7 +228,9 @@ private:
         const auto total_sent = Long_sent + Short_sent;
         const auto total_dups = Long_dups + Short_dups;
         const auto total_repaired = Long_repaired + Short_repaired;
+#if !defined(STATS_END_ONLY) && !STATS_END_ONLY
         out << "\x1B[2J\x1B[H";
+#endif
         printLine(out);
         printHeaderLine(out);
         printLine(out);

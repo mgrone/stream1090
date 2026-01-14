@@ -162,7 +162,7 @@ class InputReader<Sampler, IQ_AIRSPY_RX_RAW_IQ_FILTER> {
         }
     }
 
-    IQLowPass m_dualLowPass;
+    IQLowPassAsym<Sampler::InputSampleRate> m_dualLowPass;
 
     bool m_flipSigns;
     float m_avg_I;
