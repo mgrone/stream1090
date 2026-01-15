@@ -32,10 +32,11 @@ namespace LowPassTaps {
     template<>
     constexpr auto getTaps<Rate_10_0_Mhz>(){
         return std::array<float, 15>{ 
-            -0.00176613f, 0.01442368f, 0.02723286f, -0.01107437f, -0.02798874f, 0.09500009f, 0.25193724f, 0.30447075f,  
-            0.25193724f, 0.09500009f, -0.02798874f, -0.01107437f, 0.02723286f, 0.01442368f, -0.00176613f };
+            -0.00346601f, 0.01792696f, 0.04689825f, -0.01513778f, -0.05571929f, 0.1544143f,
+            0.262295f, 0.18557717f, 0.262295f, 0.1544143f, -0.05571929f, -0.01513778f,
+            0.04689825f, 0.01792696f, -0.00346601 };
     };
-
+    
     // checks if the taps are symmetric
     template<SampleRate inputRate>
     constexpr bool areTapsSymmetric() {
