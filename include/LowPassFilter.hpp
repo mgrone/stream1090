@@ -19,28 +19,123 @@ namespace LowPassTaps {
     constexpr auto getTaps() {
         return std::array<float, 1>{ 1.0f }; 
     }
+    
+    template<SampleRate inputRate, SampleRate outputRate>
+    constexpr auto getTaps() {
+        return getTaps<inputRate>(); 
+    }
 
-    // the taps for 6 Msps input
     template<>
     constexpr auto getTaps<Rate_6_0_Mhz>(){
-        return std::array<float, 7>{ 
-            0.22179523f, 0.43102872f, 0.21158125f, -0.00878011f, 0.04563714f, 0.01970692f, 0.07903092f 
+        return std::array<float, 15>{ 
+            -0.0014986745081841946f,
+            0.04620366916060448f,
+            0.03521840274333954f,
+            0.03104071319103241f,
+            0.06415047496557236f,
+            0.0026237000711262226f,
+            0.17662887275218964f,
+            0.2912658154964447f,
+            0.17662887275218964f,
+            0.0026237000711262226f,
+            0.06415047496557236f,
+            0.03104071319103241f,
+            0.03521840274333954f,
+            0.04620366916060448f,
+            -0.0014986745081841946f  
         };
     };
 
-    // the taps for 10 Msps
+    template<>
+    constexpr auto getTaps<Rate_6_0_Mhz, Rate_12_0_Mhz>(){
+        return std::array<float, 15>{ 
+            -0.0013338270364329219f,
+            0.04304022341966629f,
+            0.03304946795105934f,
+            0.05120916664600372f,
+            0.06323479115962982f,
+            -0.03882506489753723f,
+            0.18562690913677216f,
+            0.32799673080444336f,
+            0.18562690913677216f,
+            -0.03882506489753723f,
+            0.06323479115962982f,
+            0.05120916664600372f,
+            0.03304946795105934f,
+            0.04304022341966629f,
+            -0.0013338270364329219f
+        };
+    };
+
+    template<>
+    constexpr auto getTaps<Rate_6_0_Mhz, Rate_24_0_Mhz>(){
+        return std::array<float, 15>{
+            -0.00025101282517425716f,
+            0.045283835381269455f,
+            0.01910368911921978f,
+            0.07402653992176056f,
+            0.0615474134683609f,
+            -0.07990248501300812f,
+            0.23224414885044098f,
+            0.29589566588401794f,
+            0.23224414885044098f,
+            -0.07990248501300812f,
+            0.0615474134683609f,
+            0.07402653992176056f,
+            0.01910368911921978f,
+            0.045283835381269455f,
+            -0.00025101282517425716f
+        };
+    };
+
     template<>
     constexpr auto getTaps<Rate_10_0_Mhz>(){
         return std::array<float, 15>{ 
-            -0.00346601f, 0.01792696f, 0.04689825f, -0.01513778f, -0.05571929f, 0.1544143f,
-            0.262295f, 0.18557717f, 0.262295f, 0.1544143f, -0.05571929f, -0.01513778f,
-            0.04689825f, 0.01792696f, -0.00346601 };
+            -0.00437029f, 
+            0.04948019f, 
+            0.06041661f, 
+            -0.04184288f, 
+            -0.04630635f, 
+            0.12882623f, 
+            0.24776617f, 
+            0.2120607f, 
+            0.24776617f, 
+            0.12882623f, 
+            -0.04630635f, 
+            -0.04184288f, 
+            0.06041661f, 
+            0.04948019f, 
+            -0.00437029f 
+        };
     };
+
+    template<>
+    constexpr auto getTaps<Rate_10_0_Mhz, Rate_24_0_Mhz>(){
+        return std::array<float, 15>{
+            -0.004905544687062502f,
+            0.05272218585014343f,
+            0.06665966659784317f,
+            -0.050263479351997375f,
+            -0.053445544093847275f,
+            0.13472823798656464f,
+            0.244264617562294f,
+            0.22047965228557587f,
+            0.244264617562294f,
+            0.13472823798656464f,
+            -0.053445544093847275f,
+            -0.050263479351997375f,
+            0.06665966659784317f,
+            0.05272218585014343f,
+            -0.004905544687062502f
+        };
+    };
+
+
     
     // checks if the taps are symmetric
-    template<SampleRate inputRate>
+    template<SampleRate inputRate, SampleRate outputRate>
     constexpr bool areTapsSymmetric() {
-        const auto taps = getTaps<inputRate>(); 
+        const auto taps = getTaps<inputRate, outputRate>(); 
         for (size_t i = 0; i < taps.size() / 2; i++) {
             if (taps[i] != taps[taps.size() - 1 - i])
                 return false;
@@ -49,17 +144,17 @@ namespace LowPassTaps {
     }
 
     // and if the length is odd
-    template<SampleRate inputRate>
+    template<SampleRate inputRate, SampleRate outputRate>
     constexpr bool areTapsOdd() {
-        return (getTaps<inputRate>().size() % 2) != 0;
+        return (getTaps<inputRate, outputRate>().size() % 2) != 0;
     }
 } // end tap definitions
 
 
-template<SampleRate inputRate>
-class IQLowPassAsym {
+template<SampleRate inputRate, SampleRate outputRate>
+class IQLowPass {
 public:
-    IQLowPassAsym() {
+    IQLowPass() {
         m_new_index = 0;
         std::fill(std::begin(m_delay_I), std::end(m_delay_I), 0.0f);
         std::fill(std::begin(m_delay_Q), std::end(m_delay_Q), 0.0f);
@@ -73,7 +168,7 @@ public:
         float sum_Q = 0.0f;
 
         // we check at compile time how we sum up
-        if constexpr(LowPassTaps::areTapsSymmetric<inputRate>()) {
+        if constexpr(LowPassTaps::areTapsSymmetric<inputRate, outputRate>()) {
             // regardless of the length, take the quick way
             sum_sym(sum_I, sum_Q);        
         } else {
@@ -100,9 +195,9 @@ private:
     void sum_sym(float& sum_I, float& sum_Q) const {
         constexpr auto halfNumTaps = numTaps >> 1; 
     
-        if constexpr(LowPassTaps::areTapsOdd<inputRate>()) {
+        if constexpr(LowPassTaps::areTapsOdd<inputRate, outputRate>()) {
             // compute the center index
-            int center_index = (m_new_index + halfNumTaps + 1) & (bufferSize-1);
+            const int center_index = (m_new_index + halfNumTaps + 1) & (bufferSize-1);
             // deal with this separatly
             sum_I += m_delay_I[center_index] * IQ_TAPS[halfNumTaps];
             sum_Q += m_delay_Q[center_index] * IQ_TAPS[halfNumTaps];
@@ -121,8 +216,8 @@ private:
         }
     }  
 
-    static constexpr auto numTaps = LowPassTaps::getTaps<inputRate>().size();
-    static constexpr std::array<float, numTaps> IQ_TAPS = LowPassTaps::getTaps<inputRate>();
+    static constexpr auto numTaps = LowPassTaps::getTaps<inputRate, outputRate>().size();
+    static constexpr std::array<float, numTaps> IQ_TAPS = LowPassTaps::getTaps<inputRate, outputRate>();
     static constexpr auto bufferSize = std::bit_ceil(numTaps);
 
     float m_delay_I[bufferSize];
