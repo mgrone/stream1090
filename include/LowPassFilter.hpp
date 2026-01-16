@@ -186,9 +186,9 @@ private:
         // index that wraps around the ring buffer
         int j = m_new_index;
         for (size_t k = 0; k < numTaps; k++) {
+            j = (j + 1) & (bufferSize - 1);
             sum_I += IQ_TAPS[k] * m_delay_I[j];
             sum_Q += IQ_TAPS[k] * m_delay_Q[j];
-            j = (j - 1) & (bufferSize - 1);
         }
     }
 
