@@ -149,7 +149,7 @@ class InputReader<Sampler, IQ_AIRSPY_RX_RAW_IQ_FILTER> {
             f_q -= m_avg_Q;
             m_avg_I += f_i * scale;
             m_avg_Q += f_q * scale;
-
+            
             if (m_flipSigns) {
                 f_i = -f_i;
                 f_q = -f_q;
