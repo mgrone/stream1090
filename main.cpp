@@ -11,7 +11,7 @@
 #include <algorithm>
 #include "SampleStream.hpp"
 
-#define STREAM1090_VERSION "260118"
+#define STREAM1090_VERSION "260118_2"
 
 
 #if !defined(COMPILER_INPUT_SAMPLE_RATE)

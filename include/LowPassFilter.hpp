@@ -132,7 +132,7 @@ namespace LowPassTaps {
     
 
     
-    template<>
+    /*template<>
     constexpr auto getTaps<Rate_10_0_Mhz, Rate_24_0_Mhz>(){
         return std::array<float, 15>{
             -0.00725885,  
@@ -151,9 +151,49 @@ namespace LowPassTaps {
             0.07273609, 
             -0.00725885  
         };
-    }; 
+    };*/
+    
+    /* template<>
+    constexpr auto getTaps<Rate_10_0_Mhz, Rate_24_0_Mhz>(){
+        return std::array<float, 15>{   
+            -0.006557506509125233,
+            0.07586383074522018,
+            0.08514095842838287,
+            -0.05930979177355766,
+            -0.09169356524944305,
+            0.14734557271003723,
+            0.2925780117511749,
+            0.11326508224010468,
+            0.2925780117511749,
+            0.14734557271003723,
+            -0.09169356524944305,
+            -0.05930979177355766,
+            0.08514095842838287,
+            0.07586383074522018,
+            -0.006557506509125233
+                    };
+    }; */
 
-
+    template<>
+    constexpr auto getTaps<Rate_10_0_Mhz, Rate_24_0_Mhz>(){
+        return std::array<float, 15>{   
+            -0.008151337504386902,
+            0.07549969106912613,
+            0.10143674910068512,
+            -0.047200191766023636,
+            -0.1384957879781723,
+            0.17454688251018524,
+            0.3371904194355011,
+            0.01034723874181509,
+            0.3371904194355011,
+            0.17454688251018524,
+            -0.1384957879781723,
+            -0.047200191766023636,
+            0.10143674910068512,
+            0.07549969106912613,
+            -0.008151337504386902,
+        };
+    };
     
     // checks if the taps are symmetric
     template<SampleRate inputRate, SampleRate outputRate>
@@ -181,6 +221,11 @@ public:
         m_new_index = 0;
         std::fill(std::begin(m_delay_I), std::end(m_delay_I), 0.0f);
         std::fill(std::begin(m_delay_Q), std::end(m_delay_Q), 0.0f);
+        /* if constexpr(LowPassTaps::areTapsSymmetric<inputRate, outputRate>()) {
+            std::cerr << "Taps are symmetric" << std::endl;
+        } else {
+            std::cerr << "Taps are NOT symmetric" << std::endl;
+        } */
     }
 
     void apply(float& value_I, float& value_Q) {
