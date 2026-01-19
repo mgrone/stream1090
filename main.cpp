@@ -91,81 +91,99 @@ bool check_upsampling_parameter<Rate_10_0_Mhz>(int upsamplingParameter) {
 
 
 template<SampleRate inputRate, SampleRate outputRate, SampleStreamInputFormat inputFormat>
-void run_main_templ() {
+bool run_main_templ(const std::string& tapsFile) {
     typedef SamplerBase<inputRate, outputRate> sampler;
     // create an instance sampler  
     SampleStream<sampler> sampleStream;
     // start reading the int16 iq data from airspy_rx
     printSamplerConfig<sampler>();
-    // check which input reader to use
-    sampleStream.template read<inputFormat>(std::cin);
+
+    if constexpr (inputFormat == IQ_AIRSPY_RX_RAW_IQ_FILTER_FILE) {
+        InputReader<sampler, IQ_AIRSPY_RX_RAW_IQ_FILTER_FILE> reader;
+
+        if (!reader.loadTapsFromFile("./taps.txt")) {       // you add this method
+            std::cerr << "Failed to load taps from " << tapsFile << "\n";
+            return false;
+        }
+
+        sampleStream.read(std::cin, reader);
+        return true;
+    } else {
+        sampleStream.template read<inputFormat>(std::cin);
+        return true;
+    }
 }
 
 template<SampleStreamInputFormat inputFormat>
-void run_main(int upsampling) {
+bool run_main(int upsampling, const std::string& tapsFile = "") {
     constexpr SampleRate inputRate = static_cast<SampleRate>(compilerInputSampleRate);
     if constexpr(inputRate == Rate_2_4_Mhz) {
         switch (upsampling) {
             case 8:
-                run_main_templ<inputRate, Rate_8_0_Mhz, inputFormat>();
+                return run_main_templ<inputRate, Rate_8_0_Mhz, inputFormat>(tapsFile);
                 // debugging:
                 //run_main_templ<Rate_12_0_Mhz, Rate_12_0_Mhz, inputFormat>();
             break;
             default:
                 std::cerr << "Unknown internal sample rate " << upsampling << std::endl;
+                return false;
             break;
         }
     } else if constexpr(inputRate == Rate_6_0_Mhz) {
         switch (upsampling) {
                 case 6:
-                    run_main_templ<inputRate, Rate_6_0_Mhz, inputFormat>();
+                    return run_main_templ<inputRate, Rate_6_0_Mhz, inputFormat>(tapsFile);
                 break;
                 case 12: 
-                    run_main_templ<inputRate, Rate_12_0_Mhz, inputFormat>();
+                    return run_main_templ<inputRate, Rate_12_0_Mhz, inputFormat>(tapsFile);
                 break;
                 case 16:
-                    run_main_templ<inputRate, Rate_16_0_Mhz, inputFormat>();
+                    return run_main_templ<inputRate, Rate_16_0_Mhz, inputFormat>(tapsFile);
                 break;
                 case 24:
-                    run_main_templ<inputRate, Rate_24_0_Mhz, inputFormat>();
+                    return run_main_templ<inputRate, Rate_24_0_Mhz, inputFormat>(tapsFile);
                 break;
                 default:
                     std::cerr << "Unknown internal sample rate " << upsampling << std::endl;
+                    return false;
                 break;
                 }
     } else if constexpr(compilerInputSampleRate == Rate_10_0_Mhz) { 
         switch (upsampling) {
                 case 10:
-                    run_main_templ<inputRate, Rate_10_0_Mhz, inputFormat>();
+                    return run_main_templ<inputRate, Rate_10_0_Mhz, inputFormat>(tapsFile);
                 break;
                 case 20: 
-                    run_main_templ<inputRate, Rate_20_0_Mhz, inputFormat>();
+                    return run_main_templ<inputRate, Rate_20_0_Mhz, inputFormat>(tapsFile);
                 break;
                 case 24:
-                    run_main_templ<inputRate, Rate_24_0_Mhz, inputFormat>(); 
+                    return run_main_templ<inputRate, Rate_24_0_Mhz, inputFormat>(tapsFile); 
                 break;
                 default:
                     std::cerr << "Unknown internal sample rate " << upsampling << std::endl;
+                    return false;
                 break;
                 }
     } else {
         std::cerr << "Unknown internal sample rate " << upsampling << std::endl;
+        return false;
     }
+    return false;
 }
 
 
 int main(int argc, char** argv) {
     // Parse command line options.
     int upsampling = (compilerInputSampleRate / 1000000);
+    std::string tapsFile = "";
     SampleStreamInputFormat inputFormat = (compilerInputSampleRate == Rate_2_4_Mhz) ? IQ_RTL_SDR : IQ_AIRSPY_RX;
     int opt;
-    while ((opt = getopt(argc, argv, "abcdfrqmu:h")) != -1) {
+    while ((opt = getopt(argc, argv, "abcdf:rqmu:h")) != -1) {
         switch (opt) {
             case 'a':
             case 'b':
             case 'c':
             case 'd':
-            case 'f':
                 printDeprecated();
                 return -1;
                 break;
@@ -174,6 +192,14 @@ int main(int argc, char** argv) {
                 break;
             case 'q':
                 inputFormat = IQ_AIRSPY_RX_RAW_IQ_FILTER;
+                break;
+            case 'f':
+                inputFormat = IQ_AIRSPY_RX_RAW_IQ_FILTER_FILE;
+                if (optarg == nullptr || optarg[0] == '-') { 
+                    std::cerr << "Error: -f requires a filename\n"; 
+                    return -1; 
+                }
+                tapsFile = optarg;
                 break;
             case 'm':
                 inputFormat = MAG_FLOAT32;
@@ -221,6 +247,9 @@ int main(int argc, char** argv) {
             break;
         case IQ_AIRSPY_RX_RAW_IQ_FILTER:
             run_main<IQ_AIRSPY_RX_RAW_IQ_FILTER>(upsampling);
+            break;
+         case IQ_AIRSPY_RX_RAW_IQ_FILTER_FILE:
+            run_main<IQ_AIRSPY_RX_RAW_IQ_FILTER_FILE>(upsampling, tapsFile);
             break;
         case MAG_FLOAT32:
             run_main<MAG_FLOAT32>(upsampling);

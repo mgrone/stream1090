@@ -33,9 +33,19 @@ class SampleStream {
         m_samples = std::make_unique<float[]>(Sampler::SampleBufferSize + Sampler::SampleBufferOverlap);
     }
    
-    // the main method 
-    template<SampleStreamInputFormat inputFormat = IQ_RTL_SDR>
-    void read(std::istream& inputStream);
+    // the main method that streams from InputStream using inputReader
+    template<typename InputReaderType>
+    void read(std::istream& inputStream, InputReaderType& inputReader);
+
+    // overloaded version which takes care of creating an instance of InputReader depending on the format
+    template<SampleStreamInputFormat inputFormat>
+    void read(std::istream& inputStream) {
+        // Input reader type based on the sampler and inputformat
+        using InputReaderType = InputReader<Sampler, inputFormat>;
+        InputReaderType inputReader;
+        // call the core function with with instance
+        read<InputReaderType>(inputStream, inputReader);
+    }
 
     private:
 
@@ -48,12 +58,8 @@ class SampleStream {
 
 
 template<typename Sampler>
-template<SampleStreamInputFormat inputFormat>
-inline void SampleStream<Sampler>::read(std::istream& inputStream) {
-    // create an instance for reading inputformat from inputStream
-    // this will if needed also create its own buffer
-    InputReader<Sampler, inputFormat> inputReader;
-    
+template<typename InputReaderType>
+inline void SampleStream<Sampler>::read(std::istream& inputStream, InputReaderType& inputReader) {   
     // make sure the overlap parts at the beginning of the buffers are zeroed
     std::fill(m_inputMagnitude.get(), m_inputMagnitude.get() + Sampler::InputBufferOverlap, 0.0f);
     std::fill(m_samples.get(), m_samples.get() + Sampler::SampleBufferOverlap, 0.0f);

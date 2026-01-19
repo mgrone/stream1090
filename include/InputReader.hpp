@@ -25,6 +25,7 @@ enum SampleStreamInputFormat {
     IQ_AIRSPY_RX_RAW, // the raw output of airspy_rx
     IQ_AIRSPY_RX_RAW_INTER, // raw output interleaved airspy (unused)
     IQ_AIRSPY_RX_RAW_IQ_FILTER,
+    IQ_AIRSPY_RX_RAW_IQ_FILTER_FILE,
     IQ_FLOAT32,
     MAG_FLOAT32, // for custom input when you want to read the magnitude as float directly
 };
@@ -163,6 +164,71 @@ class InputReader<Sampler, IQ_AIRSPY_RX_RAW_IQ_FILTER> {
     }
 
     IQLowPass<Sampler::InputSampleRate, Sampler::OutputSampleRate> m_dualLowPass;
+
+    bool m_flipSigns;
+    float m_avg_I;
+    float m_avg_Q;
+    // input buffer holding Sampler::InputBufferSize * 2 many ints
+    std::unique_ptr<uint16_t[]> m_inputBuffer;
+}; 
+
+// Partial specialization for airspy uint16 RAW input
+template<typename Sampler>
+class InputReader<Sampler, IQ_AIRSPY_RX_RAW_IQ_FILTER_FILE> {
+    public:
+    // default constructor
+    InputReader() : m_dualLowPassDynamic() {
+        // we will need a buffer that holds Sampler::InputBufferSize many IQ pairs.
+        // Each pair consists of two 16-bit unsigned ints
+        m_inputBuffer = std::make_unique<uint16_t[]>(Sampler::InputBufferSize << 1);
+
+        // reset the average for DC removal
+        m_avg_I = 0.0;
+        m_avg_Q = 0.0;
+
+        // toggle flag to invert signs
+        m_flipSigns = true;
+    }
+
+    bool loadTapsFromFile(const std::string& filename) {
+        return m_dualLowPassDynamic.loadFromFile(filename);
+    }
+
+    void readMagnitude(std::istream& inputStream, float* out) {
+        // Sampler::InputBufferSize * 2 many 16 bit uints from the input stream
+        inputStream.read(reinterpret_cast<char*>(m_inputBuffer.get()), (Sampler::InputBufferSize) * sizeof(uint16_t) * 2);
+
+        // call the helper function to compute the magnitude
+        computeMagnitude(m_inputBuffer.get(), out, Sampler::InputBufferSize);
+    }
+    
+    private:
+
+    void computeMagnitude(uint16_t* iq_single, float* out, size_t num) {
+        //const float scale = 0.5f / (float)num;
+        const float scale = 0.005f;
+        for (size_t i = 0; i < num; i++) {
+            float f_i = ((float)(*iq_single++) - 2047.5f) / 2047.5f;
+            float f_q = ((float)(*iq_single++) - 2047.5f) / 2047.5f;
+            
+            f_i -= m_avg_I;
+            f_q -= m_avg_Q;
+            m_avg_I += f_i * scale;
+            m_avg_Q += f_q * scale;
+            
+            if (m_flipSigns) {
+                f_i = -f_i;
+                f_q = -f_q;
+            }
+
+            m_dualLowPassDynamic.apply(f_i, f_q);
+        	const float sq = f_i * f_i + f_q * f_q;
+            out[i] = sqrtf(sq);
+            m_flipSigns = !m_flipSigns;
+        }
+    }
+
+    IQLowPassDynamic<> m_dualLowPassDynamic;
 
     bool m_flipSigns;
     float m_avg_I;
