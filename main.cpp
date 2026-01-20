@@ -96,12 +96,14 @@ bool run_main_templ(const std::string& tapsFile) {
     // create an instance sampler  
     SampleStream<sampler> sampleStream;
     // start reading the int16 iq data from airspy_rx
+#if defined(STATS_ENABLED) && STATS_ENABLED
     printSamplerConfig<sampler>();
+#endif
 
     if constexpr (inputFormat == IQ_AIRSPY_RX_RAW_IQ_FILTER_FILE) {
         InputReader<sampler, IQ_AIRSPY_RX_RAW_IQ_FILTER_FILE> reader;
 
-        if (!reader.loadTapsFromFile("./taps.txt")) {       // you add this method
+        if (!reader.loadTapsFromFile(tapsFile)) {       // you add this method
             std::cerr << "Failed to load taps from " << tapsFile << "\n";
             return false;
         }
