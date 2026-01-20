@@ -21,6 +21,7 @@
 // The input format for the sample stream
 enum SampleStreamInputFormat {
     IQ_RTL_SDR, // the default output of from rtl_sdr
+    IQ_RTL_SDR_IQ_FILTER_FILE,
     IQ_AIRSPY_RX, // the default output of airspy_rx
     IQ_AIRSPY_RX_RAW, // the raw output of airspy_rx
     IQ_AIRSPY_RX_RAW_INTER, // raw output interleaved airspy (unused)
@@ -62,6 +63,45 @@ public:
     }
 private:
     std::unique_ptr<uint16_t[]> m_inputBuffer;
+}; 
+
+
+
+// Partial specialization for rtl_sdr input
+template<typename Sampler>
+class InputReader<Sampler, IQ_RTL_SDR_IQ_FILTER_FILE> {
+public:
+    // default constructor that will also allocate the buffer
+    InputReader() {
+        // we will need a buffer that holds Sampler::InputBufferSize many IQ pairs in the form of uint8 x 2 = uint16
+        m_inputBuffer = std::make_unique<uint8_t[]>(Sampler::InputBufferSize << 2);
+    }
+
+    void readMagnitude(std::istream& inputStream, float* out) {
+        // Sampler::InputBufferSize many iq pairs from the input stream
+        inputStream.read(reinterpret_cast<char*>(m_inputBuffer.get()), (Sampler::InputBufferSize) * sizeof(uint8_t) * 2);
+
+        // call the helper function to compute the magnitude
+        computeMagnitude(m_inputBuffer.get(), out, Sampler::InputBufferSize);
+    }
+
+    void computeMagnitude(uint8_t* iq_single, float* out, size_t num) {
+        for (size_t i = 0; i < num; i++) {
+            float f_i = ((float)(*iq_single++) - 127.5f) / 127.5f;
+            float f_q = ((float)(*iq_single++) - 127.5f) / 127.5f;
+            m_dualLowPassDynamic.apply(f_i, f_q);
+        	const float sq = f_i * f_i + f_q * f_q;
+            out[i] = sqrtf(sq);
+        }
+    }
+
+    bool loadTapsFromFile(const std::string& filename) {
+        return m_dualLowPassDynamic.loadFromFile(filename);
+    }
+private:
+    IQLowPassDynamic<> m_dualLowPassDynamic;
+
+    std::unique_ptr<uint8_t[]> m_inputBuffer;
 }; 
 
 
