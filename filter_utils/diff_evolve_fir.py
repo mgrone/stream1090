@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright 2025 Martin Gronemann
 #
@@ -5,8 +7,6 @@
 # Public License v3.0. See the top-level LICENSE file for details.
 #
 
-
-#!/usr/bin/env python3
 import numpy as np
 from scipy.optimize import differential_evolution
 from scipy.signal import firwin2
@@ -16,7 +16,7 @@ import subprocess
 #  Config
 # ============================================================
 
-DATA_PATH = "../../samples/balcony_6M_4.raw"
+DATA_PATH = "../../samples/balcony_6M_small.raw"
 FILTER_PATH= "./diff_evolve_fir_temp.txt"
 FS = 6_000_000
 FS_UP = 12_000_000 
@@ -47,7 +47,6 @@ K = 5  # you can change this
 CENTER_SEED = [-0.30480078491692353, 1.191383872925207, -0.8946397241760973, 0.7031294489517014, -0.29172370808888537]
 CENTER_SEED_MARGIN = 0.5
 
-
 # DC and Nyquist gains (before normalization)
 G_DC = 1.0
 G_NYQ = 0.0
@@ -56,17 +55,6 @@ GAIN_MIN = -2.0
 GAIN_MAX = 2.0
 
 bounds = [ (max(GAIN_MIN, c - CENTER_SEED_MARGIN), min(GAIN_MAX, c + CENTER_SEED_MARGIN)) for c in CENTER_SEED] # + [[0.002, 0.008]]
-# CENTER_SEED = CENTER_SEED + [0.005]
-
-#print(CENTER_SEED)
-#print(bounds)
-
-# ============================================================
-#  Data loading
-# ============================================================
-
-#print("Loading IQ data...")
-#I, Q = load_raw_u16(DATA_PATH)
 
 # ============================================================
 #  Low-pass firwin2 builder
@@ -152,10 +140,21 @@ def evaluate_filter(params):
         for t in h:
             f.write(f"{t}\n")
 
+    # Select executable based on input sample rate FS
+    if FS == 2_400_000:
+        exe = "stream1090"
+    elif FS == 6_000_000:
+        exe = "stream1090_6M"
+    elif FS == 10_000_000:
+        exe = "stream1090_10M"
+    else:
+        raise ValueError(f"Unsupported FS={FS}")
+
+
     # Run stream1090 with raw IQ piped in
     cmd = [
         "bash", "-c",
-        f"cat {DATA_PATH} | ../build/stream1090_6M -f {FILTER_PATH} -u {FS_UP // 1_000_000}"
+        f"cat {DATA_PATH} | ../build/{exe} -f {FILTER_PATH} -u {FS_UP // 1_000_000}"
     ]
 
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
@@ -170,7 +169,7 @@ def evaluate_filter(params):
     print(score)
    
 
-    # Track best-so-far
+  # Track best-so-far
     if score > best_score:
         best_score = score
         best_total = total
@@ -178,8 +177,15 @@ def evaluate_filter(params):
         best_taps = h.copy()
 
         # 🔥 Append to log file
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
         with open("de_log.txt", "a") as f:
-            f.write(f"======== {FS/1_000_000} -> {FS_UP/1_000_000} with {NUMTAPS} taps ============================\n")
+            f.write(f"# ================================================================\n")
+            f.write(f"# Instance: {DATA_PATH}\n")
+            f.write(f"# Time: {timestamp}\n")
+            f.write(f"# {FS/1_000_000} -> {FS_UP/1_000_000} MHz with {NUMTAPS} taps\n")
+            f.write(f"# ================================================================\n")
             f.write(f"New best score: {best_score}\n")
             f.write(f"New best total: {best_total}\n")
             f.write(f"Best params: {best_params.tolist()}\n")
@@ -187,6 +193,7 @@ def evaluate_filter(params):
             for t in best_taps:
                 f.write(f"{t}\n")
             f.write("\n")
+
 
 
     # Progress print
@@ -207,16 +214,11 @@ center = np.array(CENTER_SEED, dtype=np.float64)
 
 while True:
     print("Starting Differential Evolution...")
-    #numIts = 10
-    #if (isFirstRun):
-    #    numIts = 1
 
     result = differential_evolution(
         evaluate_filter,
         bounds,
         maxiter=40,
-        #maxiter=numIts,
-        #popsize=12,
         popsize=20,
         mutation=(0.5, 1.0),
         recombination=0.7,
@@ -256,17 +258,8 @@ while True:
         high = min(GAIN_MAX, best[i] + margins[i])
         bounds.append((low, high))
     
-    #dc_min = max(0.0, best[K] - margins[K])
-    #dc_max = min(1.0, best[K] + margins[K])
-    #bounds.append((dc_min, dc_max))
-
     print("Per-parameter margins:", margins)
 
     # 🔥 update center for next DE iteration
     center = best_params.copy()
     isFirstRun = False
-    # 🔥 reset best trackers for next loop
-    # best_score = -np.inf
-    # best_params = None
-    # best_taps = None
-
