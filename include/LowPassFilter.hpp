@@ -286,6 +286,7 @@ public:
                     break;
                 }
             }
+            //printTabs();
             return true;
         }
         return false;
@@ -327,7 +328,9 @@ public:
         if (taps.empty()) {
             return false;
         }
-
+#if defined(STATS_ENABLED) && STATS_ENABLED
+        std::cerr << "[Stream1090] Loaded " << taps.size() << " taps from " << filename << std::endl;
+#endif
         return setTaps(taps);
     }
 

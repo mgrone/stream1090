@@ -17,77 +17,79 @@ import subprocess
 # ============================================================
 
 DATA_PATH = "../../samples/balcony_6M_small.raw"
-FILTER_PATH= "./diff_evolve_fir_temp.txt"
+FILTER_PATH = "./diff_evolve_fir_temp.txt"
 FS = 6_000_000
-FS_UP = 12_000_000 
+FS_UP = 12_000_000
 NUMTAPS = 15
 
-# Number of interior frequency points (controls shape complexity)
-K = 5  # you can change this
+# Number of interior frequency points
+K = 5
 
-#CENTER_SEED = [-0.185171, 1.531379, -1.351036, 0.291881, -0.086908 ]
-#CENTER_SEED_MARGIN = 0.1
-
-
-#CENTER_SEED = [-0.3699803648355714, 1.1340839591825858, -0.6962101473953, 0.7509089543505206, -0.18001058325125197]
-#CENTER_SEED = [-0.3969400962617796, 1.11478949381048, -0.7079336291556649, 0.7810669853595449, -0.18581239035226063]
-#CENTER_SEED = [-0.3976758731101197, 1.121038713666279, -0.5073016296482065, 0.8020675299866561, -0.2274269284556702]
-#CENTER_SEED = upsample_vector([-0.185171, 1.531379, -1.351036,  0.291881, -0.086908], K)
-#CENTER_SEED = [0.1957214039445784, 1.632414613644746, -1.4827299101065972, -0.30635142999486187, -0.029299815189840588]
-#CENTER_SEED = [-0.06450675543009807, 0.25914537074327354, 0.6732494322832727, -0.22394861832395696, -0.5174161750498946, 0.48478921545763637, -0.4434163008674888, 0.3085847917997503]
-#CENTER_SEED = [0.3969400962617796, 0.7079336291556649,1.11478949381048, -0.7810669853595449, -0.18581239035226063]
-#CENTER_SEED = [-0.3969400962617796, 1.11478949381048, -0.7079336291556649, 0.7810669853595449, -0.18581239035226063]
-
-# 10m -> 24m
-#CENTER_SEED = [-0.42644709942782655, 1.9996087602250656, -1.9663945740567215, 0.4757880624279247, -0.2159365248939654]
-
-# 6m -> 12m
-#CENTER_SEED = [-0.11192266576928156, 1.2028505526916322, -0.5924694334494077, 0.6635899469799019, -0.40675250638587135]
-#CENTER_SEED = [-0.41334447639112915, 1.2304346093963963, -0.9345840585000204, 0.5026669941950287, -0.06456264334932502]
-CENTER_SEED = [-0.30480078491692353, 1.191383872925207, -0.8946397241760973, 0.7031294489517014, -0.29172370808888537]
+CENTER_SEED = [-0.30480078491692353, 1.191383872925207,
+               -0.8946397241760973, 0.7031294489517014,
+               -0.29172370808888537]
 CENTER_SEED_MARGIN = 0.5
 
-# DC and Nyquist gains (before normalization)
 G_DC = 1.0
 G_NYQ = 0.0
 
 GAIN_MIN = -2.0
 GAIN_MAX = 2.0
 
-bounds = [ (max(GAIN_MIN, c - CENTER_SEED_MARGIN), min(GAIN_MAX, c + CENTER_SEED_MARGIN)) for c in CENTER_SEED] # + [[0.002, 0.008]]
+bounds = [
+    (max(GAIN_MIN, c - CENTER_SEED_MARGIN),
+     min(GAIN_MAX, c + CENTER_SEED_MARGIN))
+    for c in CENTER_SEED
+]
 
 # ============================================================
-#  Low-pass firwin2 builder
+#  FIR builder
 # ============================================================
 
 def build_lowpass_firwin2(params, K, g_dc=G_DC, g_nyq=G_NYQ):
-    """
-    params: length 2K
-        [f1, ..., fK, g1, ..., gK]
-
-    Returns:
-        h: FIR taps (normalized)
-        freq: frequency grid
-        gain: gain grid (after low-pass projection)
-    """
     params = np.asarray(params, dtype=np.float64)
     g_interior = params[:K]
-    #dc = params[K]
-    # 2) Build frequency and gain vectors with fixed endpoints
-    #freq = np.linspace(0.0, 1.0, K + 2)
+
     freq = np.concatenate(([0.0], [0.25, 0.375, 0.5, 0.625, 0.75], [1.0]))
     g = np.concatenate(([g_dc], g_interior, [g_nyq]))
-    
-    # 4) Build filter
-    h = firwin2(NUMTAPS, freq, g).astype(np.float32)
 
-    # Normalize DC gain to 1 (sum of taps)
+    h = firwin2(NUMTAPS, freq, g).astype(np.float32)
     h /= np.sum(h)
 
-    return h, freq, g #, dc
+    return h, freq, g
 
 # ============================================================
-#  DE objective with best-so-far tracking
+#  Low-pass sanity check
+# ============================================================
+
+def is_lowpass(h, min_dc=0.1, max_hf_ratio=0.7):
+    h = np.asarray(h, dtype=np.float32)
+    N = len(h)
+
+    H0 = float(np.sum(h))
+    if H0 <= min_dc:
+        return False
+
+    signs = np.power(-1.0, np.arange(N, dtype=np.float32))
+    Hpi = float(np.sum(h * signs))
+
+    if abs(Hpi) >= max_hf_ratio * H0:
+        return False
+
+    return True
+
+# ============================================================
+#  Output parsing
+# ============================================================
+
+def count_ext_squitter(out):
+    return sum(
+        line.startswith(b"@") and len(line) > 13 and line[13] == ord("8")
+        for line in out.splitlines()
+    )
+
+# ============================================================
+#  Best-so-far tracking
 # ============================================================
 
 best_score = -np.inf
@@ -95,52 +97,22 @@ best_total = -np.inf
 best_params = None
 best_taps = None
 
-def is_lowpass(h, min_dc=0.1, max_hf_ratio=0.7):
-    """
-    Low-pass sanity check for arbitrary-length FIR filters.
-
-    Conditions:
-      - DC gain (sum of taps) must be positive and above threshold
-      - Nyquist gain must be sufficiently smaller than DC gain
-    """
-    h = np.asarray(h, dtype=np.float32)
-    N = len(h)
-
-    # DC gain
-    H0 = float(np.sum(h))
-    if H0 <= min_dc:
-        return False
-
-    # Nyquist response: multiply by (-1)^n
-    signs = np.power(-1.0, np.arange(N, dtype=np.float32))
-    Hpi = float(np.sum(h * signs))
-
-    # Low-pass condition: Nyquist must be small relative to DC
-    if abs(Hpi) >= max_hf_ratio * H0:
-        return False
-
-    return True
-
-def count_ext_squitter(out):
-    total = sum(line.startswith(b"@") and len(line) > 13 and line[13] == ord("8") for line in out.splitlines())
-    return total
+# ============================================================
+#  DE objective
+# ============================================================
 
 def evaluate_filter(params):
-    global best_score, best_params, best_taps
+    global best_score, best_params, best_taps, best_total
 
-    # Build low-pass filter from params
     h, freq, gain = build_lowpass_firwin2(params, K)
 
-    # Low-pass constraint
     if not is_lowpass(h):
         return 1e9
 
-    # Write taps.txt
     with open(FILTER_PATH, "w") as f:
         for t in h:
             f.write(f"{t}\n")
 
-    # Select executable based on input sample rate FS
     if FS == 2_400_000:
         exe = "stream1090"
     elif FS == 6_000_000:
@@ -150,66 +122,66 @@ def evaluate_filter(params):
     else:
         raise ValueError(f"Unsupported FS={FS}")
 
-
-    # Run stream1090 with raw IQ piped in
     cmd = [
         "bash", "-c",
         f"cat {DATA_PATH} | ../build/{exe} -f {FILTER_PATH} -u {FS_UP // 1_000_000}"
     ]
 
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
-    out,_ = proc.communicate()
-
+    out, _ = proc.communicate()
 
     total = sum(line.startswith(b"@") for line in out.splitlines())
-
     df17 = count_ext_squitter(out)
 
-    score = df17 + total  # maximize messages
+    score = df17 + total
     print(score)
-   
 
-  # Track best-so-far
+    # ========================================================
+    #  Best-so-far logging
+    # ========================================================
     if score > best_score:
         best_score = score
         best_total = total
         best_params = params.copy()
         best_taps = h.copy()
 
-        # 🔥 Append to log file
         from datetime import datetime
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         with open("de_log.txt", "a") as f:
-            f.write(f"# ================================================================\n")
+            f.write("# ================================================================\n")
             f.write(f"# Instance: {DATA_PATH}\n")
             f.write(f"# Time: {timestamp}\n")
-            f.write(f"# {FS/1_000_000} -> {FS_UP/1_000_000} MHz with {NUMTAPS} taps\n")
-            f.write(f"# ================================================================\n")
-            f.write(f"New best score: {best_score}\n")
-            f.write(f"New best total: {best_total}\n")
-            f.write(f"Best params: {best_params.tolist()}\n")
-            f.write("Best taps:\n")
+            f.write(f"# FS: {FS/1_000_000} MHz → FS_UP: {FS_UP/1_000_000} MHz\n")
+            f.write(f"# Number of taps: {NUMTAPS}\n")
+            f.write(f"# Best score: {best_score}\n")
+            f.write(f"# Best total: {best_total}\n")
+            f.write(f"# Best params: {best_params.tolist()}\n")
+
+            # NEW: write current bounds
+            f.write("# Current bounds:\n")
+            for i, (lo, hi) in enumerate(bounds):
+                f.write(f"# [{lo:.6f}, {hi:.6f}]\n")
+
+            f.write("# Best taps: \n")
+
+            # taps remain un-commented
             for t in best_taps:
                 f.write(f"{t}\n")
+
             f.write("\n")
 
 
-
-    # Progress print
-    print(f"Eval params={np.round(params, 4)} → messages={total}   ")
+    print(f"Eval params={np.round(params, 4)} → messages={total}")
     print(f"Eval bounds={np.round(bounds, 4)}")
     print(f"| Best so far: {best_score} @ {np.round(best_params, 4) if best_params is not None else None}")
-    print(f"| Best so far: {best_taps} @ {np.round(best_params, 4) if best_params is not None else None}")
 
-    # DE minimizes → return negative
     return -score
 
 # ============================================================
-#  DE setup and run (looped)
+#  DE loop
 # ============================================================
 
-isFirstRun = True
 center = np.array(CENTER_SEED, dtype=np.float64)
 
 while True:
@@ -224,19 +196,37 @@ while True:
         recombination=0.7,
         polish=False,
         workers=1,
-        x0=center,
+        x0=center,   # ← restored as requested
     )
 
-    print("\n================ FINAL BEST ================")
+    print("\n================ END OF RUN ====================")
     print(f"Best params: {np.round(best_params, 6)}")
     print(f"Best ext-squitter count: {best_score}")
     print(f"Best message count: {best_total}")
     print("Best taps:")
     print(np.round(best_taps, 8))
-    print("===========================================\n")
+    print("===============================================\n")
+
+    # Also append to log
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    with open("de_log.txt", "a") as f:
+        f.write("# ==================== END OF RUN ====================\n")
+        f.write(f"# Time: {timestamp}\n")
+        f.write(f"# Instance: {DATA_PATH}\n")
+        f.write(f"# Best params: {best_params.tolist()}\n")
+        f.write(f"# Best ext-squitter count: {best_score}\n")
+        f.write(f"# Best message count: {best_total}\n")
+        f.write("# Best taps:\n")
+
+        # taps remain un-commented
+        for t in best_taps:
+            f.write(f"{t}\n")
+
+        f.write("\n")
 
 
-    # Extract best and second-best from DE result
     energies = result.population_energies
     pop = result.population
     idx_sorted = np.argsort(energies)
@@ -244,22 +234,16 @@ while True:
     best = pop[idx_sorted[0]]
     second = pop[idx_sorted[1]]
 
-    # Compute per-parameter margins based on distance
-    alpha = 2.0  # scaling factor, tune as needed
+    alpha = 2.0
     margins = alpha * np.abs(best - second)
-
-    # Clamp margins to a safe range
     margins = np.clip(margins, 0.05, 0.5)
 
-    # Build per-parameter bounds
     bounds = []
     for i in range(K):
-        low  = max(GAIN_MIN, best[i] - margins[i])
+        low = max(GAIN_MIN, best[i] - margins[i])
         high = min(GAIN_MAX, best[i] + margins[i])
         bounds.append((low, high))
-    
-    print("Per-parameter margins:", margins)
 
-    # 🔥 update center for next DE iteration
+    print("# Per-parameter margins:", margins)
+
     center = best_params.copy()
-    isFirstRun = False
