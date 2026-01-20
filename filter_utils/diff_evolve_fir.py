@@ -7,34 +7,78 @@
 # Public License v3.0. See the top-level LICENSE file for details.
 #
 
+import argparse
 import numpy as np
 from scipy.optimize import differential_evolution
 from scipy.signal import firwin2
 import subprocess
 
 # ============================================================
-#  Config
+#  CLI
 # ============================================================
 
-DATA_PATH = "../../samples/balcony_6M_small.raw"
+def parse_args():
+    p = argparse.ArgumentParser(
+        description="Differential Evolution FIR optimizer for stream1090"
+    )
+
+    p.add_argument("--data", required=True,
+                   help="Path to raw IQ sample file")
+
+    p.add_argument("--fs", type=int, required=True,
+                   help="Input sample rate (Hz)")
+
+    p.add_argument("--fs-up", type=int, required=True,
+                   help="Upsampled rate (Hz)")
+
+    p.add_argument("--taps", type=int, default=15,
+                   help="Number of FIR taps")
+
+    p.add_argument("--k", type=int, default=5,
+                   help="Number of interior gain points")
+
+    p.add_argument("--margin", type=float, default=0.5,
+                   help="Initial margin around center seed")
+
+    p.add_argument("--log", default="de_log.txt",
+                   help="Log file path")
+
+    p.add_argument("--maxiter", type=int, default=40)
+    p.add_argument("--popsize", type=int, default=20)
+    p.add_argument("--alpha", type=float, default=2.0)
+
+    p.add_argument("--bounds-min", type=float, default=-2.0)
+    p.add_argument("--bounds-max", type=float, default=2.0)
+
+    return p.parse_args()
+
+args = parse_args()
+
+# ============================================================
+#  Config (partly from CLI, center seed fixed for now)
+# ============================================================
+
+DATA_PATH = args.data
 FILTER_PATH = "./diff_evolve_fir_temp.txt"
-FS = 6_000_000
-FS_UP = 12_000_000
-NUMTAPS = 15
+FS = args.fs
+FS_UP = args.fs_up
+NUMTAPS = args.taps
 
 # Number of interior frequency points
-K = 5
+K = args.k
 
 CENTER_SEED = [-0.30480078491692353, 1.191383872925207,
                -0.8946397241760973, 0.7031294489517014,
                -0.29172370808888537]
-CENTER_SEED_MARGIN = 0.5
+CENTER_SEED_MARGIN = args.margin
 
 G_DC = 1.0
 G_NYQ = 0.0
 
-GAIN_MIN = -2.0
-GAIN_MAX = 2.0
+GAIN_MIN = args.bounds_min
+GAIN_MAX = args.bounds_max
+
+LOGFILE = args.log
 
 bounds = [
     (max(GAIN_MIN, c - CENTER_SEED_MARGIN),
@@ -102,7 +146,7 @@ best_taps = None
 # ============================================================
 
 def evaluate_filter(params):
-    global best_score, best_params, best_taps, best_total
+    global best_score, best_params, best_taps, best_total, bounds
 
     h, freq, gain = build_lowpass_firwin2(params, K)
 
@@ -148,7 +192,7 @@ def evaluate_filter(params):
         from datetime import datetime
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        with open("de_log.txt", "a") as f:
+        with open(LOGFILE, "a") as f:
             f.write("# ================================================================\n")
             f.write(f"# Instance: {DATA_PATH}\n")
             f.write(f"# Time: {timestamp}\n")
@@ -157,20 +201,13 @@ def evaluate_filter(params):
             f.write(f"# Best score: {best_score}\n")
             f.write(f"# Best total: {best_total}\n")
             f.write(f"# Best params: {best_params.tolist()}\n")
-
-            # NEW: write current bounds
             f.write("# Current bounds:\n")
             for i, (lo, hi) in enumerate(bounds):
                 f.write(f"# [{lo:.6f}, {hi:.6f}]\n")
-
-            f.write("# Best taps: \n")
-
-            # taps remain un-commented
+            f.write("# Best taps:\n")
             for t in best_taps:
                 f.write(f"{t}\n")
-
             f.write("\n")
-
 
     print(f"Eval params={np.round(params, 4)} → messages={total}")
     print(f"Eval bounds={np.round(bounds, 4)}")
@@ -190,13 +227,13 @@ while True:
     result = differential_evolution(
         evaluate_filter,
         bounds,
-        maxiter=40,
-        popsize=20,
+        maxiter=args.maxiter,
+        popsize=args.popsize,
         mutation=(0.5, 1.0),
         recombination=0.7,
         polish=False,
         workers=1,
-        x0=center,   # ← restored as requested
+        x0=center,
     )
 
     print("\n================ END OF RUN ====================")
@@ -207,11 +244,10 @@ while True:
     print(np.round(best_taps, 8))
     print("===============================================\n")
 
-    # Also append to log
     from datetime import datetime
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    with open("de_log.txt", "a") as f:
+    with open(LOGFILE, "a") as f:
         f.write("# ==================== END OF RUN ====================\n")
         f.write(f"# Time: {timestamp}\n")
         f.write(f"# Instance: {DATA_PATH}\n")
@@ -219,13 +255,9 @@ while True:
         f.write(f"# Best ext-squitter count: {best_score}\n")
         f.write(f"# Best message count: {best_total}\n")
         f.write("# Best taps:\n")
-
-        # taps remain un-commented
         for t in best_taps:
             f.write(f"{t}\n")
-
         f.write("\n")
-
 
     energies = result.population_energies
     pop = result.population
@@ -234,7 +266,7 @@ while True:
     best = pop[idx_sorted[0]]
     second = pop[idx_sorted[1]]
 
-    alpha = 2.0
+    alpha = args.alpha
     margins = alpha * np.abs(best - second)
     margins = np.clip(margins, 0.05, 0.5)
 
