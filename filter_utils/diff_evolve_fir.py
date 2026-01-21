@@ -52,10 +52,11 @@ def parse_args():
 
     return p.parse_args()
 
+
 args = parse_args()
 
 # ============================================================
-#  Config (partly from CLI, center seed fixed for now)
+#  Config (center seed fixed for now)
 # ============================================================
 
 DATA_PATH = args.data
@@ -63,13 +64,12 @@ FILTER_PATH = "./diff_evolve_fir_temp.txt"
 FS = args.fs
 FS_UP = args.fs_up
 NUMTAPS = args.taps
-
-# Number of interior frequency points
 K = args.k
 
 CENTER_SEED = [-0.30480078491692353, 1.191383872925207,
                -0.8946397241760973, 0.7031294489517014,
                -0.29172370808888537]
+
 CENTER_SEED_MARGIN = args.margin
 
 G_DC = 1.0
@@ -202,7 +202,7 @@ def evaluate_filter(params):
             f.write(f"# Best total: {best_total}\n")
             f.write(f"# Best params: {best_params.tolist()}\n")
             f.write("# Current bounds:\n")
-            for i, (lo, hi) in enumerate(bounds):
+            for lo, hi in bounds:
                 f.write(f"# [{lo:.6f}, {hi:.6f}]\n")
             f.write("# Best taps:\n")
             for t in best_taps:
@@ -251,9 +251,14 @@ while True:
         f.write("# ==================== END OF RUN ====================\n")
         f.write(f"# Time: {timestamp}\n")
         f.write(f"# Instance: {DATA_PATH}\n")
+        f.write(f"# FS: {FS/1_000_000} MHz → FS_UP: {FS_UP/1_000_000} MHz\n")
+        f.write(f"# Number of taps: {NUMTAPS}\n")
         f.write(f"# Best params: {best_params.tolist()}\n")
         f.write(f"# Best ext-squitter count: {best_score}\n")
         f.write(f"# Best message count: {best_total}\n")
+        f.write("# Current bounds:\n")
+        for lo, hi in bounds:
+            f.write(f"# [{lo:.6f}, {hi:.6f}]\n")
         f.write("# Best taps:\n")
         for t in best_taps:
             f.write(f"{t}\n")
