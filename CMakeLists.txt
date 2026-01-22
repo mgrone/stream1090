@@ -34,7 +34,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-set(DEFAULT_COMPILE_OPTIONS -Wall -Wextra -Wunused-function -Ofast)
+set(DEFAULT_COMPILE_OPTIONS -Wall -Wextra -Wunused-function -O3 -ffast-math)
 
 # 0 corresponds to the original rtl_sdr 2.4 Mhz
 set(SAMPLE_RATES_MHZ 0 6 10)

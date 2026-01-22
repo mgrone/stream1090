@@ -488,55 +488,55 @@ private:
 };
 
 template<>
-inline uint64_t DemodCore<8>::currTimeTo12MhzTimeStamp() {
+constexpr uint64_t DemodCore<8>::currTimeTo12MhzTimeStamp() {
 	// for 8 Mhz we have 1.5 * 8 = 12
 	return m_currTime + (m_currTime >> 1);
 }
 
 template<>
-inline uint64_t DemodCore<16>::currTimeTo12MhzTimeStamp() {
+constexpr uint64_t DemodCore<16>::currTimeTo12MhzTimeStamp() {
 	// for 16 Mhz we have 0.75 * 16 = (0.5 + 0.25) * 16 = 12
 	return (m_currTime >> 1) + (m_currTime >> 2);
 }
 
 template<>
-inline uint64_t DemodCore<6>::currTimeTo12MhzTimeStamp() {
+constexpr uint64_t DemodCore<6>::currTimeTo12MhzTimeStamp() {
 	// for 6 Mhz we have 2.0 * 6 = 12
 	return (m_currTime << 1);
 }
 
 template<>
-inline uint64_t DemodCore<12>::currTimeTo12MhzTimeStamp() {
+constexpr uint64_t DemodCore<12>::currTimeTo12MhzTimeStamp() {
 	// for 12 Mhz nothing to do
 	return m_currTime;
 }
 
 template<>
-inline uint64_t DemodCore<24>::currTimeTo12MhzTimeStamp() {
+constexpr uint64_t DemodCore<24>::currTimeTo12MhzTimeStamp() {
 	// for 24 Mhz we simply divide by 2
 	return (m_currTime >> 1);
 }
 
 template<>
-inline uint64_t DemodCore<48>::currTimeTo12MhzTimeStamp() {
+constexpr uint64_t DemodCore<48>::currTimeTo12MhzTimeStamp() {
 	// for 48 Mhz we simply divide by 4
 	return (m_currTime >> 2);
 }
 
 template<>
-inline uint64_t DemodCore<10>::currTimeTo12MhzTimeStamp() {
+constexpr uint64_t DemodCore<10>::currTimeTo12MhzTimeStamp() {
 	// for 10 Mhz we have 12/10 = 6/5 = 1 + 1/5
 	return m_currTime + m_currTime/5;
 }
 
 template<>
-inline uint64_t DemodCore<20>::currTimeTo12MhzTimeStamp() {
+constexpr uint64_t DemodCore<20>::currTimeTo12MhzTimeStamp() {
 	// for 20 Mhz we have 12/20 = 6/10 = 1/2 + 1/10 
 	return (m_currTime >> 1) + m_currTime/10;
 }
 
 template<>
-inline uint64_t DemodCore<40>::currTimeTo12MhzTimeStamp() {
+constexpr uint64_t DemodCore<40>::currTimeTo12MhzTimeStamp() {
 	// for 40 Mhz we have 12/40 = 3/10 = 1/4 + 1/20 
 	return (m_currTime >> 2) + m_currTime/20;
 }
