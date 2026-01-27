@@ -10,7 +10,10 @@ situations, a higher overall message rate can be achieved compared to a preamble
 - CRC-based message framing: Cannot miss a message, because it missed the preamble.
 - Error correction: The crc sum is computed regardless of the data, so why not use it for error correction whenever possible.
 - Not output sensitive: The majority of the computational work does not dependent on the message rate.
-   
+
+## !Attention! (regarding this README)
+Stream1090 is undergoing many changes right now. While the instructions below are still working, there are many undocumented features and upcoming changes. Please excuse me for not updating this README. For example, there is no point in writing an extensive guide on how to get airspy_rx going with stream1090 while implementing native support for airspy. You will find plenty of stuff over here: https://discussions.flightaware.com/t/stream1090/99603
+
 ## Hardware requirements
 - RTL-based SDR dongle or airspy with antenna etc. (different formats and input sampling speeds are available. See below.)
 - Optional: RaspberryPi 5 or 4
