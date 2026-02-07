@@ -87,7 +87,7 @@ Furthermore, it starts listening on port 30001 for message frames that it will t
 
 2. Once readsb is up and running, we can start stream1090 and send the output to readsb via socat with
 
-```rtl_sdr -g 0 -f 1090000000 -s 2400000 - | ./build/stream1090 | socat -u - TCP4:localhost:30001```
+```rtl_sdr -g 0 -f 1090000000 -s 2400000 - | ./build/stream1090 -s 2.4 -u 8 | socat -u - TCP4:localhost:30001```
 
 You should now see the table of readsb filling up with plane data.
 
