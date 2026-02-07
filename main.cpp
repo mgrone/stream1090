@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <thread>
 #include <chrono>
+#include <optional>
 
 #define STREAM1090_VERSION "260207"
 
