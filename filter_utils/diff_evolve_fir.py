@@ -144,6 +144,18 @@ best_taps = None
 # ============================================================
 #  DE objective
 # ============================================================
+DEFAULT_RATE_PAIRS = [
+    (2.4, 8.0),
+    (6.0, 6.0),
+    (10.0, 10.0)
+]
+
+def default_output_rate(input_mhz: float) -> float:
+    for (inp, out) in DEFAULT_RATE_PAIRS:
+        if inp == input_mhz:
+            return out
+    raise ValueError(f"No default output rate for input rate {input_mhz}")
+
 
 def evaluate_filter(params):
     global best_score, best_params, best_taps, best_total, bounds
@@ -157,18 +169,21 @@ def evaluate_filter(params):
         for t in h:
             f.write(f"{t}\n")
 
-    if FS == 2_400_000:
-        exe = "stream1090"
-    elif FS == 6_000_000:
-        exe = "stream1090_6M"
-    elif FS == 10_000_000:
-        exe = "stream1090_10M"
+    input_mhz = FS / 1_000_000.0
+
+    if FS_UP is not None:
+        output_mhz = FS_UP / 1_000_000.0
     else:
-        raise ValueError(f"Unsupported FS={FS}")
+        output_mhz = default_output_rate(input_mhz)
+
+    exe = "../build/stream1090"
 
     cmd = [
         "bash", "-c",
-        f"cat {DATA_PATH} | ../build/{exe} -f {FILTER_PATH} -u {FS_UP // 1_000_000}"
+        f"cat {DATA_PATH} | {exe} "
+        f"-s {input_mhz} "
+        f"-u {output_mhz} "
+        f"-f {FILTER_PATH}"
     ]
 
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)

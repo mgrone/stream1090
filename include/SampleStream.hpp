@@ -16,8 +16,6 @@
 #include "DemodCore.hpp"
 #include "MathUtils.hpp"
 #include "Sampler.hpp"
-#include "InputReader.hpp"
-
 
 // the main stream class. This class manages reading from the input stream
 // and also manages the buffers
@@ -35,17 +33,7 @@ class SampleStream {
    
     // the main method that streams from InputStream using inputReader
     template<typename InputReaderType>
-    void read(std::istream& inputStream, InputReaderType& inputReader);
-
-    // overloaded version which takes care of creating an instance of InputReader depending on the format
-    template<SampleStreamInputFormat inputFormat>
-    void read(std::istream& inputStream) {
-        // Input reader type based on the sampler and inputformat
-        using InputReaderType = InputReader<Sampler, inputFormat>;
-        InputReaderType inputReader;
-        // call the core function with with instance
-        read<InputReaderType>(inputStream, inputReader);
-    }
+    void read(InputReaderType& inputReader);
 
     private:
 
@@ -59,13 +47,13 @@ class SampleStream {
 
 template<typename Sampler>
 template<typename InputReaderType>
-inline void SampleStream<Sampler>::read(std::istream& inputStream, InputReaderType& inputReader) {   
+inline void SampleStream<Sampler>::read(InputReaderType& inputReader) {   
     // make sure the overlap parts at the beginning of the buffers are zeroed
     std::fill(m_inputMagnitude.get(), m_inputMagnitude.get() + Sampler::InputBufferOverlap, 0.0f);
     std::fill(m_samples.get(), m_samples.get() + Sampler::SampleBufferOverlap, 0.0f);
 
      // the main loop for reading the stream
-    while (!inputStream.eof()) {              
+    while (!inputReader.eof()) {              
         
         // check if actually we need the sampler to resample, or if this is a 1:1 sampling
         if constexpr(Sampler::isPassthrough) {
@@ -73,10 +61,10 @@ inline void SampleStream<Sampler>::read(std::istream& inputStream, InputReaderTy
             // we will directly read into the samples buffer. There is no need for using the sampler at all.
             // This works because the amount the input reader is getting us in this particular case is exactly the ChunkSize
             static_assert(Sampler::ChunkSize == Sampler::InputBufferSize);
-            inputReader.readMagnitude(inputStream, m_samples.get() + Sampler::SampleBufferOverlap);
+            inputReader.readMagnitude(m_samples.get() + Sampler::SampleBufferOverlap);
         } else {
             // tell the input reader to get us some data. Directly as magnitude.
-            inputReader.readMagnitude(inputStream, m_inputMagnitude.get() + Sampler::InputBufferOverlap);
+            inputReader.readMagnitude(m_inputMagnitude.get() + Sampler::InputBufferOverlap);
             // now ask the Sampler to resample the input magnitude to the output samples
             // similar to the input buffer, write after the overlap to keep some old values for the next iteration
             Sampler::sample(m_inputMagnitude.get(), m_samples.get() + Sampler::SampleBufferOverlap, Sampler::ChunkSize);

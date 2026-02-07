@@ -23,15 +23,10 @@ Stream1090 is undergoing many changes right now. While the instructions below ar
 Stream1090 is written in C++ and self-contained. You will need cmake (3.10 or higher) and some C++ compiler that supports C++20.
 
 ## Compiling stream1090
-Building stream1090 is straightforward. Unlike other implementations, there are no additional libraries required. Get the source and do the usually cmake thing:
+Building stream1090 is straightforward. Unlike other implementations, there are no additional libraries required unless you want native support for airspy or rtlsdr. Then you have to install the corresponing libraries in their dev versions.
+This is completely optional. Get the source and do the usually cmake thing:
 
 ```mkdir build && cd build && cmake ../ && make && cd ..```
-
-This will create several executables in the build directory. These have the following purpose:
-- stream1090 (no suffix): This is meant to be used in conjunction with rtl_sdr (see below).
-- stream1090_6M : For airspy_rx sampling at 6MHz.
-- stream1090_10M : For airspy_rx sampling at 10MHz.
-Both, the internal sample rate of the 6M and 10M versions can be configured with the -u flag. Please use -h for some more info. 
 
 ## Updating from a previous version
 If you have compiled a previous version, it is important that you either get rid of the build folder completely, or do a 
@@ -46,7 +41,7 @@ As a next step, we need to feed stream1090 which expects 8-bit unsigned IQ pairs
 Note that you will not need to install the dev version. Instead we will pipe the output of rtl_sdr into stream1090.
 You can now already test stream1090
 
-``` rtl_sdr -g 49.6 -f 1090000000 -s 2400000 - | ./build/stream1090 > /dev/null ```
+``` rtl_sdr -g 0 -f 1090000000 -s 2400000 - | ./build/stream1090 -s 2.4 -u 8 > /dev/null ```
 
 This sets the gain to 49.6db (feel free to change this or set it to auto with 0), the sample rate to 2.4Msps and tunes the dongle to 1090MHz.
 The output (8-bit unsigned IQ pairs) is then piped into stream1090. 
@@ -92,7 +87,7 @@ Furthermore, it starts listening on port 30001 for message frames that it will t
 
 2. Once readsb is up and running, we can start stream1090 and send the output to readsb via socat with
 
-```rtl_sdr -g 49.6 -f 1090000000 -s 2400000 - | ./build/stream1090 | socat -u - TCP4:localhost:30001```
+```rtl_sdr -g 0 -f 1090000000 -s 2400000 - | ./build/stream1090 | socat -u - TCP4:localhost:30001```
 
 You should now see the table of readsb filling up with plane data.
 
@@ -106,20 +101,17 @@ If you want to disable the statistics completely, rebuild the project and set th
 ```cmake ../ -DENABLE_STATS=OFF```
 
 You can find a more well described manual over here: 
-https://discussions.flightaware.com/t/stream1090/99603/73?u=mgrone
-Cudos to the guy! 
 
 ## Notes on dump1090.
 I have not tried it, but others did and it seems to work just fine. Just make sure to open the raw input port.
 
 # Airspy
 The overall setup with airspy is similar. Use airspy_rx and pipe it into stream1090. 
-However, you have to use the correct executable based on the sample rate of airspy_rx.
 For example
 
-```airspy_rx -a 6000000 -f 1090 -g 16 -r - | ./build/stream1090_6M -u 24 > /dev/null```
+```airspy_rx -t 4 -g 20 -f 1090.000 -a 12000000 -r - | ./build/stream1090 -s 6 -u 24 > /dev/null```
 
-sets airspy_rx to sample at 6MHz and uses the corresponding executable of stream1090 for 6MHz input which is configured via -u 24 to upsample internally to 24 MHz.
+sets airspy_rx to sample at 6MHz IQ pairs (= 12MHz uint16_REAL). Stream1090 is configured for 6MHz input via -u 24 to upsample internally to 24 MHz.
 
 # Frequently asked questions & troubleshooting
 - Why is my message rate 0-2 messages per second?

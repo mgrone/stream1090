@@ -113,7 +113,7 @@ class StatsLog {
         return m_totalMsgsSent;
     }
 private:
-    std::array<int, Stats::NUM_EVENTS> m_events;
+    std::array<uint64_t, Stats::NUM_EVENTS> m_events;
     std::array<int, 25> m_sent;
     std::array<int, 25> m_dups;
     double m_maxMsgsPerSecond = 0.0;
@@ -228,7 +228,7 @@ private:
         const auto total_sent = Long_sent + Short_sent;
         const auto total_dups = Long_dups + Short_dups;
         const auto total_repaired = Long_repaired + Short_repaired;
-#if !defined(STATS_END_ONLY) && !STATS_END_ONLY
+#if !(defined(STATS_END_ONLY) && STATS_END_ONLY)
         out << "\x1B[2J\x1B[H";
 #endif
         printLine(out);

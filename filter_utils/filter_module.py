@@ -134,6 +134,10 @@ def run_stream1090(
     upsample_rate: int | None = None,
     stream1090_dir: str = "../build",
 ):
+    # Magnitude mode is not implemented in the new stream1090
+    raise NotImplementedError("stream1090 magnitude mode (-m) is not implemented yet")
+
+    
     if upsample_rate is None:
         upsample_rate = input_rate
 

@@ -7,6 +7,7 @@
 
 #pragma once
 #include <numeric>
+#include <cstddef>
 
 enum SampleRate {
     Rate_1_0_Mhz  =  1000000,
