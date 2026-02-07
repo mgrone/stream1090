@@ -105,7 +105,7 @@ void print_help() {
     "                       Note that native device support requires librtlsdr-dev\n"
     "                       and/or libairspy-dev to be installed.\n"
     "  -q                   Enables IQ FIR filter with built-in taps (default or custom)\n"
-    "  -f <taps file        Taps to load that are used for the IQ FIR filter\n"
+    "  -f <taps file>       Taps to load that are used for the IQ FIR filter\n"
     "  -v                   Verbose output\n"
     "  -h, --help           Show this help message\n\n";
 
