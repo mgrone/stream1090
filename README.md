@@ -19,10 +19,6 @@ situations, a higher overall message rate can be achieved compared to a preamble
 - Optional: For rtl_sdr (not airspy), a RaspberryPi 3B and Zero 2 W works without cooling.
 
 # Installation
-Stream1090 is written in C++ and self-contained. You will need cmake (3.10 or higher) and some C++ compiler that supports C++20 (gcc or clang for example)
-to get the basic version working. Additional libs which depend on your SDR hardware will be discussed later.
-
-# Installation
 Before getting into building stream1090, you have to understand how stream1090 works.
 The rough principle is this:
 ```
@@ -48,16 +44,19 @@ Native device --> stream1090 --> output messages (stdout)
 You can still use the basic stdin with these builds.
 
 ## Compiling stream1090
-By know you should have made up your mind if you want native device support or not.
-The libs you will need: 
+By know you should have made up your mind about native device support. 
+Regardless of your hardware, you will need
+- cmake (3.10 or higher)
+- C++ compiler that supports C++20 (gcc or clang for example)
+
+to get the basic version working. Additional libs which depend on your SDR hardware are these
 | Version  | RTL-based | Airspy |
 |------------|-------------|-------------|
 | Basic (stdin only)    | ```sudo apt install rtl-sdr```    | ```sudo apt install airspy```   |
 | Native support    | ```sudo apt install librtlsdr-dev```    | ```sudo apt install libairspy-dev```  |
 
-## Compiling stream1090
 Building stream1090 is straightforward. Unlike other implementations, there are no additional libraries required unless you want native device support.
-Get the source code from this git and do the usually cmake thing:
+Get the source code and do the usual cmake thing:
 
 ```mkdir build && cd build && cmake ../ && make && cd ..```
 
@@ -91,7 +90,7 @@ Supported sample rate combinations (in a nicer table):
 |  10  |  24 | uint16 IQ | airspy |
 
 Let us go through the options. First of all, if you decided to go for native device support, 
-make sure that ```Native device support:``` matches your choice.
+make sure that ```Native device support: ...``` matches your choice.
 
 Central to everything is the input sample rate ```-s <rate>```. It will determine
 - How input is interpreted in terms of sample rate
@@ -116,19 +115,49 @@ So we will pipe stdout of those into stdin of stream1090. Here are two minimal e
 ```
 rtl_sdr -f 1090000000 -s 2400000 - | ./build/stream1090 -s 2.4 > /dev/null
 ```
-Dial in on 1090 MHz, set the sample rate to 2.4 Msps. Pipe the output into stream1090 and tell it that the input sample rate is 2.4 Msps (for ```-u``` it will default to 8)
+Dial in on 1090 MHz, set the sample rate to 2.4 Msps. Pipe the output into stream1090 and tell it that the input sample rate is 2.4 Msps (for the missing ```-u``` it will default to 8)
 
 2. Similarly, for Airspy we do
 ```
 airspy_rx -t 4 -g 20 -f 1090.000 -a 12000000 -r - | ./build/stream1090 -s 6 > /dev/null
 ```
-**Important:** We use here ```-t 4``` which tells ```airspy_rx``` to output uint16 REAL (raw). Stream1090 works on an IQ pair sample base. So an input sample rate of ```-s 6``` means, it is expecting pairs not single values. That is why we use ```-a 12000000```, because 2 x 6 Msps = 12 Msps.  
+**Important:** We use here ```-t 4``` which tells ```airspy_rx``` to output uint16 REAL (raw). Stream1090 works usually on an IQ pair basis. So an input sample rate of ```-s 6``` means, it is expecting pairs not single values. That is why we use ```-a 12000000```, because 2 x 6 Msps = 12 Msps.  
 
 ### Native device config
 If you do not want to read from stdin, but instead want stream1090 to directly deal with the device, that is what option ```-d <ini file>``` is for.
 You have to provide a device specific ini file with parameters. There are two example ini files with documentation in [```./configs```](configs/).
 So how do these work? Each config file starts with ```[rtlsdr]``` or ```[airspy]```. This tells stream1090 the device type it should be using.
 This is followed by some properties which are device specific. Refer to the documentation in [```rtlsdr.ini```](configs/rtlsdr.ini) and [```airspy.ini```](configs/airspy.ini). Note that the sample rate is not part of the device options. This is being set by ```-s```.
+
+Assuming, you are in the stream1090 directory. You can now do: 
+1. For an RTLSDR device
+```
+./build/stream1090 -s 2.4 -d ./configs/rtlsdr.ini > /dev/null
+```
+2. For an Airspy device
+```
+./build/stream1090 -s 6 -d ./configs/airspy.ini > /dev/null
+```
+You should end up with a stats screen that refreshes every 5 seconds. Something like this:
+```
+-------------------------------------------------------------
+|     Type |  #Msgs |  %Total |    Dups |   Fixed |   Msg/s | 
+-------------------------------------------------------------
+|    ADS-B |    881 |   16.4% |   15.9% |   32.4% |   176.2 | 
+|   Comm-B |   1134 |   21.1% |      0% |         |   226.8 | 
+|     ACAS |    229 |    4.3% |      0% |         |    45.8 | 
+|     Surv |    612 |   11.4% |      0% |         |   122.4 | 
+|    DF-11 |   2515 |   46.8% |   18.1% |   11.2% |     503 | 
+-------------------------------------------------------------
+|  112-bit |   2031 |   37.8% |    7.6% |   15.5% |   406.2 | 
+|   56-bit |   3340 |   62.2% |   14.2% |    8.8% |     668 | 
+-------------------------------------------------------------
+|    Total |   5371 |    100% |   11.8% |   11.2% |    1074 | 
+-------------------------------------------------------------
+(Max. msgs/s 1074)
+Messages Total 114496
+```
+# Advanced options
 
 
 
