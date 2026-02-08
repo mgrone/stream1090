@@ -160,6 +160,9 @@ public:
     }
 
     inline bool setTaps(const std::vector<float>& newTaps) {
+        if (newTaps.size() == 0)
+            return false;
+            
         if (newTaps.size() <= maxNumTaps()) {
             // copy the new values
             std::copy(newTaps.begin(), newTaps.end(), m_taps.begin());

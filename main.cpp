@@ -218,8 +218,40 @@ SampleRate parse_sample_rate(const std::string& raw) {
     std::exit(1);
 }
 
-
 std::vector<float> load_taps_from_file(const std::string& filename) {
+    std::vector<float> taps;
+    std::ifstream file(filename);
+    if (!file.is_open()) {
+        return taps;
+    }
+
+    std::string line;
+    while (std::getline(file, line)) {
+        // trim whitespace
+        if (line.empty()) continue;
+
+        // skip comments
+        if (line[0] == '#') continue;
+
+        // parse float
+        try {
+            float v = std::stof(line);
+            taps.push_back(v);
+        } catch (...) {
+            // malformed line
+            return std::vector<float>();;
+        }
+
+        // too many taps
+        if (taps.size() > 64) {
+            return std::vector<float>();
+        }
+    }
+
+    return taps;
+}
+
+/*std::vector<float> load_taps_from_file(const std::string& filename) {
     std::vector<float> taps;
     std::ifstream in(filename);
 
@@ -234,7 +266,7 @@ std::vector<float> load_taps_from_file(const std::string& filename) {
     }
 
     return taps;
-}
+}*/
 
 
 int main(int argc, char** argv) {
@@ -271,6 +303,10 @@ int main(int argc, char** argv) {
 
     if (!args.tapsFile.empty()) {
         r_vars.filterTaps = load_taps_from_file(args.tapsFile);
+        if (r_vars.filterTaps.empty()) {
+            std::cerr << "Error loading taps from " << args.tapsFile << std::endl;
+            return 1;
+        }
     }
 
     r_vars.verbose = args.verbose;
