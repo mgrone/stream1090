@@ -16,6 +16,8 @@
 #include "LowPassFilter.hpp"
 #include "devices/IniConfig.hpp"
 #include "devices/DeviceFactory.hpp"
+#include <chrono>
+#include <sstream>
 
 
 template<typename Sampler>
@@ -114,19 +116,26 @@ public:
         };
 
         log("[Stream1090] Device is running.");
+        auto start_wct = std::chrono::steady_clock::now();
         InputBufferReader inputReader(iqPipeline, ringBuffer);
         SampleStream<SamplerType>().read(inputReader);
         log("[Stream1090] Shutting down device.");
         m_device->close();
+        auto end_wct = std::chrono::steady_clock::now();
+        auto dur_wct_secs = std::chrono::duration_cast<std::chrono::milliseconds>(end_wct - start_wct).count();
         log("[Stream1090] Shutdown completed.");
+        log((std::ostringstream() << "[Stream1090] Finished. (" << dur_wct_secs/1000.0 << "s)").str());
         std::exit(0);
     }
 
     void run_sync_stdin(auto& iqPipeline) {
         log("[Stream1090] Reading from stdin");
+        auto start_wct = std::chrono::steady_clock::now();
         InputStdStreamReader<RawType, SamplerType::InputBufferSize, decltype(iqPipeline)> inputReader(iqPipeline, std::cin);
         SampleStream<SamplerType>().read(inputReader);
-        log("[Stream1090] Finished.");
+        auto end_wct = std::chrono::steady_clock::now();
+        auto dur_wct_secs = std::chrono::duration_cast<std::chrono::milliseconds>(end_wct - start_wct).count();
+        log((std::ostringstream() << "[Stream1090] Finished. (" << dur_wct_secs/1000.0 << "s)").str());
         std::exit(0);
     }
 
