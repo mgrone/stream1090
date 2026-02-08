@@ -10,24 +10,136 @@ situations, a higher overall message rate can be achieved compared to a preamble
 - CRC-based message framing: Cannot miss a message, because it missed the preamble.
 - Error correction: The crc sum is computed regardless of the data, so why not use it for error correction whenever possible.
 - Not output sensitive: The majority of the computational work does not dependent on the message rate.
+- Support for Airspy and RTL-based SDR dongles (via stdin or native optional)
+
+## Hardware requirements
+- RTLSDR-based dongle or Airspy with antenna etc.
+- Optional: RaspberryPi 5 or 4 should work for most settings. 
+  This depends on your settings
+- Optional: For rtl_sdr (not airspy), a RaspberryPi 3B and Zero 2 W works without cooling.
+
+# Installation
+Stream1090 is written in C++ and self-contained. You will need cmake (3.10 or higher) and some C++ compiler that supports C++20 (gcc or clang for example)
+to get the basic version working. Additional libs which depend on your SDR hardware will be discussed later.
+
+# Installation
+Before getting into building stream1090, you have to understand how stream1090 works.
+The rough principle is this:
+```
+Input sample data -->  stream1090 --> messages --> decoder(like readsb or dump1090-fa)                                                                                                
+```
+Important is that stream1090 is a demodulator, **NOT** a decoder. It looks for messages in the input sample stream, it does **NOT** extract information.
+You will need a decoder like readsb or dump1090-fa. More on that later.
+So the question now is, where is the input data coming from? There are two ways to feed data into stream1090. 
+
+## Basic (stdin)
+The basic default way is to read from stdin:
+```
+Input sample data (stdin) --> stream1090 --> output messages (stdout)                                                                                                
+```
+Here stream1090 does not rely on anything. It is just pure C++ reading samples from stdin at a given sampling rate in a given format, demodulates, and writes the resulting messages to stdout. 
+No need for any additional libs when compiling stream1090. Why is this not a bad idea? It offers plenty of flexibility. 
+
+## Native device (optional)
+The second option is to use the built-in native device support for Airspy and RTL-based SDR dongles. 
+```
+Native device --> stream1090 --> output messages (stdout)                                                                                                
+```
+You can still use the basic stdin with these builds.
+
+## Compiling stream1090
+By know you should have made up your mind if you want native device support or not.
+The libs you will need: 
+| Version  | RTL-based | Airspy |
+|------------|-------------|-------------|
+| Basic (stdin only)    | ```sudo apt install rtl-sdr```    | ```sudo apt install airspy```   |
+| Native support    | ```sudo apt install librtlsdr-dev```    | ```sudo apt install libairspy-dev```  |
+
+## Compiling stream1090
+Building stream1090 is straightforward. Unlike other implementations, there are no additional libraries required unless you want native device support.
+Get the source code from this git and do the usually cmake thing:
+
+```mkdir build && cd build && cmake ../ && make && cd ..```
+
+If you are compiling and you decided to go with native device support, cmake should report something like this:
+
+``` -- [stream1090] Airspy support enabled ``` and/or ```-- [stream1090] RTL-SDR support enabled```
+
+## Running stream1090
+In the ```build``` directory you can now run ```./stream1090 -h``` which should get you the command line options help.
+For now we consider only the important stuff.
+```
+Stream1090 build 260207
+Native device support: Airspy RTL-SDR
+Options:
+  -s <rate>            Input sample rate in MHz (required)
+  -u <rate>            Output/upsample rate in MHz
+  -d <file.ini>        Device configuration INI file for native devices
+                       See config/airspy.ini or config/rtlsdr.ini
+                       Note that native device support requires librtlsdr-dev
+                       and/or libairspy-dev to be installed.
+
+```
+Supported sample rate combinations (in a nicer table):
+| Input | Upsample | Input type | Device |
+|------|--------|------| ------|
+|  2.4  |  8 | uint8 IQ | rtlsdr |
+|  6  |  6 | uint16 IQ | airspy |
+|  6  |  12 | uint16 IQ | airspy |
+|  6  |  24 | uint16 IQ | airspy |
+|  10  |  10 | uint16 IQ | airspy |
+|  10  |  24 | uint16 IQ | airspy |
+
+Let us go through the options. First of all, if you decided to go for native device support, 
+make sure that ```Native device support:``` matches your choice.
+
+Central to everything is the input sample rate ```-s <rate>```. It will determine
+- How input is interpreted in terms of sample rate
+- The format of the input. If the input sample rate is 6 Msps or higher, it is assumed that the data is given in uint16 (airspy).
+Otherwise it will be assumed that it is an RTLSDR-based dongle which outputs uint8. 
+
+Note that currently stream1090 only supports 3 different input sample rates.
+2.4 Msps (rtlsdr) and for airspy there is 6 and 10 Msps available.
+
+Internally, stream1090 will take the input stream and usually upsample it to a higher frequency. You can choose here a value, but it has to be a
+valid configuration from the table above. You can also omit this parameter and it will default to the first entry of the table matching the
+input sample rate you provided with ```-s```. So for 2.4, 6, 10 that would be 8, 6, 10, respectively.
+
+### First steps with stdin
+Depending on your hardware you have at least ```rtl-sdr``` or ```airspy``` installed. Both come with their command line utils (```rtl_sdr``` and ```airspy_rx```) that enables
+you to write the device data stream to stdout. It is now straightforward to get things going. We will do something like this
+```
+rtl-sdr/airspy --> stream1090 --> /dev/null
+```
+So we will pipe stdout of those into stdin of stream1090. Here are two minimal examples.
+1. The RTLSDR way:
+```
+rtl_sdr -f 1090000000 -s 2400000 - | ./build/stream1090 -s 2.4 > /dev/null
+```
+Dial in on 1090 MHz, set the sample rate to 2.4 Msps. Pipe the output into stream1090 and tell it that the input sample rate is 2.4 Msps (for ```-u``` it will default to 8)
+
+2. Similarly, for Airspy we do
+```
+airspy_rx -t 4 -g 20 -f 1090.000 -a 12000000 -r - | ./build/stream1090 -s 6 > /dev/null
+```
+**Important:** We use here ```-t 4``` which tells ```airspy_rx``` to output uint16 REAL (raw). Stream1090 works on an IQ pair sample base. So an input sample rate of ```-s 6``` means, it is expecting pairs not single values. That is why we use ```-a 12000000```, because 2 x 6 Msps = 12 Msps.  
+
+### Native device config
+If you do not want to read from stdin, but instead want stream1090 to directly deal with the device, that is what option ```-d <ini file>``` is for.
+You have to provide a device specific ini file with parameters. There are two example ini files with documentation in [```./configs```](configs/).
+So how do these work? Each config file starts with ```[rtlsdr]``` or ```[airspy]```. This tells stream1090 the device type it should be using.
+This is followed by some properties which are device specific. Refer to the documentation in [```rtlsdr.ini```](configs/rtlsdr.ini) and [```airspy.ini```](configs/airspy.ini). Note that the sample rate is not part of the device options. This is being set by ```-s```.
+
+
+
+UNDER CONSTRUCTION
 
 ## !Attention! (regarding this README)
 Stream1090 is undergoing many changes right now. While the instructions below are still working, there are many undocumented features and upcoming changes. Please excuse me for not updating this README. For example, there is no point in writing an extensive guide on how to get airspy_rx going with stream1090 while implementing native support for airspy. You will find plenty of stuff over here: https://discussions.flightaware.com/t/stream1090/99603
 
-## Hardware requirements
-- RTL-based SDR dongle or airspy with antenna etc. (different formats and input sampling speeds are available. See below.)
-- Optional: RaspberryPi 5 or 4
-- Optional: For rtl_sdr (not airspy), a RaspberryPi 3B and Zero 2 W works without cooling.
 
-# Installation
-Stream1090 is written in C++ and self-contained. You will need cmake (3.10 or higher) and some C++ compiler that supports C++20.
 
-## Compiling stream1090
-Building stream1090 is straightforward. Unlike other implementations, there are no additional libraries required unless you want native support for airspy or rtlsdr. Then you have to install the corresponing libraries in their dev versions.
-This is completely optional. Get the source and do the usually cmake thing:
-
-```mkdir build && cd build && cmake ../ && make && cd ..```
-
+ 
 ## Updating from a previous version
 If you have compiled a previous version, it is important that you either get rid of the build folder completely, or do a 
 ```make clean && cmake ../ --fresh```
