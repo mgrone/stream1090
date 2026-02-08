@@ -59,6 +59,7 @@ namespace ModeS {
 		buffer[1] = (frame.high() & 0xffffffffffffull);
 		buffer[2] = currentTimestamp();
 		out.write(reinterpret_cast<char*>(buffer), 24);
+		out.flush();
 	}
 
 	inline void printFrameShortRaw(std::ostream& out, const uint64_t& frameShort) {
@@ -67,5 +68,6 @@ namespace ModeS {
 		buffer[1] = 0;
 		buffer[2] = currentTimestamp();
 		out.write(reinterpret_cast<char*>(buffer), 24);
+		out.flush();
 	}
 } // end of namespace
