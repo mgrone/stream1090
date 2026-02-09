@@ -13,7 +13,7 @@
 #include <chrono>
 #include <optional>
 
-#define STREAM1090_VERSION "260208"
+#define STREAM1090_VERSION "260209"
 
 #include "MainInstance.hpp"
 
@@ -235,8 +235,9 @@ std::vector<float> load_taps_from_file(const std::string& filename) {
 
         // parse float
         try {
-            float v = std::stof(line);
-            taps.push_back(v);
+            //float v = std::stof(line);
+            double v = std::stod(line);
+            taps.push_back((float)v);
         } catch (...) {
             // malformed line
             return std::vector<float>();;
