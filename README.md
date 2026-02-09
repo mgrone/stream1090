@@ -11,6 +11,7 @@ situations, a higher overall message rate can be achieved compared to a preamble
 - Error correction: The crc sum is computed regardless of the data, so why not use it for error correction whenever possible.
 - Not output sensitive: The majority of the computational work does not dependent on the message rate.
 - Support for Airspy and RTL-based SDR dongles via stdin or native (optional)
+- IQ Low-pass filtering including customization and optimization
 
 ## Hardware requirements
 - RTL-SDR based dongle or Airspy with antenna etc.
@@ -231,6 +232,10 @@ socat -u - TCP4:localhost:30001
 You should now see the table of readsb filling up with plane data.
 
 # Advanced Usage
+## Upsampling
+## IQ Low-pass filtering
+## Recording and offline processing
+
 UNDER CONSTRUCTION
 
 You will find plenty of stuff over here: https://discussions.flightaware.com/t/stream1090/99603
