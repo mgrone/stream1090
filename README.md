@@ -9,9 +9,9 @@ situations, a higher overall message rate can be achieved compared to a preamble
 ## Features
 - CRC-based message framing: Cannot miss a message, because it missed the preamble.
 - Error correction: The crc sum is computed regardless of the data, so why not use it for error correction whenever possible.
-- Not output sensitive: The majority of the computational work does not dependent on the message rate.
+- Not output sensitive: The majority of the computational work does not depend on the message rate.
 - Support for Airspy and RTL-based SDR dongles via stdin or native (optional)
-- IQ Low-pass filtering including customization and optimization
+- IQ Low-pass filtering including customization and optimization (optional)
 
 ## Hardware requirements
 - RTL-SDR based dongle or Airspy with antenna etc.
@@ -23,7 +23,14 @@ situations, a higher overall message rate can be achieved compared to a preamble
 Before getting into building stream1090, you have to understand how stream1090 works.
 The rough principle is this:
 ```
-Input sample data -->  stream1090 --> messages --> decoder(like readsb or dump1090-fa)                                                                                                
+ Input sample data
+        |
+        v
+    stream1090
+        |
+        v
+     decoder
+(readsb or dump1090-fa)
 ```
 Important is that stream1090 is a demodulator, **NOT** a decoder. It looks for messages in the input sample stream, it does **NOT** extract information.
 You will need a decoder like readsb or dump1090-fa. More on that later.
@@ -32,23 +39,35 @@ So the question now is, where is the input data coming from? There are two ways 
 ## Basic (stdin)
 The basic default way is to read from stdin:
 ```
-Input sample data (stdin) --> stream1090 --> output messages (stdout)                                                                                                
+Input sample data (stdin)
+        | 
+        v
+    stream1090 
+        | 
+        v
+ output messages (stdout)                                                                                                
 ```
 Here stream1090 does not rely on anything. It is just pure C++ reading samples from stdin at a given sampling rate in a given format, demodulates, and writes the resulting messages to stdout. 
 No need for any additional libs when compiling stream1090. Why is this not a bad idea? It offers plenty of flexibility. 
 
 ## Native device (optional)
-The second option is to use the built-in native device support for Airspy and RTL-based SDR dongles. 
+The second option is to use the built-in native device support for Airspy and RTL-SDR based dongles. 
 ```
-Native device --> stream1090 --> output messages (stdout)                                                                                                
+  Native device
+        | 
+        v
+   stream1090
+        | 
+        v
+ output messages (stdout)        
 ```
-You can still use the basic stdin with these builds.
+You can still use the basic stdin approach with these builds.
 
 ## Compiling stream1090
 By know you should have made up your mind about native device support. 
 Regardless of your hardware, you will need
 - cmake (3.10 or higher)
-- C++ compiler that supports C++20 (gcc or clang for example)
+- C++ compiler that supports C++20
 
 to get the basic version working. Additional libs which depend on your SDR hardware are these
 | Version  | RTL-SDR | Airspy |
@@ -56,14 +75,19 @@ to get the basic version working. Additional libs which depend on your SDR hardw
 | Basic (stdin only)    | ```sudo apt install rtl-sdr```    | ```sudo apt install airspy```   |
 | Native support    | ```sudo apt install librtlsdr-dev```    | ```sudo apt install libairspy-dev```  |
 
-Building stream1090 is straightforward. Unlike other implementations, there are no additional libraries required unless you want native device support.
-Get the source code and do the usual cmake thing:
+Building stream1090 is straightforward. Unlike other implementations, there are no additional libraries required, unless you want native device support. Get the source code and do the usual cmake thing:
 
 ```mkdir build && cd build && cmake ../ && make && cd ..```
 
 If you are compiling and you decided to go with native device support, cmake should report something like this:
 
-``` -- [stream1090] Airspy support enabled ``` and/or ```-- [stream1090] RTL-SDR support enabled```
+``` 
+-- [stream1090] Airspy support enabled 
+``` 
+and/or 
+```
+-- [stream1090] RTL-SDR support enabled
+```
 
 ## Running stream1090
 In the ```build``` directory you can now run ```./stream1090 -h``` which should get you the command line options help.
@@ -109,18 +133,26 @@ input sample rate you provided with ```-s```. So for 2.4, 6, 10 that would be 8,
 Depending on your hardware you have at least ```rtl-sdr``` or ```airspy``` installed. Both come with their command line utils (```rtl_sdr``` and ```airspy_rx```) that enables
 you to write the device data stream to stdout. It is now straightforward to get things going. We will do something like this
 ```
-rtl-sdr/airspy --> stream1090 --> /dev/null
+ rtl-sdr/airspy
+       | 
+       v
+   stream1090
+       | 
+       v
+   /dev/null   
 ```
 So we will pipe stdout of those into stdin of stream1090. Here are two minimal examples.
 1. The RTL-SDR way:
 ```
-rtl_sdr -f 1090000000 -s 2400000 - | ./build/stream1090 -s 2.4 > /dev/null
+rtl_sdr -f 1090000000 -s 2400000 - |
+./build/stream1090 -s 2.4 > /dev/null
 ```
 Dial in on 1090 MHz, set the sample rate to 2.4 Msps. Pipe the output into stream1090 and tell it that the input sample rate is 2.4 Msps (for the missing ```-u``` it will default to 8)
 
 2. Similarly, for Airspy we do
 ```
-airspy_rx -t 4 -g 20 -f 1090.000 -a 12000000 -r - | ./build/stream1090 -s 6 > /dev/null
+airspy_rx -t 4 -g 20 -f 1090.000 -a 12000000 -r - | 
+./build/stream1090 -s 6 > /dev/null
 ```
 **Important:** We use here ```-t 4``` which tells ```airspy_rx``` to output a single U16_REAL sample at 12Msps. Stream1090 works usually on an IQ pair basis. So an input sample rate of ```-s 6``` means, it is expecting pairs not single values. That is why we use ```-a 12000000```, because 2 x 6 Msps = 12 Msps. You also want to replace the gain setting with your own.  
 
@@ -172,16 +204,21 @@ DF 21 : 251
 ## Integrating stream1090 into the stack
 Recall that stream1090 is a demodulator and not a decoder. 
 In order to decode messages and integrate stream1090 into an existing stack,
-readsb/dump1090-fa in conjuntion with socat offers a simple effective solution.
-In the following, i will take readsb as an example. 
+readsb/dump1090-fa in conjuntion with socat offers a simple and effective solution.
+In the following, we will take readsb as an example. 
 Currently you probably have something like this
 ```
-Native device <--> readsb --> bells and whistles
+  Native device
+        | 
+     readsb
+        | 
+        v
+ bells and whistles
 ```
 The idea is to
-- Detach readsb from the device
-- Feed stream1090 with the samples from the device instead
-- Pipe the messages from stream1090's stdout into socat which then forwards those to readsb. 
+- Detach the device from readsb
+- Feed stream1090 with the samples from the device
+- Pipe the messages from stream1090's stdout into socat which then forwards those to readsb via TCP. 
 
 Readsb is able to receive messages in hex format and decode these.
 If you haven't already installed readsb, head over to https://github.com/wiedehopf/readsb and follow the instructions there. For socat, you can simply do
@@ -199,7 +236,7 @@ Furthermore, it starts listening on port 30001 for message frames that it will t
 2. Once readsb is up and running, we can start stream1090 and send the output to readsb via socat.
 
 
-Of course, you have to make sure to feed start stream1090 according to your hardware and native device support
+Of course, you have to make sure to start stream1090 according to your hardware and native device support
 #### RTL-SDR
 The stdin way using ```rtl_sdr```
 
