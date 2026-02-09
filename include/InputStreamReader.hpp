@@ -18,6 +18,7 @@ public:
     {
         constexpr size_t NumValuesToRead = 2 * InputBufferSize;
         m_buffer = std::make_unique<T[]>(NumValuesToRead);
+        std::fill(m_buffer.get(), m_buffer.get() + NumValuesToRead, T(0));
     }
 
     inline void readMagnitude(float* out) {

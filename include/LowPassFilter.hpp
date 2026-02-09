@@ -25,18 +25,18 @@ public:
     std::string toString() const {
         std::ostringstream oss;
         oss << "[IQLowPass] tap count: " << numTaps << " symmetric: " << areTapsSymmetric << "\n";
-        oss << "[IQLowPass] taps: {";
+        oss << "[IQLowPass] taps: (";
         for (size_t i = 0; i < numTaps; i++) {
-            oss << taps[i];
+            oss << taps[i]; //std::bit_cast<uint32_t>(taps[i]);
             if (i + 1 < numTaps) {
                 oss << ", ";
             }
         }
-        oss << "}";
+        oss << ")";
         return oss.str();
     }
 
-    void apply(float& value_I, float& value_Q) {
+    inline void apply(float& value_I, float& value_Q) noexcept {
         m_delay_I[m_new_index] = value_I;
         m_delay_Q[m_new_index] = value_Q;
 
@@ -58,7 +58,7 @@ public:
     }
 
 private:
-    void sum_not_sym(float& sum_I, float& sum_Q) const {
+    inline void sum_not_sym(float& sum_I, float& sum_Q) const noexcept{
         // index that wraps around the ring buffer
         int j = m_new_index;
         for (size_t k = 0; k < numTaps; k++) {
@@ -68,7 +68,7 @@ private:
         }
     }
 
-    void sum_sym(float& sum_I, float& sum_Q) const {
+    inline void sum_sym(float& sum_I, float& sum_Q) const noexcept{
         constexpr auto halfNumTaps = numTaps >> 1; 
     
         if constexpr(areTapsOdd) {
@@ -139,14 +139,14 @@ public:
     std::string toString() const {
         std::ostringstream oss;
         oss << "[IQLowPassDynamic] tap count: " << m_numTaps << " symmetric: " << m_areTapsSymmetric << "\n";
-        oss << "[IQLowPassDynamic] taps: {";
-        for (size_t i = 0; i < m_taps.size(); i++) {
-            oss << m_taps[i];
-            if (i + 1 < m_numTaps) {
+        oss << "[IQLowPassDynamic] taps: (";
+        for (size_t i = 0; i < numTaps(); i++) {
+            oss << m_taps[i]; //oss << std::bit_cast<uint32_t>(m_taps[i]);
+            if ((i + 1) < numTaps()) {
                 oss << ", ";
             }
         }
-        oss << "}";
+        oss << ")";
         return oss.str();
     }
 
@@ -168,6 +168,7 @@ public:
             std::copy(newTaps.begin(), newTaps.end(), m_taps.begin());
             // get the new number of tabs
             m_numTaps = newTaps.size();
+            m_bufferSize = std::bit_ceil(m_numTaps);
             // check if we have an odd number of taps
             m_areTapsOdd = (m_numTaps % 2) != 0;
             // check if they are symmetric, regardless of if the number is odd or even
@@ -241,7 +242,7 @@ public:
     }
 
     // applies the FIR to the I and Q values.
-    inline void apply(float& value_I, float& value_Q) {
+    inline void apply(float& value_I, float& value_Q) noexcept {
         m_delay_I[m_new_index] = value_I;
         m_delay_Q[m_new_index] = value_Q;
 
@@ -257,29 +258,29 @@ public:
             sum_not_sym(sum_I, sum_Q);
         }
 
-        m_new_index = (m_new_index + 1) & (bufferSize - 1);
+        m_new_index = (m_new_index + 1) & (bufferSize() - 1);
         value_I = sum_I;
         value_Q = sum_Q;
     }
 
 private:
-    inline void sum_not_sym(float& sum_I, float& sum_Q) const {
+    inline void sum_not_sym(float& sum_I, float& sum_Q) const noexcept {
         // index that wraps around the ring buffer
         int j = m_new_index;
         for (size_t k = 0; k < numTaps(); k++) {
-            j = (j + 1) & (bufferSize - 1);
+            j = (j + 1) & (bufferSize() - 1);
             sum_I += m_taps[k] * m_delay_I[j];
             sum_Q += m_taps[k] * m_delay_Q[j];
         }
     }
 
-    inline void sum_sym(float& sum_I, float& sum_Q) const {
+    inline void sum_sym(float& sum_I, float& sum_Q) const noexcept {
         // half the number of taps
         const auto halfNumTaps = numTaps() >> 1; 
     
         if (m_areTapsOdd) {
             // compute the center index
-            const int center_index = (m_new_index + halfNumTaps + 1) & (bufferSize-1);
+            const int center_index = (m_new_index + halfNumTaps + 1) & (bufferSize()-1);
             // deal with this separatly
             sum_I += m_delay_I[center_index] * m_taps[halfNumTaps];
             sum_Q += m_delay_Q[center_index] * m_taps[halfNumTaps];
@@ -287,17 +288,20 @@ private:
 
         // init i (left) and j (right)
         int i = m_new_index;
-        int j = (m_new_index + numTaps() + 1) & (bufferSize-1);
+        int j = (m_new_index + numTaps() + 1) & (bufferSize()-1);
 
         for (size_t k = 0; k < halfNumTaps; k++) {
-            i = (i + 1) & (bufferSize-1);
-            j = (j - 1) & (bufferSize-1);
+            i = (i + 1) & (bufferSize()-1);
+            j = (j - 1) & (bufferSize()-1);
 
             sum_I += m_taps[k] * (m_delay_I[i] + m_delay_I[j]);
             sum_Q += m_taps[k] * (m_delay_Q[i] + m_delay_Q[j]);
         }
     }  
 
+    size_t bufferSize() const {
+        return m_bufferSize;
+    }
     // the number of taps currently used
     size_t m_numTaps;
 
@@ -308,14 +312,15 @@ private:
     bool m_areTapsOdd;
 
     // size of the delay buffers is the smallest power of 2 with >= maxNumTaps 
-    static constexpr auto bufferSize = std::bit_ceil(MaxNumTaps);
+    //static constexpr auto bufferSize = std::bit_ceil(MaxNumTaps);
+    size_t m_bufferSize = 1;
 
     // buffer for the taps
     std::array<float, MaxNumTaps> m_taps;
 
     // and the delay buffers for I and Q values
-    std::array<float, bufferSize> m_delay_I;
-    std::array<float, bufferSize> m_delay_Q;
+    std::array<float, std::bit_ceil(MaxNumTaps)> m_delay_I;
+    std::array<float, std::bit_ceil(MaxNumTaps)> m_delay_Q;
 
     // index where a new I and Q values are stored in the delay buffers
     int m_new_index;

@@ -17,7 +17,7 @@ struct DCRemoval {
         : m_alpha(alpha), m_avg_I(0.0f), m_avg_Q(0.0f)
     {}
 
-    inline void apply(float& I, float& Q) {
+    inline void apply(float& I, float& Q) noexcept {
         float dI = I - m_avg_I;
         float dQ = Q - m_avg_Q;
 
@@ -47,7 +47,7 @@ private:
 struct FlipSigns {
     FlipSigns() = default;
 
-    inline void apply(float& I, float& Q) {
+    inline void apply(float& I, float& Q) noexcept {
         if (m_flip) {
             I = -I;
             Q = -Q;
@@ -70,7 +70,7 @@ public:
         : m_stages(std::move(stages)...)
     {}
 
-    float process(float I, float Q) {
+    inline float process(float I, float Q) noexcept {
         // run IQ through the stages
         applyStages(I, Q, std::index_sequence_for<Stages...>{});
         // and compute the magnitude
@@ -88,7 +88,7 @@ private:
 
     // runs the stages above on a single pair
     template<std::size_t... Is>
-    inline void applyStages(float& I, float& Q, std::index_sequence<Is...>) {
+    inline void applyStages(float& I, float& Q, std::index_sequence<Is...>) noexcept {
         // C++ fun: apply(I, Q) on each stage in order
         (std::get<Is>(m_stages).apply(I, Q), ...);
     }

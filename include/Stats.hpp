@@ -247,6 +247,12 @@ private:
         printLine(out);
         out << "(Max. msgs/s "<< s.maxMsgsPerSec() << ")" << std::endl;
         out << "Messages Total "<< s.totalMessagesSent() << std::endl;
+        for (int i = 0; i < 24; i++) {
+            if (s.getSent(i) > 0) {
+                out << "DF " << i << " : "<< s.getSent(i) << std::endl;
+            }
+        }
+        out << s.getCount(NUM_ITERATIONS) << " iterations @1MHz" << std::endl; 
     }
 
     inline void printTick(StatsLog& stats, std::ostream& out) {
