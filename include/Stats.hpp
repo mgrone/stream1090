@@ -93,7 +93,7 @@ class StatsLog {
         m_dups[df]++;
     }
 
-    constexpr int getCount(EventType evt) const {
+    constexpr uint64_t getCount(EventType evt) const {
         return m_events[evt];
     }
 
