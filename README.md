@@ -10,13 +10,13 @@ situations, a higher overall message rate can be achieved compared to a preamble
 - CRC-based message framing: Cannot miss a message, because it missed the preamble.
 - Error correction: The crc sum is computed regardless of the data, so why not use it for error correction whenever possible.
 - Not output sensitive: The majority of the computational work does not dependent on the message rate.
-- Support for Airspy and RTL-based SDR dongles (via stdin or native optional)
+- Support for Airspy and RTL-based SDR dongles via stdin or native (optional)
 
 ## Hardware requirements
-- RTLSDR-based dongle or Airspy with antenna etc.
+- RTL-SDR based dongle or Airspy with antenna etc.
 - Optional: RaspberryPi 5 or 4 should work for most settings. 
   This depends on your settings
-- Optional: For rtl_sdr (not airspy), a RaspberryPi 3B and Zero 2 W works without cooling.
+- Optional: For RTL-SDR (not airspy), a RaspberryPi 3B and Zero 2 W works without cooling.
 
 # Installation
 Before getting into building stream1090, you have to understand how stream1090 works.
@@ -50,7 +50,7 @@ Regardless of your hardware, you will need
 - C++ compiler that supports C++20 (gcc or clang for example)
 
 to get the basic version working. Additional libs which depend on your SDR hardware are these
-| Version  | RTL-based | Airspy |
+| Version  | RTL-SDR | Airspy |
 |------------|-------------|-------------|
 | Basic (stdin only)    | ```sudo apt install rtl-sdr```    | ```sudo apt install airspy```   |
 | Native support    | ```sudo apt install librtlsdr-dev```    | ```sudo apt install libairspy-dev```  |
@@ -95,10 +95,10 @@ make sure that ```Native device support: ...``` matches your choice.
 Central to everything is the input sample rate ```-s <rate>```. It will determine
 - How input is interpreted in terms of sample rate
 - The format of the input. If the input sample rate is 6 Msps or higher, it is assumed that the data is given in uint16 (airspy).
-Otherwise it will be assumed that it is an RTLSDR-based dongle which outputs uint8. 
+Otherwise it will be assumed that it is an RTL-SDR based dongle which outputs uint8. 
 
 Note that currently stream1090 only supports 3 different input sample rates.
-2.4 Msps (rtlsdr) and for airspy there is 6 and 10 Msps available.
+2.4 Msps (RTL-SDR) and for airspy there is 6 and 10 Msps available.
 
 Internally, stream1090 will take the input stream and usually upsample it to a higher frequency. You can choose here a value, but it has to be a
 valid configuration from the table above. You can also omit this parameter and it will default to the first entry of the table matching the
@@ -111,7 +111,7 @@ you to write the device data stream to stdout. It is now straightforward to get 
 rtl-sdr/airspy --> stream1090 --> /dev/null
 ```
 So we will pipe stdout of those into stdin of stream1090. Here are two minimal examples.
-1. The RTLSDR way:
+1. The RTL-SDR way:
 ```
 rtl_sdr -f 1090000000 -s 2400000 - | ./build/stream1090 -s 2.4 > /dev/null
 ```
@@ -121,16 +121,17 @@ Dial in on 1090 MHz, set the sample rate to 2.4 Msps. Pipe the output into strea
 ```
 airspy_rx -t 4 -g 20 -f 1090.000 -a 12000000 -r - | ./build/stream1090 -s 6 > /dev/null
 ```
-**Important:** We use here ```-t 4``` which tells ```airspy_rx``` to output uint16 REAL (raw). Stream1090 works usually on an IQ pair basis. So an input sample rate of ```-s 6``` means, it is expecting pairs not single values. That is why we use ```-a 12000000```, because 2 x 6 Msps = 12 Msps.  
+**Important:** We use here ```-t 4``` which tells ```airspy_rx``` to output a single U16_REAL sample at 12Msps. Stream1090 works usually on an IQ pair basis. So an input sample rate of ```-s 6``` means, it is expecting pairs not single values. That is why we use ```-a 12000000```, because 2 x 6 Msps = 12 Msps. You also want to replace the gain setting with your own.  
 
 ### Native device config
 If you do not want to read from stdin, but instead want stream1090 to directly deal with the device, that is what option ```-d <ini file>``` is for.
 You have to provide a device specific ini file with parameters. There are two example ini files with documentation in [```./configs```](configs/).
 So how do these work? Each config file starts with ```[rtlsdr]``` or ```[airspy]```. This tells stream1090 the device type it should be using.
-This is followed by some properties which are device specific. Refer to the documentation in [```rtlsdr.ini```](configs/rtlsdr.ini) and [```airspy.ini```](configs/airspy.ini). Note that the sample rate is not part of the device options. This is being set by ```-s```.
+This is followed by some properties which are device specific. Refer to the documentation in [```rtlsdr.ini```](configs/rtlsdr.ini) and [```airspy.ini```](configs/airspy.ini). 
+Note that the sample rate is not part of the device options. This is being set by ```-s```.
 
 Assuming, you are in the stream1090 directory. You can now do: 
-1. For an RTLSDR device
+1. For an RTL-SDR device
 ```
 ./build/stream1090 -s 2.4 -d ./configs/rtlsdr.ini > /dev/null
 ```
@@ -143,78 +144,46 @@ You should end up with a stats screen that refreshes every 5 seconds. Something 
 -------------------------------------------------------------
 |     Type |  #Msgs |  %Total |    Dups |   Fixed |   Msg/s | 
 -------------------------------------------------------------
-|    ADS-B |    881 |   16.4% |   15.9% |   32.4% |   176.2 | 
-|   Comm-B |   1134 |   21.1% |      0% |         |   226.8 | 
-|     ACAS |    229 |    4.3% |      0% |         |    45.8 | 
-|     Surv |    612 |   11.4% |      0% |         |   122.4 | 
-|    DF-11 |   2515 |   46.8% |   18.1% |   11.2% |     503 | 
+|    ADS-B |    875 |   16.4% |   20.9% |   36.3% |     175 | 
+|   Comm-B |   1112 |   20.9% |      0% |         |   222.4 | 
+|     ACAS |    289 |    5.4% |      0% |         |    57.8 | 
+|     Surv |    757 |   14.2% |      0% |         |   151.4 | 
+|    DF-11 |   2298 |   43.1% |   23.7% |   15.9% |   459.6 | 
 -------------------------------------------------------------
-|  112-bit |   2031 |   37.8% |    7.6% |   15.5% |   406.2 | 
-|   56-bit |   3340 |   62.2% |   14.2% |    8.8% |     668 | 
+|  112-bit |   2005 |   37.6% |   10.3% |   17.9% |     401 | 
+|   56-bit |   3326 |   62.4% |   17.7% |   11.9% |   665.2 | 
 -------------------------------------------------------------
-|    Total |   5371 |    100% |   11.8% |   11.2% |    1074 | 
+|    Total |   5331 |    100% |   15.1% |     14% |    1066 | 
 -------------------------------------------------------------
-(Max. msgs/s 1074)
-Messages Total 114496
-```
-# Advanced options
-
-
-
-UNDER CONSTRUCTION
-
-## !Attention! (regarding this README)
-Stream1090 is undergoing many changes right now. While the instructions below are still working, there are many undocumented features and upcoming changes. Please excuse me for not updating this README. For example, there is no point in writing an extensive guide on how to get airspy_rx going with stream1090 while implementing native support for airspy. You will find plenty of stuff over here: https://discussions.flightaware.com/t/stream1090/99603
-
-
-
- 
-## Updating from a previous version
-If you have compiled a previous version, it is important that you either get rid of the build folder completely, or do a 
-```make clean && cmake ../ --fresh```
-in the build folder. There are several changes from version to version that may require an update of the Makefile. 
- 
-## RTL_SDR-based SDRs
-As a next step, we need to feed stream1090 which expects 8-bit unsigned IQ pairs at a rate of 2.4Mhz at stdin. For this install rtl_sdr
-
-```sudo apt install rtl-sdr```
-
-Note that you will not need to install the dev version. Instead we will pipe the output of rtl_sdr into stream1090.
-You can now already test stream1090
-
-``` rtl_sdr -g 0 -f 1090000000 -s 2400000 - | ./build/stream1090 -s 2.4 -u 8 > /dev/null ```
-
-This sets the gain to 49.6db (feel free to change this or set it to auto with 0), the sample rate to 2.4Msps and tunes the dongle to 1090MHz.
-The output (8-bit unsigned IQ pairs) is then piped into stream1090. 
-Stream1090 will write the resulting messages to stdout while providing statistics
-on stderr every 5 seconds. We get rid of the messages for testing purposes. You should see now something like this:
-```
--------------------------------------------------------------
-|     Type |  #Msgs |  %Total |    Dups |   Fixed |   Msg/s | 
--------------------------------------------------------------
-|    ADS-B |    881 |   16.4% |   15.9% |   32.4% |   176.2 | 
-|   Comm-B |   1134 |   21.1% |      0% |         |   226.8 | 
-|     ACAS |    229 |    4.3% |      0% |         |    45.8 | 
-|     Surv |    612 |   11.4% |      0% |         |   122.4 | 
-|    DF-11 |   2515 |   46.8% |   18.1% |   11.2% |     503 | 
--------------------------------------------------------------
-|  112-bit |   2031 |   37.8% |    7.6% |   15.5% |   406.2 | 
-|   56-bit |   3340 |   62.2% |   14.2% |    8.8% |     668 | 
--------------------------------------------------------------
-|    Total |   5371 |    100% |   11.8% |   11.2% |    1074 | 
--------------------------------------------------------------
-(Max. msgs/s 1074)
-Messages Total 114496
+(Max. msgs/s 1066)
+Messages Total 30483
+DF 0 : 271
+DF 4 : 642
+DF 5 : 115
+DF 11 : 2298
+DF 16 : 18
+DF 17 : 875
+DF 20 : 861
+DF 21 : 251
+5000000 iterations @1MHz
 ```
 
-## Readsb & socat (optional)
+## Integrating stream1090 into the stack
 Recall that stream1090 is a demodulator and not a decoder. 
-In order to decode messages and integrate stream1090 into the stack,
-readsb in conjuntion with socat offers a simple effective solution. 
-The idea is to pipe the messages from stream1090's stdout into socat which then forwards those to readsb. 
+In order to decode messages and integrate stream1090 into an existing stack,
+readsb/dump1090-fa in conjuntion with socat offers a simple effective solution.
+In the following, i will take readsb as an example. 
+Currently you probably have something like this
+```
+Native device <--> readsb --> bells and whistles
+```
+The idea is to
+- Detach readsb from the device
+- Feed stream1090 with the samples from the device instead
+- Pipe the messages from stream1090's stdout into socat which then forwards those to readsb. 
+
 Readsb is able to receive messages in hex format and decode these.
-If you haven't already installed readsb, head over to https://github.com/wiedehopf/readsb and follow the instructions there.
-For socat, you can simply do
+If you haven't already installed readsb, head over to https://github.com/wiedehopf/readsb and follow the instructions there. For socat, you can simply do
 
 ```sudo apt install socat```
 
@@ -226,33 +195,45 @@ For testing you may now proceed in two steps:
 This puts readsb into network only mode so it does not claim the SDR dongle. 
 Furthermore, it starts listening on port 30001 for message frames that it will then decode.
 
-2. Once readsb is up and running, we can start stream1090 and send the output to readsb via socat with
+2. Once readsb is up and running, we can start stream1090 and send the output to readsb via socat.
 
-```rtl_sdr -g 0 -f 1090000000 -s 2400000 - | ./build/stream1090 -s 2.4 -u 8 | socat -u - TCP4:localhost:30001```
 
+Of course, you have to make sure to feed start stream1090 according to your hardware and native device support
+#### RTL-SDR
+The stdin way using ```rtl_sdr```
+
+```
+rtl_sdr -f 1090000000 -s 2400000 - | 
+./build/stream1090 -s 2.4 | 
+socat -u - TCP4:localhost:30001
+```
+
+Or using native device support
+
+```
+./build/stream1090 -s 2.4 -d ./configs/rtlsdr.ini | 
+socat -u - TCP4:localhost:30001
+```
+
+#### Airspy
+The stdin way using ```airspy_rx```
+
+```
+airspy_rx -t 4 -g 20 -f 1090.000 -a 12000000 -r - | 
+./build/stream1090 -s 6 | 
+socat -u - TCP4:localhost:30001
+```
+Or using native device support
+```
+./build/stream1090 -s 6 -d ./configs/airspy.ini | 
+socat -u - TCP4:localhost:30001
+```
 You should now see the table of readsb filling up with plane data.
 
-## Integration
+# Advanced Usage
+UNDER CONSTRUCTION
 
-If you want to integrate stream1090 into an existing stack, readsb is probably the easiest way to do this. 
-Make sure that ```--net-ri-port [FILL_IN_YOUR_PORT]``` is set.
-Then start feeding it with socat either locally or from a different machine. 
-If you want to disable the statistics completely, rebuild the project and set the corresponding option for cmake:
-
-```cmake ../ -DENABLE_STATS=OFF```
-
-You can find a more well described manual over here: 
-
-## Notes on dump1090.
-I have not tried it, but others did and it seems to work just fine. Just make sure to open the raw input port.
-
-# Airspy
-The overall setup with airspy is similar. Use airspy_rx and pipe it into stream1090. 
-For example
-
-```airspy_rx -t 4 -g 20 -f 1090.000 -a 12000000 -r - | ./build/stream1090 -s 6 -u 24 > /dev/null```
-
-sets airspy_rx to sample at 6MHz IQ pairs (= 12MHz uint16_REAL). Stream1090 is configured for 6MHz input via -u 24 to upsample internally to 24 MHz.
+You will find plenty of stuff over here: https://discussions.flightaware.com/t/stream1090/99603
 
 # Frequently asked questions & troubleshooting
 - Why is my message rate 0-2 messages per second?
@@ -273,5 +254,5 @@ This would require the concept of noise, high and low levels which is not presen
 
 MLAT timestamp is part of the output.
 
-**Important Update** I would like to thank several people that provided sample data, tried it in their setup and also did some tests with airspy.
-rhodan76, wiedehopf, caius, abcd567. Thank you very much!
+**Important Update** I would like to thank several people that provided sample data, tried it in their setups and also did some early tests with airspy.
+rhodan76, wiedehopf, caius, abcd567. cnuver, jrg1956. Thank you very much!
