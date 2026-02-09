@@ -14,7 +14,9 @@
 enum class IQPipelineOptions {
     NONE,
     IQ_FIR,
-    IQ_FIR_FILE
+    IQ_FIR_FILE,
+    IQ_FIR_RTL_SDR,
+    IQ_FIR_RTL_SDR_FILE
 };
 
 template<typename Raw, SampleRate In, SampleRate Out, IQPipelineOptions Opt>
@@ -33,14 +35,14 @@ constexpr auto presets = std::make_tuple(
     Preset<uint16_t, Rate_10_0_Mhz, Rate_10_0_Mhz, IQPipelineOptions::NONE>{},
     Preset<uint16_t, Rate_10_0_Mhz, Rate_24_0_Mhz, IQPipelineOptions::NONE>{},
 
-    Preset<uint8_t,  Rate_2_4_Mhz, Rate_8_0_Mhz, IQPipelineOptions::IQ_FIR>{},
+    Preset<uint8_t,  Rate_2_4_Mhz, Rate_8_0_Mhz, IQPipelineOptions::IQ_FIR_RTL_SDR>{},
     Preset<uint16_t, Rate_6_0_Mhz, Rate_6_0_Mhz, IQPipelineOptions::IQ_FIR>{},
     Preset<uint16_t, Rate_6_0_Mhz, Rate_12_0_Mhz, IQPipelineOptions::IQ_FIR>{},
     Preset<uint16_t, Rate_6_0_Mhz, Rate_24_0_Mhz, IQPipelineOptions::IQ_FIR>{},
     Preset<uint16_t, Rate_10_0_Mhz, Rate_10_0_Mhz, IQPipelineOptions::IQ_FIR>{},
     Preset<uint16_t, Rate_10_0_Mhz, Rate_24_0_Mhz, IQPipelineOptions::IQ_FIR>{},
 
-    Preset<uint8_t,  Rate_2_4_Mhz, Rate_8_0_Mhz, IQPipelineOptions::IQ_FIR_FILE>{},
+    Preset<uint8_t,  Rate_2_4_Mhz, Rate_8_0_Mhz, IQPipelineOptions::IQ_FIR_RTL_SDR_FILE>{},
     Preset<uint16_t, Rate_6_0_Mhz, Rate_6_0_Mhz, IQPipelineOptions::IQ_FIR_FILE>{},
     Preset<uint16_t, Rate_6_0_Mhz, Rate_12_0_Mhz, IQPipelineOptions::IQ_FIR_FILE>{},
     Preset<uint16_t, Rate_6_0_Mhz, Rate_24_0_Mhz, IQPipelineOptions::IQ_FIR_FILE>{},
@@ -81,6 +83,20 @@ template<SampleRate In, SampleRate Out>
 struct IQPipelineSelector<In, Out, IQPipelineOptions::IQ_FIR_FILE> {
     static auto make(const std::vector<float>& taps) {
         return make_pipeline(DCRemoval(), FlipSigns(), IQLowPassDynamic(taps));
+    }
+};
+
+template<SampleRate In, SampleRate Out>
+struct IQPipelineSelector<In, Out, IQPipelineOptions::IQ_FIR_RTL_SDR> {
+    static auto make(const std::vector<float>&) {
+        return make_pipeline(IQLowPass<In, Out>());
+    }
+};
+
+template<SampleRate In, SampleRate Out>
+struct IQPipelineSelector<In, Out, IQPipelineOptions::IQ_FIR_RTL_SDR_FILE> {
+    static auto make(const std::vector<float>& taps) {
+        return make_pipeline(IQLowPassDynamic(taps));
     }
 };
 

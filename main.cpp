@@ -13,7 +13,7 @@
 #include <chrono>
 #include <optional>
 
-#define STREAM1090_VERSION "260209"
+#define STREAM1090_VERSION "260209_RTL"
 
 #include "MainInstance.hpp"
 
@@ -350,10 +350,19 @@ int main(int argc, char** argv) {
         : RawFormat::UINT_16_IQ;
 
     c_vars.pipelineOption = IQPipelineOptions::NONE;
-    if (!r_vars.filterTaps.empty())
-        c_vars.pipelineOption = IQPipelineOptions::IQ_FIR_FILE;
-    else if (args.iq_filter)
-        c_vars.pipelineOption = IQPipelineOptions::IQ_FIR;
+    if (!r_vars.filterTaps.empty()) {
+        if (c_vars.rawFormat == RawFormat::UINT_8_IQ) {
+            c_vars.pipelineOption = IQPipelineOptions::IQ_FIR_RTL_SDR_FILE;
+        } else {
+            c_vars.pipelineOption = IQPipelineOptions::IQ_FIR_FILE;
+        }
+    } else if (args.iq_filter) {
+        if (c_vars.rawFormat == RawFormat::UINT_8_IQ) {
+            c_vars.pipelineOption = IQPipelineOptions::IQ_FIR_RTL_SDR;
+        } else {
+            c_vars.pipelineOption = IQPipelineOptions::IQ_FIR;
+        }        
+    }
         
     if (!runInstanceFromPresets(c_vars, r_vars)) {
         std::cerr << "[Stream1090] Configuration is not supported: "<< c_vars.inputRate << " -> " << c_vars.outputRate << std::endl;
