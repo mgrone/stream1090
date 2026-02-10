@@ -291,7 +291,6 @@ You most likely feed in the wrong format or at a wrong sampling speed.
 - Why is my message rate not that good? 
 
 Make sure your gain setting is right and matches your setup. 
-Stream1090 has no control over the hardware and therefore also has no auto gain.
 
 - Why is the signal level not shown?
 
