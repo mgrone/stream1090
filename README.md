@@ -102,7 +102,7 @@ Options:
                        See config/airspy.ini or config/rtlsdr.ini
                        Note that native device support requires librtlsdr-dev
                        and/or libairspy-dev to be installed.
-
+  -q                   Enables IQ FIR filter with built-in taps (default or custom)
 ```
 Supported sample rate combinations (in a nicer table):
 | Input | Upsample | Input type | Device |
@@ -117,6 +117,7 @@ Supported sample rate combinations (in a nicer table):
 Let us go through the options. First of all, if you decided to go for native device support, 
 make sure that ```Native device support: ...``` matches your choice.
 
+#### Input sample rate (-s)
 Central to everything is the input sample rate ```-s <rate>```. It will determine
 - How input is interpreted in terms of sample rate
 - The format of the input. If the input sample rate is 6 Msps or higher, it is assumed that the data is given in uint16 (airspy).
@@ -125,9 +126,14 @@ Otherwise it will be assumed that it is an RTL-SDR based dongle which outputs ui
 Note that currently stream1090 only supports 3 different input sample rates.
 2.4 Msps (RTL-SDR) and for airspy there is 6 and 10 Msps available.
 
-Internally, stream1090 will take the input stream and usually upsample it to a higher frequency. You can choose here a value, but it has to be a
+#### Upsampling (-u)
+Internally, stream1090 will take the input stream and usually upsamples it to a higher frequency. You can choose here a value, but it has to be a
 valid configuration from the table above. You can also omit this parameter and it will default to the first entry of the table matching the
-input sample rate you provided with ```-s```. So for 2.4, 6, 10 that would be 8, 6, 10, respectively.
+input sample rate you provided with ```-s```. So for 2.4, 6, 10 that would be 8, 6, 10, respectively. 
+
+#### IQ filtering (-q)
+
+Here, again it is a question of how much CPU you would like to invest. If you can afford it, turn it on. More on this later.
 
 ### First steps with stdin
 Depending on your hardware you have at least ```rtl-sdr``` or ```airspy``` installed. Both come with their command line utils (```rtl_sdr``` and ```airspy_rx```) that enables
