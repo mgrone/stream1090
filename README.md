@@ -131,6 +131,8 @@ Internally, stream1090 will take the input stream and usually upsamples it to a 
 valid configuration from the table above. You can also omit this parameter and it will default to the first entry of the table matching the
 input sample rate you provided with ```-s```. So for 2.4, 6, 10 that would be 8, 6, 10, respectively. 
 
+For airspy you want to crank this up as much as you can. But be aware that this comes at the cost of higher CPU usage. 24 Msps means 24 Mio candidates to be checked per second. A Raspberry PI 5 can easily deal with this. 
+
 #### IQ filtering (-q)
 
 Here, again it is a question of how much CPU you would like to invest. If you can afford it, turn it on. More on this later.
@@ -205,6 +207,20 @@ DF 17 : 875
 DF 20 : 861
 DF 21 : 251
 5000000 iterations @1MHz
+```
+
+## Maximum settings
+If you do not care about CPU usage, you can set stream1090 to its highest settings. For RTL-SDR this would be something like
+```
+./build/stream1090 -s 2.4 -q -d ./configs/rtlsdr.ini > /dev/null
+```
+There is no higher upsampling rate in this case. For Airspy you can do
+```
+./build/stream1090 -s 6 -u 24 -d ./configs/airspy.ini -q  > /dev/null
+```
+or if your hardware supports 10 Msps sample rate
+```
+./build/stream1090 -s 10 -u 24 -d ./configs/airspy.ini -q > /dev/null
 ```
 
 ## Integrating stream1090 into the stack
