@@ -32,7 +32,7 @@ void printSamplerConfig() {
 }
 
 struct CompileTimeVars {
-    RawFormat rawFormat = RawFormat::UINT_8_IQ;
+    InputFormatType rawFormat = InputFormatType::IQ_UINT8_RTL_SDR;
     SampleRate inputRate = Rate_2_4_Mhz;
     SampleRate outputRate = Rate_8_0_Mhz;
     IQPipelineOptions pipelineOption = IQPipelineOptions::NONE;
@@ -54,16 +54,18 @@ public:
     }
 
     // we first unpack the preset
-    using RawType = typename preset::RawType;
+    using RawFormatType = typename preset::RawFormatType;
+    using RawType       = typename preset::RawType;
+
     static constexpr SampleRate inputRate  = preset::inputRate;
     static constexpr SampleRate outputRate = preset::outputRate;
     static constexpr IQPipelineOptions pipelineOption = preset::pipelineOption;
-    typedef SamplerBase<inputRate , outputRate> SamplerType;
 
     // with all the compile time information available we continue now with what we need
-    typedef std::unique_ptr<InputDeviceBase<RawType> > DevicePtr;
-    using RingBuffer = RingBufferAsync<RawType, SamplerType::InputBufferSize * 2>;
-    using Writer = typename RingBuffer::Writer;
+    using SamplerType = SamplerBase<inputRate, outputRate>;
+    using DevicePtr   = std::unique_ptr<InputDeviceBase<RawType>>;
+    using RingBuffer  = RingBufferAsync<RawType, SamplerType::InputBufferSize * 2>;
+    using Writer      = typename RingBuffer::Writer;
     
     bool setup_device() {
         const auto& cfg = m_runtimeVars.deviceConfigSection;
@@ -76,6 +78,7 @@ public:
 
         // let us try to open the device
         if (!m_device->open_with_serial(serial)) {
+            log("[Stream1090] Opening device failed.");
             // this is not good at all
             return false;
         };
@@ -117,7 +120,14 @@ public:
 
         log("[Stream1090] Device is running.");
         auto start_wct = std::chrono::steady_clock::now();
-        InputBufferReader inputReader(iqPipeline, ringBuffer);
+        InputBufferReader<
+            RawFormatType,
+            SamplerType::InputBufferSize * 2,
+            8,
+            decltype(iqPipeline)
+        > inputReader(iqPipeline, ringBuffer);
+
+        //InputBufferReader inputReader(iqPipeline, ringBuffer);
         SampleStream<SamplerType>().read(inputReader);
         log("[Stream1090] Shutting down device.");
         m_device->close();
@@ -131,7 +141,13 @@ public:
     void run_sync_stdin(auto& iqPipeline) {
         log("[Stream1090] Reading from stdin");
         auto start_wct = std::chrono::steady_clock::now();
-        InputStdStreamReader<RawType, SamplerType::InputBufferSize, decltype(iqPipeline)> inputReader(iqPipeline, std::cin);
+        //InputStdStreamReader<RawType, SamplerType::InputBufferSize, decltype(iqPipeline)> inputReader(iqPipeline, std::cin);
+        InputStdStreamReader<
+            RawFormatType,
+            SamplerType::InputBufferSize,
+            decltype(iqPipeline)
+        > inputReader(iqPipeline, std::cin);
+
         SampleStream<SamplerType>().read(inputReader);
         auto end_wct = std::chrono::steady_clock::now();
         auto dur_wct_secs = std::chrono::duration_cast<std::chrono::milliseconds>(end_wct - start_wct).count();
@@ -178,22 +194,16 @@ constexpr bool for_each_in_tuple(const Tuple& t, F&& f) {
 
 bool runInstanceFromPresets(const CompileTimeVars& compileTimeVars, const RuntimeVars& runtimeVars) {
     return for_each_in_tuple(presets, [&](auto const& p) {
-        using R = typename std::decay_t<decltype(p)>::RawType;
-        if constexpr (std::is_same_v<R, uint8_t>) {
-            if (compileTimeVars.rawFormat != RawFormat::UINT_8_IQ)
-                return false;
-        } else if constexpr (std::is_same_v<R, uint16_t>) {
-            if (compileTimeVars.rawFormat != RawFormat::UINT_16_IQ)
-                return false;
+        using P = std::decay_t<decltype(p)>;
+
+        if (P::RawFormatType::id == compileTimeVars.rawFormat &&
+            P::inputRate          == compileTimeVars.inputRate &&
+            P::outputRate         == compileTimeVars.outputRate &&
+            P::pipelineOption     == compileTimeVars.pipelineOption) 
+        {
+            MainInstance<P>(runtimeVars).run();
+            return true;
         }
-
-        if (p.inputRate      != compileTimeVars.inputRate ||
-            p.outputRate     != compileTimeVars.outputRate ||
-            p.pipelineOption != compileTimeVars.pipelineOption)
-            return false;
-
-        using P = typename std::decay_t<decltype(p)>;
-        MainInstance<P>(runtimeVars).run();
-        return true;
+        return false;
     });
 }

@@ -7,9 +7,9 @@
 #pragma once
 
 #include "Sampler.hpp"
+#include "RawInputFormat.hpp"
 #include "IQPipeline.hpp"
 #include "LowPassFilter.hpp"
-
 
 enum class IQPipelineOptions {
     NONE,
@@ -19,50 +19,43 @@ enum class IQPipelineOptions {
     IQ_FIR_RTL_SDR_FILE
 };
 
-template<typename Raw, SampleRate In, SampleRate Out, IQPipelineOptions Opt>
+
+template<typename RawFormat, SampleRate In, SampleRate Out, IQPipelineOptions Opt>
 struct Preset {
-    using RawType = Raw;
+    using RawFormatType = RawFormat;
+    using RawType       = typename RawFormat::RawType;
+
     static constexpr SampleRate        inputRate      = In;
     static constexpr SampleRate        outputRate     = Out;
     static constexpr IQPipelineOptions pipelineOption = Opt;
 };
 
+
 constexpr auto presets = std::make_tuple(
-    Preset<uint8_t,  Rate_2_4_Mhz, Rate_8_0_Mhz, IQPipelineOptions::NONE>{},
-    Preset<uint16_t, Rate_6_0_Mhz, Rate_6_0_Mhz, IQPipelineOptions::NONE>{},
-    Preset<uint16_t, Rate_6_0_Mhz, Rate_12_0_Mhz, IQPipelineOptions::NONE>{},
-    Preset<uint16_t, Rate_6_0_Mhz, Rate_24_0_Mhz, IQPipelineOptions::NONE>{},
-    Preset<uint16_t, Rate_10_0_Mhz, Rate_10_0_Mhz, IQPipelineOptions::NONE>{},
-    Preset<uint16_t, Rate_10_0_Mhz, Rate_24_0_Mhz, IQPipelineOptions::NONE>{},
+    // RTL-SDR (uint8)
+    Preset<IQ_UINT8_RTL_SDR, Rate_2_4_Mhz, Rate_8_0_Mhz, IQPipelineOptions::NONE>{},
+    Preset<IQ_UINT8_RTL_SDR, Rate_2_4_Mhz, Rate_8_0_Mhz, IQPipelineOptions::IQ_FIR_RTL_SDR>{},
+    Preset<IQ_UINT8_RTL_SDR, Rate_2_4_Mhz, Rate_8_0_Mhz, IQPipelineOptions::IQ_FIR_RTL_SDR_FILE>{},
 
-    Preset<uint8_t,  Rate_2_4_Mhz, Rate_8_0_Mhz, IQPipelineOptions::IQ_FIR_RTL_SDR>{},
-    Preset<uint16_t, Rate_6_0_Mhz, Rate_6_0_Mhz, IQPipelineOptions::IQ_FIR>{},
-    Preset<uint16_t, Rate_6_0_Mhz, Rate_12_0_Mhz, IQPipelineOptions::IQ_FIR>{},
-    Preset<uint16_t, Rate_6_0_Mhz, Rate_24_0_Mhz, IQPipelineOptions::IQ_FIR>{},
-    Preset<uint16_t, Rate_10_0_Mhz, Rate_10_0_Mhz, IQPipelineOptions::IQ_FIR>{},
-    Preset<uint16_t, Rate_10_0_Mhz, Rate_24_0_Mhz, IQPipelineOptions::IQ_FIR>{},
+    // Airspy (uint16)
+    Preset<IQ_UINT16_RAW_AIRSPY, Rate_6_0_Mhz, Rate_6_0_Mhz, IQPipelineOptions::NONE>{},
+    Preset<IQ_UINT16_RAW_AIRSPY, Rate_6_0_Mhz, Rate_12_0_Mhz, IQPipelineOptions::NONE>{},
+    Preset<IQ_UINT16_RAW_AIRSPY, Rate_6_0_Mhz, Rate_24_0_Mhz, IQPipelineOptions::NONE>{},
+    Preset<IQ_UINT16_RAW_AIRSPY, Rate_10_0_Mhz, Rate_10_0_Mhz, IQPipelineOptions::NONE>{},
+    Preset<IQ_UINT16_RAW_AIRSPY, Rate_10_0_Mhz, Rate_24_0_Mhz, IQPipelineOptions::NONE>{},
 
-    Preset<uint8_t,  Rate_2_4_Mhz, Rate_8_0_Mhz, IQPipelineOptions::IQ_FIR_RTL_SDR_FILE>{},
-    Preset<uint16_t, Rate_6_0_Mhz, Rate_6_0_Mhz, IQPipelineOptions::IQ_FIR_FILE>{},
-    Preset<uint16_t, Rate_6_0_Mhz, Rate_12_0_Mhz, IQPipelineOptions::IQ_FIR_FILE>{},
-    Preset<uint16_t, Rate_6_0_Mhz, Rate_24_0_Mhz, IQPipelineOptions::IQ_FIR_FILE>{},
-    Preset<uint16_t, Rate_10_0_Mhz, Rate_10_0_Mhz, IQPipelineOptions::IQ_FIR_FILE>{},
-    Preset<uint16_t, Rate_10_0_Mhz, Rate_24_0_Mhz, IQPipelineOptions::IQ_FIR_FILE>{}
+    Preset<IQ_UINT16_RAW_AIRSPY, Rate_6_0_Mhz, Rate_6_0_Mhz, IQPipelineOptions::IQ_FIR>{},
+    Preset<IQ_UINT16_RAW_AIRSPY, Rate_6_0_Mhz, Rate_12_0_Mhz, IQPipelineOptions::IQ_FIR>{},
+    Preset<IQ_UINT16_RAW_AIRSPY, Rate_6_0_Mhz, Rate_24_0_Mhz, IQPipelineOptions::IQ_FIR>{},
+    Preset<IQ_UINT16_RAW_AIRSPY, Rate_10_0_Mhz, Rate_10_0_Mhz, IQPipelineOptions::IQ_FIR>{},
+    Preset<IQ_UINT16_RAW_AIRSPY, Rate_10_0_Mhz, Rate_24_0_Mhz, IQPipelineOptions::IQ_FIR>{},
+
+    Preset<IQ_UINT16_RAW_AIRSPY, Rate_6_0_Mhz, Rate_6_0_Mhz, IQPipelineOptions::IQ_FIR_FILE>{},
+    Preset<IQ_UINT16_RAW_AIRSPY, Rate_6_0_Mhz, Rate_12_0_Mhz, IQPipelineOptions::IQ_FIR_FILE>{},
+    Preset<IQ_UINT16_RAW_AIRSPY, Rate_6_0_Mhz, Rate_24_0_Mhz, IQPipelineOptions::IQ_FIR_FILE>{},
+    Preset<IQ_UINT16_RAW_AIRSPY, Rate_10_0_Mhz, Rate_10_0_Mhz, IQPipelineOptions::IQ_FIR_FILE>{},
+    Preset<IQ_UINT16_RAW_AIRSPY, Rate_10_0_Mhz, Rate_24_0_Mhz, IQPipelineOptions::IQ_FIR_FILE>{}
 );
-
-enum class RawFormat {
-    UINT_8_IQ,
-    UINT_16_IQ,
-    FLOAT_32_IQ
-};
-
-/*template<RawFormat rawFormat>
-struct RawFormatToType { };
-
-template<> RawFormatToType<RawFormat::UINT_8_IQ> { using type = uint8_t; };
-template<> RawFormatToType<RawFormat::UINT_16_IQ> { using type = uint16_t; };
-template<> RawFormatToType<RawFormat::FLOAT_32_IQ> { using type = float; };
-*/
 
 
 template<SampleRate In, SampleRate Out, IQPipelineOptions sel>

@@ -67,6 +67,7 @@ namespace LowPassTaps {
 
     template<>
     constexpr auto getTaps<Rate_6_0_Mhz, Rate_12_0_Mhz>(){
+        // seed [-0.3320590413822194, 1.1615930409122945, -0.7829489890122254, 0.6847837825770703, -0.25808479918981997]
         return std::to_array<float>({ 
             -0.0016630655154585838,
             0.04539839178323746,

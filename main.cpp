@@ -345,19 +345,20 @@ int main(int argc, char** argv) {
     }
 
     // TODO: Change this
+    
     c_vars.rawFormat = (c_vars.inputRate < Rate_6_0_Mhz)
-        ? RawFormat::UINT_8_IQ
-        : RawFormat::UINT_16_IQ;
+        ? InputFormatType::IQ_UINT8_RTL_SDR
+        : InputFormatType::IQ_UINT16_RAW_AIRSPY;
 
     c_vars.pipelineOption = IQPipelineOptions::NONE;
     if (!r_vars.filterTaps.empty()) {
-        if (c_vars.rawFormat == RawFormat::UINT_8_IQ) {
+        if (c_vars.rawFormat == InputFormatType::IQ_UINT8_RTL_SDR) {
             c_vars.pipelineOption = IQPipelineOptions::IQ_FIR_RTL_SDR_FILE;
         } else {
             c_vars.pipelineOption = IQPipelineOptions::IQ_FIR_FILE;
         }
     } else if (args.iq_filter) {
-        if (c_vars.rawFormat == RawFormat::UINT_8_IQ) {
+        if (c_vars.rawFormat == InputFormatType::IQ_UINT16_RAW_AIRSPY) {
             c_vars.pipelineOption = IQPipelineOptions::IQ_FIR_RTL_SDR;
         } else {
             c_vars.pipelineOption = IQPipelineOptions::IQ_FIR;
