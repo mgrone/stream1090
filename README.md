@@ -226,8 +226,12 @@ or if your hardware supports 10 Msps sample rate
 ## Integrating stream1090 into the stack
 Recall that stream1090 is a demodulator and not a decoder. 
 In order to decode messages and integrate stream1090 into an existing stack,
-readsb/dump1090-fa in conjuntion with socat offers a simple and effective solution.
-In the following, we will take readsb as an example. 
+readsb/dump1090-fa in conjuntion with socat offer a simple and effective solution.
+
+In the following, we will take readsb as an example. If you are using dump1090-fa,
+please read the readsb part first. It is just about how where their settings are located/passed. 
+
+### Readsb
 Currently you probably have something like this
 ```
   Native device
@@ -289,6 +293,22 @@ Or using native device support
 socat -u - TCP4:localhost:30001
 ```
 You should now see the table of readsb filling up with plane data.
+
+#### Disable statistics
+If you want to disable the statistics completely, rebuild the project and set the corresponding option for cmake:
+
+```cmake ../ --fresh -DENABLE_STATS=OFF```
+
+### Dump1090-fa
+If you want to use dump1090-fa instead, you have to basically follow the same steps as with readsb. However, there is a slight difference about the options. You will have to edit ```/etc/default/dump1090-fa``` and do the following:
+- Detach the device from dump1090-fa 
+```RECEIVER=none```
+- Enable dump1090-fa to receive raw messages
+```NET_RAW_INPUT_PORTS=30001```
+
+Do not forget to reload the service to make the changes come into effect.
+With stream1090 you proceed as above in the readsb section.
+
 
 # Advanced Usage
 ## Upsampling
