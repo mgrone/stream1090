@@ -297,7 +297,9 @@ You should now see the table of readsb filling up with plane data.
 #### Disable statistics
 If you want to disable the statistics completely, rebuild the project and set the corresponding option for cmake:
 
-```cmake ../ --fresh -DENABLE_STATS=OFF```
+```
+cmake ../ --fresh -DENABLE_STATS=OFF && make
+```
 
 ### Dump1090-fa
 If you want to use dump1090-fa instead, you have to basically follow the same steps as with readsb. However, there is a slight difference about the options. You will have to edit ```/etc/default/dump1090-fa``` and do the following:
