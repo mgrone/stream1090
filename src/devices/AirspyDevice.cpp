@@ -29,30 +29,43 @@ bool AirspyDevice::open_with_serial(uint64_t serial) {
         rc = airspy_open_sn(&m_dev, serial);
     }
 
-    if (rc != AIRSPY_SUCCESS)
+    if (rc != AIRSPY_SUCCESS) {
+        std::cerr << "[AirspyDevice] airspy_open failed." << std::endl;
         return false;
+    }
 
     // Configure device
-    if (airspy_set_sample_type(m_dev, AIRSPY_SAMPLE_UINT16_REAL) != AIRSPY_SUCCESS)
+    if (airspy_set_sample_type(m_dev, AIRSPY_SAMPLE_UINT16_REAL) != AIRSPY_SUCCESS) {
+        std::cerr << "[AirspyDevice] airspy_set_sample_type failed." << std::endl;
         return false;
-
+    }
+        
     // Hardware rate = 2 × IQ rate
-    if (airspy_set_samplerate(m_dev, getSampleRate() * 2) != AIRSPY_SUCCESS)
+    if (airspy_set_samplerate(m_dev, getSampleRate() * 2) != AIRSPY_SUCCESS){
+        std::cerr << "[AirspyDevice] airspy_set_samplerate failed." << getSampleRate() * 2 << std::endl;
         return false;
+    }
 
     // Default frequency for ADS-B
-    if (airspy_set_freq(m_dev, 1090000000) != AIRSPY_SUCCESS)
+    if (airspy_set_freq(m_dev, 1090000000) != AIRSPY_SUCCESS) {
+        std::cerr << "[AirspyDevice] airspy_set_freq failed." << std::endl;
         return false;
-
+    }
     // Default gains from airspy_rx
-    if (!setVgaGain(5))
+    if (!setVgaGain(5)) {
+        std::cerr << "[AirspyDevice] set initial VGA gain failed." << std::endl;
         return false;
+    }
 
-    if (!setLnaGain(5))
+    if (!setLnaGain(5)) {
+        std::cerr << "[AirspyDevice] set initial LNA gain failed." << std::endl;
         return false;
+    }
     
-    if (!setMixerGain(5))
+    if (!setMixerGain(5)) {
+        std::cerr << "[AirspyDevice] set initial Mixer gain failed." << std::endl;
         return false;
+    }
  
     return true;
 }
