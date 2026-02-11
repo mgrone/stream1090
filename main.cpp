@@ -358,7 +358,7 @@ int main(int argc, char** argv) {
             c_vars.pipelineOption = IQPipelineOptions::IQ_FIR_FILE;
         }
     } else if (args.iq_filter) {
-        if (c_vars.rawFormat == InputFormatType::IQ_UINT16_RAW_AIRSPY) {
+        if (c_vars.rawFormat == InputFormatType::IQ_UINT8_RTL_SDR) {
             c_vars.pipelineOption = IQPipelineOptions::IQ_FIR_RTL_SDR;
         } else {
             c_vars.pipelineOption = IQPipelineOptions::IQ_FIR;
