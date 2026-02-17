@@ -13,6 +13,7 @@ enum SampleRate {
     Rate_1_0_Mhz  =  1000000,
     Rate_2_0_Mhz  =  2000000,
     Rate_2_4_Mhz  =  2400000,
+    Rate_2_56_Mhz =  2560000,
     Rate_3_0_Mhz  =  3000000,
     Rate_3_2_Mhz  =  3200000,
     Rate_4_0_Mhz  =  4000000,
@@ -185,6 +186,35 @@ constexpr void SamplerBase<Rate_2_4_Mhz, Rate_8_0_Mhz>::sample(float* __restrict
     } 
 }
 
+// 2.56 Mhz to 8.0 Mhz (8 streams) upsampling function
+template<>
+constexpr void SamplerBase<Rate_2_56_Mhz, Rate_8_0_Mhz>::sample(float* __restrict in, float* __restrict out, size_t numBlocks) noexcept {
+    for (size_t i = 0; i < numBlocks; i++) {
+            for (int j = 0; j < 25; j++) {
+                const auto offset = 8 * j;
+                const auto k = offset / 25;
+                const auto l = 24 - (offset % 25);
+                const auto r = 24 - l;
+                out[j] = ((float)l * in[k] + (float)r * in[k+1]) * (1.0f / 24.0f);
+            }
+            in += 8;//5;
+            out += 25;//12;
+        }
+}
+
+/*
+ for (size_t i = 0; i < numBlocks; i++) {
+            for (int j = 0; j < 12; j++) {
+                const auto offset = 5 * j;
+                const auto k = offset / 12;
+                const auto l = 9 - (offset % 10);
+                const auto r = 9 - l;
+                out[j] = ((float)l * in[k] + (float)r * in[k+1]) * (1.0f / 9.0f);
+            }
+            in += 5;
+            out += 12;
+        }
+*/
 
 // 3.0 Mhz to 6.0 Mhz (6 streams) upsampling function
 template<>

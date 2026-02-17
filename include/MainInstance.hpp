@@ -127,7 +127,6 @@ public:
             decltype(iqPipeline)
         > inputReader(iqPipeline, ringBuffer);
 
-        //InputBufferReader inputReader(iqPipeline, ringBuffer);
         SampleStream<SamplerType>().read(inputReader);
         log("[Stream1090] Shutting down device.");
         m_device->close();
@@ -141,7 +140,7 @@ public:
     void run_sync_stdin(auto& iqPipeline) {
         log("[Stream1090] Reading from stdin");
         auto start_wct = std::chrono::steady_clock::now();
-        //InputStdStreamReader<RawType, SamplerType::InputBufferSize, decltype(iqPipeline)> inputReader(iqPipeline, std::cin);
+
         InputStdStreamReader<
             RawFormatType,
             SamplerType::InputBufferSize,
@@ -196,7 +195,7 @@ bool runInstanceFromPresets(const CompileTimeVars& compileTimeVars, const Runtim
     return for_each_in_tuple(presets, [&](auto const& p) {
         using P = std::decay_t<decltype(p)>;
 
-        if (P::RawFormatType::id == compileTimeVars.rawFormat &&
+        if (P::RawFormatType::id  == compileTimeVars.rawFormat &&
             P::inputRate          == compileTimeVars.inputRate &&
             P::outputRate         == compileTimeVars.outputRate &&
             P::pipelineOption     == compileTimeVars.pipelineOption) 

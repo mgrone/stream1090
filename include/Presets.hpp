@@ -37,6 +37,10 @@ constexpr auto presets = std::make_tuple(
     Preset<IQ_UINT8_RTL_SDR, Rate_2_4_Mhz, Rate_8_0_Mhz, IQPipelineOptions::IQ_FIR_RTL_SDR>{},
     Preset<IQ_UINT8_RTL_SDR, Rate_2_4_Mhz, Rate_8_0_Mhz, IQPipelineOptions::IQ_FIR_RTL_SDR_FILE>{},
 
+    Preset<IQ_UINT8_RTL_SDR, Rate_2_56_Mhz, Rate_8_0_Mhz, IQPipelineOptions::NONE>{},
+    Preset<IQ_UINT8_RTL_SDR, Rate_2_56_Mhz, Rate_8_0_Mhz, IQPipelineOptions::IQ_FIR_RTL_SDR>{},
+    Preset<IQ_UINT8_RTL_SDR, Rate_2_56_Mhz, Rate_8_0_Mhz, IQPipelineOptions::IQ_FIR_RTL_SDR_FILE>{},
+
     // Airspy (uint16)
     Preset<IQ_UINT16_RAW_AIRSPY, Rate_6_0_Mhz, Rate_6_0_Mhz, IQPipelineOptions::NONE>{},
     Preset<IQ_UINT16_RAW_AIRSPY, Rate_6_0_Mhz, Rate_12_0_Mhz, IQPipelineOptions::NONE>{},

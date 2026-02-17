@@ -13,7 +13,7 @@
 #include <chrono>
 #include <optional>
 
-#define STREAM1090_VERSION "260211"
+#define STREAM1090_VERSION "260217"
 
 #include "MainInstance.hpp"
 
@@ -200,6 +200,7 @@ SampleRate parse_sample_rate(const std::string& raw) {
         case Rate_1_0_Mhz:  return Rate_1_0_Mhz;
         case Rate_2_0_Mhz:  return Rate_2_0_Mhz;
         case Rate_2_4_Mhz:  return Rate_2_4_Mhz;
+        case Rate_2_56_Mhz:  return Rate_2_56_Mhz;
         case Rate_3_0_Mhz:  return Rate_3_0_Mhz;
         case Rate_3_2_Mhz:  return Rate_3_2_Mhz;
         case Rate_4_0_Mhz:  return Rate_4_0_Mhz;
@@ -251,24 +252,6 @@ std::vector<float> load_taps_from_file(const std::string& filename) {
 
     return taps;
 }
-
-/*std::vector<float> load_taps_from_file(const std::string& filename) {
-    std::vector<float> taps;
-    std::ifstream in(filename);
-
-    if (!in) {
-        std::cerr << "Failed to open taps file: " << filename << "\n";
-        return taps;
-    }
-
-    float v;
-    while (in >> v) {
-        taps.push_back(v);
-    }
-
-    return taps;
-}*/
-
 
 int main(int argc, char** argv) {
     install_signal_handlers();
