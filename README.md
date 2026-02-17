@@ -108,6 +108,7 @@ Supported sample rate combinations (in a nicer table):
 | Input | Upsample | Input type | Device |
 |------|--------|------| ------|
 |  2.4  |  8 | uint8 IQ | rtlsdr |
+|  2.56  |  8 | uint8 IQ | rtlsdr |
 |  6  |  6 | uint16 IQ | airspy |
 |  6  |  12 | uint16 IQ | airspy |
 |  6  |  24 | uint16 IQ | airspy |
@@ -212,7 +213,7 @@ DF 21 : 251
 ## Maximum settings
 If you do not care about CPU usage, you can set stream1090 to its highest settings. For RTL-SDR this would be something like
 ```
-./build/stream1090 -s 2.4 -q -d ./configs/rtlsdr.ini > /dev/null
+./build/stream1090 -s 2.56 -q -d ./configs/rtlsdr.ini > /dev/null
 ```
 There is no higher upsampling rate in this case. For Airspy you can do
 ```
