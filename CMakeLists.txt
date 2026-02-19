@@ -15,10 +15,12 @@ endif()
 option(ENABLE_STATS      "Compile with STATS_ENABLED" ON)
 option(END_STATS         "Compile with STATS_END_ONLY" OFF)
 option(ENABLE_OUTPUT_RAW "Compile with OUTPUT_RAW" OFF)
+option(ENABLE_CUSTOM_INPUT "Compile with STREAM1090_CUSTOM_INPUT" OFF)
 
 set(STATS_DEF        STATS_ENABLED=$<BOOL:${ENABLE_STATS}>)
 set(STATS_END_DEF    STATS_END_ONLY=$<BOOL:${END_STATS}>)
 set(OUTPUT_DEF       OUTPUT_RAW=$<BOOL:${ENABLE_OUTPUT_RAW}>)
+set(CUSTOM_INPUT_DEF STREAM1090_CUSTOM_INPUT=$<BOOL:${ENABLE_CUSTOM_INPUT}>)
 
 # ------------------------------------------------------------
 # Compiler settings
@@ -65,6 +67,10 @@ else()
     message(STATUS "[stream1090] RTL-SDR support disabled (librtlsdr not found)")
 endif()
 
+if (ENABLE_CUSTOM_INPUT)
+    message(STATUS "[stream1090] Custom input mode enabled")
+endif()
+
 # ------------------------------------------------------------
 # Core sources
 # ------------------------------------------------------------
@@ -90,6 +96,7 @@ target_compile_definitions(stream1090 PRIVATE
     ${STATS_DEF}
     ${STATS_END_DEF}
     ${OUTPUT_DEF}
+    ${CUSTOM_INPUT_DEF}
     ${DEVICE_DEFINITIONS}
 )
 
