@@ -30,9 +30,12 @@ template<typename RawType>
 class DeviceFactory {
 public:
     using BasePtr = std::unique_ptr<InputDeviceBase<RawType>>;
-    static BasePtr create(InputDeviceType inputType,
-                          SampleRate inputSampleRate,
-                          IAsyncWriter<RawType>& writer);
+    static BasePtr create(InputDeviceType ,
+                          SampleRate ,
+                          IAsyncWriter<RawType>& ) 
+                          {
+                            return nullptr;
+                          };
 };
 
 // ------------------------------------------------------------

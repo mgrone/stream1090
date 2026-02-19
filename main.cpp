@@ -13,7 +13,7 @@
 #include <chrono>
 #include <optional>
 
-#define STREAM1090_VERSION "260219"
+#define STREAM1090_VERSION "260219_2"
 
 #include "MainInstance.hpp"
 
@@ -69,7 +69,11 @@ void print_rate_pairs() {
 
     std::cout << "Supported sample rate combinations:\n";
     for (auto& p : pairs) {
+#if defined(STREAM1090_CUSTOM_INPUT) && STREAM1090_CUSTOM_INPUT
+        std::string fmt = "float32 IQ";
+#else 
         std::string fmt = (p.in < 6'000'000) ? "uint8 IQ" : "uint16 IQ";
+#endif
         std::cout
             << "  "
             << (float(p.in) / 1'000'000.0f)
@@ -82,6 +86,9 @@ void print_rate_pairs() {
 
 void print_help() {
     std::cout << "Stream1090 build " << STREAM1090_VERSION << "\n";
+#if defined(STREAM1090_CUSTOM_INPUT) && STREAM1090_CUSTOM_INPUT
+    std::cout << "(custom input mode)\n";
+#endif
 
     std::cout << "Native device support:";
 #ifdef STREAM1090_HAVE_AIRSPY
@@ -328,7 +335,10 @@ int main(int argc, char** argv) {
     }
 
     // TODO: Change this
-    
+#if defined(STREAM1090_CUSTOM_INPUT) && STREAM1090_CUSTOM_INPUT
+    c_vars.rawFormat = InputFormatType::IQ_FLOAT32;
+    c_vars.pipelineOption = IQPipelineOptions::NONE;
+#else     
     c_vars.rawFormat = (c_vars.inputRate < Rate_6_0_Mhz)
         ? InputFormatType::IQ_UINT8_RTL_SDR
         : InputFormatType::IQ_UINT16_RAW_AIRSPY;
@@ -347,6 +357,7 @@ int main(int argc, char** argv) {
             c_vars.pipelineOption = IQPipelineOptions::IQ_FIR;
         }        
     }
+#endif
         
     if (!runInstanceFromPresets(c_vars, r_vars)) {
         std::cerr << "[Stream1090] Configuration is not supported: "<< c_vars.inputRate << " -> " << c_vars.outputRate << std::endl;

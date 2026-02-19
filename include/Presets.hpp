@@ -30,7 +30,13 @@ struct Preset {
     static constexpr IQPipelineOptions pipelineOption = Opt;
 };
 
-
+#if defined(STREAM1090_CUSTOM_INPUT) && STREAM1090_CUSTOM_INPUT
+constexpr auto presets = std::make_tuple(
+    // Custom Input
+    Preset<IQ_FLOAT32, Rate_2_0_Mhz, Rate_2_0_Mhz, IQPipelineOptions::NONE>{},
+    Preset<IQ_FLOAT32, Rate_4_0_Mhz, Rate_4_0_Mhz, IQPipelineOptions::NONE>{}
+);
+#else 
 constexpr auto presets = std::make_tuple(
     // RTL-SDR (uint8)
     Preset<IQ_UINT8_RTL_SDR, Rate_2_4_Mhz, Rate_8_0_Mhz, IQPipelineOptions::NONE>{},
@@ -60,6 +66,8 @@ constexpr auto presets = std::make_tuple(
     Preset<IQ_UINT16_RAW_AIRSPY, Rate_10_0_Mhz, Rate_10_0_Mhz, IQPipelineOptions::IQ_FIR_FILE>{},
     Preset<IQ_UINT16_RAW_AIRSPY, Rate_10_0_Mhz, Rate_24_0_Mhz, IQPipelineOptions::IQ_FIR_FILE>{}
 );
+
+#endif
 
 
 template<SampleRate In, SampleRate Out, IQPipelineOptions sel>
