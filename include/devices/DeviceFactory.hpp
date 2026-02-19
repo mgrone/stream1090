@@ -9,6 +9,7 @@
 #include <string>
 
 #include "devices/IniConfig.hpp"
+#include "devices/InputDeviceBase.hpp"
 
 #ifdef STREAM1090_HAVE_AIRSPY
 #include "devices/AirspyDevice.hpp"
