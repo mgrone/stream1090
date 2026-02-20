@@ -34,6 +34,8 @@ struct Preset {
 constexpr auto presets = std::make_tuple(
     // Custom Input
     Preset<IQ_FLOAT32, Rate_2_0_Mhz, Rate_2_0_Mhz, IQPipelineOptions::NONE>{},
+    Preset<IQ_FLOAT32, Rate_2_0_Mhz, Rate_4_0_Mhz, IQPipelineOptions::NONE>{},
+    Preset<IQ_FLOAT32, Rate_2_0_Mhz, Rate_8_0_Mhz, IQPipelineOptions::NONE>{},
     Preset<IQ_FLOAT32, Rate_4_0_Mhz, Rate_4_0_Mhz, IQPipelineOptions::NONE>{}
 );
 #else 

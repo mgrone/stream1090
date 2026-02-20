@@ -43,6 +43,10 @@ typedef SamplerBase<Rate_12_0_Mhz, Rate_12_0_Mhz> Sampler_12_0_to_12_0_Mhz;
 typedef SamplerBase<Rate_20_0_Mhz, Rate_20_0_Mhz> Sampler_20_0_to_20_0_Mhz;
 typedef SamplerBase<Rate_24_0_Mhz, Rate_24_0_Mhz> Sampler_24_0_to_24_0_Mhz;
 
+// 2.0 Mhz upsamplers
+typedef SamplerBase<Rate_2_0_Mhz, Rate_4_0_Mhz> Sampler_2_0_to_4_0_Mhz;
+typedef SamplerBase<Rate_2_0_Mhz, Rate_8_0_Mhz> Sampler_2_0_to_8_0_Mhz;
+
 // 2.4 Mhz upsamplers 
 typedef SamplerBase<Rate_2_4_Mhz, Rate_4_0_Mhz> Sampler_2_4_to_4_0_Mhz;
 typedef SamplerBase<Rate_2_4_Mhz, Rate_6_0_Mhz> Sampler_2_4_to_6_0_Mhz;
@@ -123,6 +127,36 @@ class SamplerBase {
     // the main sampling function that has to be implemented
     static constexpr void sample(float* __restrict in, float* __restrict out, size_t numBlocks) noexcept;    
 };
+
+// 2.0 Mhz to 4.0 Mhz (4 streams) upsampling function
+template<>
+constexpr void SamplerBase<Rate_2_0_Mhz, Rate_4_0_Mhz>::sample(float* __restrict in, float* __restrict out, size_t numBlocks) noexcept {
+    for (size_t i = 0; i < numBlocks; i++) {
+            out[0] = in[0];   
+            out[1] = (in[0] + in[1]) / 2.0f;
+            in += 1;
+            out += 2;
+        }
+}
+
+// 2.0 Mhz to 8.0 Mhz (8 streams) upsampling function
+template<>
+constexpr void SamplerBase<Rate_2_0_Mhz, Rate_8_0_Mhz>::sample(float* __restrict in, float* __restrict out, size_t numBlocks) noexcept {
+      for (size_t i = 0; i < numBlocks; i++) {
+            //  |0000|1111|
+            //  +---------+
+            //  |0000|....|
+            //  |.111|1...|
+            //  |..22|22..|
+            //  |...3|333.|
+            out[0] = (4.0f * in[0] +  0.0f * in[1]) * (1.0f / 4.0f);
+            out[1] = (3.0f * in[0] +  1.0f * in[1]) * (1.0f / 4.0f);
+            out[2] = (2.0f * in[0] +  2.0f * in[1]) * (1.0f / 4.0f);
+            out[3] = (1.0f * in[0] +  3.0f * in[1]) * (1.0f / 4.0f);
+            in += 1;
+            out += 4;
+    }
+}
 
 // 2.4 Mhz to 4.0 Mhz (4 streams) upsampling function
 template<>
