@@ -56,13 +56,13 @@ public:
     // we first unpack the preset
     using RawFormatType = typename preset::RawFormatType;
     using RawType       = typename preset::RawType;
+    using SamplerType   = typename preset::SamplerType;
 
-    static constexpr SampleRate inputRate  = preset::inputRate;
-    static constexpr SampleRate outputRate = preset::outputRate;
+    static constexpr SampleRate inputRate  = SamplerType::InputSampleRate;
+    static constexpr SampleRate outputRate = SamplerType::OutputSampleRate;
     static constexpr IQPipelineOptions pipelineOption = preset::pipelineOption;
 
     // with all the compile time information available we continue now with what we need
-    using SamplerType = SamplerBase<inputRate, outputRate>;
     using DevicePtr   = std::unique_ptr<InputDeviceBase<RawType>>;
     using RingBuffer  = RingBufferAsync<RawType, SamplerType::InputBufferSize * 2>;
     using Writer      = typename RingBuffer::Writer;

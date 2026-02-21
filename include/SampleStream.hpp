@@ -60,14 +60,14 @@ inline void SampleStream<Sampler>::read(InputReaderType& inputReader) {
             // tell the input reader to get us some data. Directly as magnitude. Since this is a passthrough sampler
             // we will directly read into the samples buffer. There is no need for using the sampler at all.
             // This works because the amount the input reader is getting us in this particular case is exactly the ChunkSize
-            static_assert(Sampler::ChunkSize == Sampler::InputBufferSize);
+            static_assert(Sampler::NumBlocks == Sampler::InputBufferSize);
             inputReader.readMagnitude(m_samples.get() + Sampler::SampleBufferOverlap);
         } else {
             // tell the input reader to get us some data. Directly as magnitude.
             inputReader.readMagnitude(m_inputMagnitude.get() + Sampler::InputBufferOverlap);
             // now ask the Sampler to resample the input magnitude to the output samples
             // similar to the input buffer, write after the overlap to keep some old values for the next iteration
-            Sampler::sample(m_inputMagnitude.get(), m_samples.get() + Sampler::SampleBufferOverlap, Sampler::ChunkSize);
+            Sampler::sample(m_inputMagnitude.get(), m_samples.get() + Sampler::SampleBufferOverlap);
         }
 
         // extract phase shifted bits using manchester encoding

@@ -79,7 +79,9 @@ Building stream1090 is straightforward. Unlike other implementations, there are 
 
 ```mkdir build && cd build && cmake ../ && make && cd ..```
 
-If you are compiling and you decided to go with native device support, cmake should report something like this:
+**Attention** This will take a bit of time. The different configurations which correspond to various settings (see below) are all being precompiled. 
+
+If you decided to go with native device support, cmake should report something like this:
 
 ``` 
 -- [stream1090] Airspy support enabled 
@@ -103,12 +105,16 @@ Options:
                        Note that native device support requires librtlsdr-dev
                        and/or libairspy-dev to be installed.
   -q                   Enables IQ FIR filter with built-in taps (default or custom)
+  -v                   Verbose output
+
 ```
 Supported sample rate combinations (in a nicer table):
 | Input | Upsample | Input type | Device |
 |------|--------|------| ------|
 |  2.4  |  8 | uint8 IQ | rtlsdr |
+|  2.4  |  12 | uint8 IQ | rtlsdr |
 |  2.56  |  8 | uint8 IQ | rtlsdr |
+|  2.56  |  12 | uint8 IQ | rtlsdr |
 |  6  |  6 | uint16 IQ | airspy |
 |  6  |  12 | uint16 IQ | airspy |
 |  6  |  24 | uint16 IQ | airspy |
@@ -124,19 +130,22 @@ Central to everything is the input sample rate ```-s <rate>```. It will determin
 - The format of the input. If the input sample rate is 6 Msps or higher, it is assumed that the data is given in uint16 (airspy).
 Otherwise it will be assumed that it is an RTL-SDR based dongle which outputs uint8. 
 
-Note that currently stream1090 only supports 3 different input sample rates.
-2.4 Msps (RTL-SDR) and for airspy there is 6 and 10 Msps available.
+Note that currently stream1090 only supports 4 different input sample rates.
+2.4, 2.56 Msps (RTL-SDR) and for airspy there is 6 and 10 Msps available.
 
 #### Upsampling (-u)
 Internally, stream1090 will take the input stream and usually upsamples it to a higher frequency. You can choose here a value, but it has to be a
 valid configuration from the table above. You can also omit this parameter and it will default to the first entry of the table matching the
-input sample rate you provided with ```-s```. So for 2.4, 6, 10 that would be 8, 6, 10, respectively. 
+input sample rate you provided with ```-s```.
 
 For airspy you want to crank this up as much as you can. But be aware that this comes at the cost of higher CPU usage. 24 Msps means 24 Mio candidates to be checked per second. A Raspberry PI 5 can easily deal with this. 
 
 #### IQ filtering (-q)
 
-Here, again it is a question of how much CPU you would like to invest. If you can afford it, turn it on. More on this later.
+Here, again it is a question of how much CPU you would like to invest. If you can afford it, turn it on. It is worth it. More on this later.
+
+#### Verbose (-v)
+If you run into problems with your native device support. Add this flag to see if the device is starting up properly.
 
 ### First steps with stdin
 Depending on your hardware you have at least ```rtl-sdr``` or ```airspy``` installed. Both come with their command line utils (```rtl_sdr``` and ```airspy_rx```) that enables
@@ -181,6 +190,8 @@ Assuming, you are in the stream1090 directory. You can now do:
 ```
 ./build/stream1090 -s 6 -d ./configs/airspy.ini > /dev/null
 ```
+**Important:** If you are powering an LNA via bias-t, you have to turn that on in the ini.
+
 You should end up with a stats screen that refreshes every 5 seconds. Something like this:
 ```
 -------------------------------------------------------------
@@ -213,7 +224,7 @@ DF 21 : 251
 ## Maximum settings
 If you do not care about CPU usage, you can set stream1090 to its highest settings. For RTL-SDR this would be something like
 ```
-./build/stream1090 -s 2.56 -q -d ./configs/rtlsdr.ini > /dev/null
+./build/stream1090 -s 2.56 -u 12 -q -d ./configs/rtlsdr.ini > /dev/null
 ```
 There is no higher upsampling rate in this case. For Airspy you can do
 ```
@@ -340,5 +351,8 @@ This would require the concept of noise, high and low levels which is not presen
 
 MLAT timestamp is part of the output.
 
+- Why are there only so few configurations in the table?
+The compiler will create for each configuration a separate pipeline.
+
 **Important Update** I would like to thank several people that provided sample data, tried it in their setups and also did some early tests with airspy.
-rhodan76, wiedehopf, caius, abcd567. cnuver, jrg1956. Thank you very much!
+rhodan76, wiedehopf, caius, abcd567. cnuver, jrg1956, jimmerk2. Thank you very much!

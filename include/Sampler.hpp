@@ -8,6 +8,7 @@
 #pragma once
 #include <numeric>
 #include <cstddef>
+#include "SamplerFunc.hpp"
 
 enum SampleRate {
     Rate_1_0_Mhz  =  1000000,
@@ -51,6 +52,11 @@ typedef SamplerBase<Rate_2_0_Mhz, Rate_8_0_Mhz> Sampler_2_0_to_8_0_Mhz;
 typedef SamplerBase<Rate_2_4_Mhz, Rate_4_0_Mhz> Sampler_2_4_to_4_0_Mhz;
 typedef SamplerBase<Rate_2_4_Mhz, Rate_6_0_Mhz> Sampler_2_4_to_6_0_Mhz;
 typedef SamplerBase<Rate_2_4_Mhz, Rate_8_0_Mhz> Sampler_2_4_to_8_0_Mhz;
+typedef SamplerBase<Rate_2_4_Mhz, Rate_12_0_Mhz> Sampler_2_4_to_12_0_Mhz;
+
+// 2.56 MHz upsamplers
+typedef SamplerBase<Rate_2_56_Mhz, Rate_8_0_Mhz> Sampler_2_56_to_8_0_Mhz;
+typedef SamplerBase<Rate_2_56_Mhz, Rate_12_0_Mhz> Sampler_2_56_to_12_0_Mhz;
 
 // 6 Mhz upsamplers
 typedef SamplerBase<Rate_6_0_Mhz, Rate_12_0_Mhz> Sampler_6_0_to_12_0_Mhz;
@@ -109,14 +115,21 @@ class SamplerBase {
     // (Note that the number of streams is always even by the assertion above)
     static constexpr size_t SampleBlockSize = NumStreams / 2; 
     
-    static constexpr size_t NumBlocksPerChunk = 256;
-    static constexpr size_t ChunkSize = NumBlocksPerChunk * SampleBlockSize;
-    static_assert(ChunkSize % 2 == 0);
+    
+    // This is the desired input buffer size. This will be a lower bound.
+    static constexpr size_t DesiredInputBufferSize = 8192;
+    static constexpr size_t NumBlocks = (DesiredInputBufferSize / (RatioInput * SampleBlockSize * 2) + 1) * (SampleBlockSize * 2);
+    
+    
+    /*static constexpr size_t NumBlocksPerChunk = 256;
+    static constexpr size_t ChunkSize = NumBlocksPerChunk * SampleBlockSize; */
+    
+    static_assert(NumBlocks % 2 == 0);
     // The number of elements in the input and sample buffer which are considered fresh
     // This is not the total size of each buffer due to some overlap
     // TODO ENSURE THAT SAMPLE BUFFER SIZE / SampleBlockSize is even
-    static constexpr size_t InputBufferSize  = RatioInput * ChunkSize; 
-    static constexpr size_t SampleBufferSize = RatioOutput * ChunkSize; 
+    static constexpr size_t InputBufferSize  = RatioInput * NumBlocks; 
+    static constexpr size_t SampleBufferSize = RatioOutput * NumBlocks; 
     
     static constexpr size_t InputBufferOverlap  = _InputBufferOverlap;
     static constexpr size_t SampleBufferOverlap = SampleBlockSize;
@@ -125,43 +138,16 @@ class SamplerBase {
     static constexpr bool isPassthrough = (InputSampleRate == OutputSampleRate);
 
     // the main sampling function that has to be implemented
-    static constexpr void sample(float* __restrict in, float* __restrict out, size_t numBlocks) noexcept;    
+    static constexpr void sample(float* __restrict in, float* __restrict out) noexcept {
+        SamplerFunc<RatioInput, RatioOutput, NumBlocks>::sample(in, out);
+    };    
 };
 
-// 2.0 Mhz to 4.0 Mhz (4 streams) upsampling function
-template<>
-constexpr void SamplerBase<Rate_2_0_Mhz, Rate_4_0_Mhz>::sample(float* __restrict in, float* __restrict out, size_t numBlocks) noexcept {
-    for (size_t i = 0; i < numBlocks; i++) {
-            out[0] = in[0];   
-            out[1] = (in[0] + in[1]) / 2.0f;
-            in += 1;
-            out += 2;
-        }
-}
-
-// 2.0 Mhz to 8.0 Mhz (8 streams) upsampling function
-template<>
-constexpr void SamplerBase<Rate_2_0_Mhz, Rate_8_0_Mhz>::sample(float* __restrict in, float* __restrict out, size_t numBlocks) noexcept {
-      for (size_t i = 0; i < numBlocks; i++) {
-            //  |0000|1111|
-            //  +---------+
-            //  |0000|....|
-            //  |.111|1...|
-            //  |..22|22..|
-            //  |...3|333.|
-            out[0] = (4.0f * in[0] +  0.0f * in[1]) * (1.0f / 4.0f);
-            out[1] = (3.0f * in[0] +  1.0f * in[1]) * (1.0f / 4.0f);
-            out[2] = (2.0f * in[0] +  2.0f * in[1]) * (1.0f / 4.0f);
-            out[3] = (1.0f * in[0] +  3.0f * in[1]) * (1.0f / 4.0f);
-            in += 1;
-            out += 4;
-    }
-}
 
 // 2.4 Mhz to 4.0 Mhz (4 streams) upsampling function
 template<>
-constexpr void SamplerBase<Rate_2_4_Mhz, Rate_4_0_Mhz>::sample(float* __restrict in, float* __restrict out, size_t numBlocks) noexcept {
-    for (size_t i = 0; i < numBlocks; i++) {
+constexpr void SamplerBase<Rate_2_4_Mhz, Rate_4_0_Mhz>::sample(float* __restrict in, float* __restrict out) noexcept {
+    for (size_t i = 0; i < NumBlocks; i++) {
         //  |00000|11111|22222|33333|
         //  +-----------------------+
         //  |..000|00022|22224|44444|
@@ -174,12 +160,12 @@ constexpr void SamplerBase<Rate_2_4_Mhz, Rate_4_0_Mhz>::sample(float* __restrict
         in += 3;
         out += 5;
     }   
-}
+} 
 
 // 2.4 Mhz to 6.0 Mhz (6 streams) upsampling function
 template<>
-constexpr void SamplerBase<Rate_2_4_Mhz, Rate_6_0_Mhz>::sample(float* __restrict in, float* __restrict out, size_t numBlocks) noexcept {
-    for (size_t i = 0; i < numBlocks; i++) {
+constexpr void SamplerBase<Rate_2_4_Mhz, Rate_6_0_Mhz>::sample(float* __restrict in, float* __restrict out) noexcept {
+    for (size_t i = 0; i < NumBlocks; i++) {
         //  |00000|11111|22222|
         //  +-----------------+
         //  |00000|03333|33...|
@@ -197,8 +183,8 @@ constexpr void SamplerBase<Rate_2_4_Mhz, Rate_6_0_Mhz>::sample(float* __restrict
 
 // 2.4 Mhz to 8.0 Mhz (8 streams) upsampling function
 template<>
-constexpr void SamplerBase<Rate_2_4_Mhz, Rate_8_0_Mhz>::sample(float* __restrict in, float* __restrict out, size_t numBlocks) noexcept {
-    for (size_t i = 0; i < numBlocks; i++) {
+constexpr void SamplerBase<Rate_2_4_Mhz, Rate_8_0_Mhz>::sample(float* __restrict in, float* __restrict out) noexcept {
+    for (size_t i = 0; i < NumBlocks; i++) {
         //  |0000000000|1111111111|2222222222|3333333333|
         //  +-------------------------------------------+
         //  |...0000000|0....44444|444....888|88888.....|
@@ -222,8 +208,8 @@ constexpr void SamplerBase<Rate_2_4_Mhz, Rate_8_0_Mhz>::sample(float* __restrict
 
 // 2.56 Mhz to 8.0 Mhz (8 streams) upsampling function
 template<>
-constexpr void SamplerBase<Rate_2_56_Mhz, Rate_8_0_Mhz>::sample(float* __restrict in, float* __restrict out, size_t numBlocks) noexcept {
-    for (size_t i = 0; i < numBlocks; i++) {
+constexpr void SamplerBase<Rate_2_56_Mhz, Rate_8_0_Mhz>::sample(float* __restrict in, float* __restrict out) noexcept {
+    for (size_t i = 0; i < NumBlocks; i++) {
             for (int j = 0; j < 25; j++) {
                 const auto offset = 8 * j;
                 const auto k = offset / 25;
@@ -236,54 +222,10 @@ constexpr void SamplerBase<Rate_2_56_Mhz, Rate_8_0_Mhz>::sample(float* __restric
         }
 }
 
-/*
- for (size_t i = 0; i < numBlocks; i++) {
-            for (int j = 0; j < 12; j++) {
-                const auto offset = 5 * j;
-                const auto k = offset / 12;
-                const auto l = 9 - (offset % 10);
-                const auto r = 9 - l;
-                out[j] = ((float)l * in[k] + (float)r * in[k+1]) * (1.0f / 9.0f);
-            }
-            in += 5;
-            out += 12;
-        }
-*/
-
-// 3.0 Mhz to 6.0 Mhz (6 streams) upsampling function
-template<>
-constexpr void SamplerBase<Rate_3_0_Mhz, Rate_6_0_Mhz>::sample(float* __restrict in, float* __restrict out, size_t numBlocks) noexcept {
-    for (size_t i = 0; i < numBlocks; i++) {
-            //  |00|11|
-            //  +-----------------+
-            //  |00|..|
-            //  |.1|1.|
-            out[0] = in[0];   
-            out[1] = (in[0] + in[1]) / 2.0f;
-            in += 1;
-            out += 2;
-        }
-}
-
-// 6.0 Mhz to 12.0 Mhz (12 streams) upsampling function
-template<>
-constexpr void SamplerBase<Rate_6_0_Mhz, Rate_12_0_Mhz>::sample(float* __restrict in, float* __restrict out, size_t numBlocks) noexcept {
-   for (size_t i = 0; i < numBlocks; i++) {
-            //  |00|11|
-            //  +-----------------+
-            //  |00|..|
-            //  |.1|1.|
-            out[0] = in[0];   
-            out[1] = (in[0] + in[1]) / 2.0f;
-            in += 1;
-            out += 2;
-        }
-}
-
 // 6.0 Mhz to 16.0 Mhz (16 streams) upsampling function
 template<>
-constexpr void SamplerBase<Rate_6_0_Mhz, Rate_16_0_Mhz>::sample(float* __restrict in, float* __restrict out, size_t numBlocks) noexcept {
-   for (size_t i = 0; i < numBlocks; i++) {
+constexpr void SamplerBase<Rate_6_0_Mhz, Rate_16_0_Mhz>::sample(float* __restrict in, float* __restrict out) noexcept {
+   for (size_t i = 0; i < NumBlocks; i++) {
             //  |00000000|11111111|22222222|33333333|
             //  +-----------------------------------+
             //  |00000000|........|........|........|
@@ -306,46 +248,12 @@ constexpr void SamplerBase<Rate_6_0_Mhz, Rate_16_0_Mhz>::sample(float* __restric
             in += 3;
             out += 8;
         }
-}
-
-// 6.0 Mhz to 24.0 Mhz (24 streams) upsampling function
-template<>
-constexpr void SamplerBase<Rate_6_0_Mhz, Rate_24_0_Mhz>::sample(float* __restrict in, float* __restrict out, size_t numBlocks) noexcept {
-   for (size_t i = 0; i < numBlocks; i++) {
-            //  |0000|1111|
-            //  +---------+
-            //  |0000|....|
-            //  |.111|1...|
-            //  |..22|22..|
-            //  |...3|333.|
-            out[0] = (4.0f * in[0] +  0.0f * in[1]) * (1.0f / 4.0f);
-            out[1] = (3.0f * in[0] +  1.0f * in[1]) * (1.0f / 4.0f);
-            out[2] = (2.0f * in[0] +  2.0f * in[1]) * (1.0f / 4.0f);
-            out[3] = (1.0f * in[0] +  3.0f * in[1]) * (1.0f / 4.0f);
-            in += 1;
-            out += 4;
-        }
-}
-
-// 10.0 Mhz to 20.0 Mhz (20 streams) upsampling function
-template<>
-constexpr void SamplerBase<Rate_10_0_Mhz, Rate_20_0_Mhz>::sample(float* __restrict in, float* __restrict out, size_t numBlocks) noexcept {
-    for (size_t i = 0; i < numBlocks; i++) {
-            //  |00|11|
-            //  +-----------------+
-            //  |00|..|
-            //  |.1|1.|
-            out[0] = in[0];   
-            out[1] = (in[0] + in[1]) / 2.0f;
-            in += 1;
-            out += 2;
-        }
-}
+} 
 
 // 10.0 Mhz to 24.0 Mhz (24 streams) upsampling function
 template<>
-constexpr void SamplerBase<Rate_10_0_Mhz, Rate_24_0_Mhz>::sample(float* __restrict in, float* __restrict out, size_t numBlocks) noexcept {
-    for (size_t i = 0; i < numBlocks; i++) {
+constexpr void SamplerBase<Rate_10_0_Mhz, Rate_24_0_Mhz>::sample(float* __restrict in, float* __restrict out) noexcept {
+    for (size_t i = 0; i < NumBlocks; i++) {
             for (int j = 0; j < 12; j++) {
                 const auto offset = 5 * j;
                 const auto k = offset / 12;
@@ -355,64 +263,5 @@ constexpr void SamplerBase<Rate_10_0_Mhz, Rate_24_0_Mhz>::sample(float* __restri
             }
             in += 5;
             out += 12;
-        }
-}
-
-// 20.0 Mhz to 24.0 Mhz (24 streams) upsampling function
-template<>
-constexpr void SamplerBase<Rate_20_0_Mhz, Rate_24_0_Mhz>::sample(float* __restrict in, float* __restrict out, size_t numBlocks) noexcept {
-    for (size_t i = 0; i < numBlocks; i++) {
-            for (int j = 0; j < 6; j++) {
-                const auto offset = 5 * j;
-                const auto k = offset / 6;
-                const auto l = 5 - (offset % 6);
-                const auto r = 5 - l;
-                out[j] = ((float)l * in[k] + (float)r * in[k+1]) * (1.0f / 5.0f);
-            }
-            in += 5;
-            out += 6;
-        }
-}
-
-
-template<>
-constexpr void SamplerBase<Rate_12_0_Mhz, Rate_24_0_Mhz>::sample(float* __restrict in, float* __restrict out, size_t numBlocks) noexcept {
-    for (size_t i = 0; i < numBlocks; i++) {
-            //  |00|11|
-            //  +-----------------+
-            //  |00|..|
-            //  |.1|1.|
-            out[0] = in[0];   
-            out[1] = (in[0] + in[1]) / 2.0f;
-            in += 1;
-            out += 2;
-        }
-}
-
-template<>
-constexpr void SamplerBase<Rate_20_0_Mhz, Rate_40_0_Mhz>::sample(float* __restrict in, float* __restrict out, size_t numBlocks) noexcept {
-    for (size_t i = 0; i < numBlocks; i++) {
-            //  |00|11|
-            //  +-----------------+
-            //  |00|..|
-            //  |.1|1.|
-            out[0] = in[0];   
-            out[1] = (in[0] + in[1]) / 2.0f;
-            in += 1;
-            out += 2;
-        }
-}
-
-template<>
-constexpr void SamplerBase<Rate_24_0_Mhz, Rate_48_0_Mhz>::sample(float* __restrict in, float* __restrict out, size_t numBlocks) noexcept {
-    for (size_t i = 0; i < numBlocks; i++) {
-            //  |00|11|
-            //  +-----------------+
-            //  |00|..|
-            //  |.1|1.|
-            out[0] = in[0];   
-            out[1] = (in[0] + in[1]) / 2.0f;
-            in += 1;
-            out += 2;
         }
 }
