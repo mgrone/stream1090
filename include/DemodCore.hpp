@@ -310,6 +310,8 @@ public:
 		auto crc = m_shiftRegisters.getCRC_112(streamIndex);
 		// a valid message has the icao overlaid, i.e., check if crc corresponds to 
 		// a known, active and trusted address
+		if (crc ==  0)
+			return false;
 		const auto e = m_cache.find(crc);
 		// if this is not in the list of known planes, we have to leave
 		if (!e.isValid()) {
@@ -339,6 +341,9 @@ public:
 			return false;
 
 		const auto crc = m_shiftRegisters.getCRC_56(streamIndex);
+
+		if (crc ==  0)
+			return false;
 		// for DF 0, 4, 5 we have address parity, i.e. the crc of a valid message corresponds to the address of the transponder
 		// check if we have a trustworthy address in our cache
 		const auto e = m_cache.find(crc);
