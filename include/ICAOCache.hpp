@@ -13,7 +13,8 @@ class ICAOTable {
 public:
 	static constexpr auto TTL_not_trusted { 10 };
 	static constexpr auto TTL_trusted { 30 };
-	static constexpr auto ALT_delta_25ft { 80 };
+	//static constexpr auto ALT_delta_25ft { 80 };
+	static constexpr auto ALT_delta_ft { 2000 };
     // number if bits used for the look up table 
 	static constexpr auto NumBits { 16 };
 
@@ -41,8 +42,8 @@ public:
 		uint16_t squawk : 13;
 
 		// the last altitude in feet received
-		uint16_t altitude_cnt : 3;
-		uint16_t altitude : 13;
+		uint8_t altitude_cnt;
+		uint16_t altitude;
 	};
 
     // simple struct keeping an index
@@ -140,27 +141,17 @@ public:
 			return false;
 		}
 
-		if (m_squawkAlt[entry.key].altitude == 0) {
-			m_squawkAlt[entry.key].altitude = newAlt;
-			m_squawkAlt[entry.key].altitude_cnt = 0;
-			return false;
-		}
-
 		const auto delta = abs((int)m_squawkAlt[entry.key].altitude - (int)newAlt);
-		if ((delta < ALT_delta_25ft)) {
+		if ((delta <= ALT_delta_ft)) {
 			m_squawkAlt[entry.key].altitude = newAlt;
 			m_squawkAlt[entry.key].altitude_cnt = 1;
 			return true;
-		}
-
-		if (m_squawkAlt[entry.key].altitude_cnt == 1) {
-			m_squawkAlt[entry.key].altitude_cnt = 0;
-			return false;
-		}
+		};
 
 		if (m_squawkAlt[entry.key].altitude_cnt == 0) {
-			m_squawkAlt[entry.key].altitude = 0;
-			return false;
+			m_squawkAlt[entry.key].altitude = newAlt;
+		} else {
+			m_squawkAlt[entry.key].altitude_cnt = 0;
 		}
 		return false;
 	}

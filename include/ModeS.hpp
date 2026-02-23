@@ -30,13 +30,44 @@ namespace ModeS {
 		return ((frameShort >> 24) & 0x1fff);
 	}
 
-	constexpr inline uint16_t convertToFeet(uint16_t altBits) {
-		if (!(altBits & (0x1 << 6)) && (altBits & (0x1 << 4))) {
-			return ((altBits & 0xf) |  ((altBits >> 1) & (0x1 << 5)) | ((altBits >> 2) & (0x3f << 6))) + 1;
-		}
-		return 0;		
+	constexpr inline uint16_t decodeSquawk(uint16_t bits) {
+		uint16_t a = ((bits >> 11) & 1) | (((bits >> 9) & 1) << 1) | (((bits >> 7) & 1) << 2);
+		uint16_t c = ((bits >> 12) & 1) | (((bits >> 10) & 1) << 1) | (((bits >> 8) & 1) << 2);
+
+		uint16_t b = ((bits >> 5) & 1) | (((bits >> 3) & 1) << 1) | (((bits >> 1) & 1) << 2);
+		uint16_t d = ((bits >> 4) & 1) | (((bits >> 2) & 1) << 1) | (((bits     ) & 1) << 2);
+	
+		return a * 1000 + b * 100 + c * 10 + d;
 	}
 
+	constexpr inline uint16_t decodeAltitudeBitsFeet(uint16_t bits) {
+		const uint16_t a = (bits & 0xf); // lower 4 bits
+		const uint16_t b = (bits >> 5) & 0x1; // 6th bit
+		const uint16_t c = (bits >> 7) & 0x3f; // higher 6 bits
+		return (a | (b << 4) | (c << 5)) * 25 - 1000;
+	}
+
+	constexpr inline uint16_t decodeAltitudeBitsMeter(uint16_t bits) {
+		const uint16_t a = (bits & 0x3f); // lower 6 bits
+		const uint16_t b = (bits >> 7) & 0x3f; // higher 6 bits
+		return uint16_t(float(a | (b << 6))*3.28084f);
+	}
+
+	constexpr inline uint16_t decodeAltitude(uint16_t bits) {
+		// TODO: test this 
+		//check if the M bit is set and we have to deal with meters
+		/*if (bits & (0x1 << 6)) {
+			return decodeAltitudeBitsMeter(bits);
+		} else if (bits & (0x1 << 4)) {
+			return decodeAltitudeBitsFeet(bits);
+		}*/
+
+		if (!(bits & (0x1 << 6)) && (bits & (0x1 << 4)))
+			return decodeAltitudeBitsFeet(bits);
+		
+		return 0;
+	}
+	
 	inline void printFrameShortMLAT(std::ostream& out, uint64_t timeStamp, const uint64_t& frameShort) {
 		// timestamp + frame = @ + 48 bit timestamp + 56 bit frame
 		out << '@' << std::hex << std::setfill('0') << std::setw(12) << (timeStamp & 0xffffffffffffull) << std::setw(14) << (frameShort & 0xffffffffffffffull) << ";" << std::endl;

@@ -15,6 +15,7 @@
 #include "Stats.hpp"
 #include <cmath>
 #include "ShiftRegisters.hpp"
+//#include "PlaneTable.hpp"
 
 template<int NumStreams>
 class DemodCore {
@@ -39,18 +40,23 @@ public:
 		}
 
 		if ((downlinkFormat == 20) || (downlinkFormat == 16)) {
-			const auto alt = ModeS::convertToFeet( ModeS::extractSquawkAlt_Long(frame));
-			if (!((alt > 0) && m_cache.checkAltitude(it, alt))) {	
+			const auto alt_bits = ModeS::extractSquawkAlt_Long(frame);
+			const auto alt = ModeS::decodeAltitude(alt_bits);
+			//m_planeTable.upsertAlt(crc, alt);
+			if (!m_cache.checkAltitude(it, alt)) {	
 				return false;
 			} else {
 				m_cache.markAsSeen(it);
+				//m_planeTable.upsertAlt(crc, alt);
 			}
 		}
 		
-		if ((downlinkFormat == 21) && !m_cache.checkSquawk(it, ModeS::extractSquawkAlt_Long(frame))) {
-			return false;
-		} else {
+		if (downlinkFormat == 21) {
+			const auto sqwk = ModeS::extractSquawkAlt_Long(frame);
+			if (!m_cache.checkSquawk(it, sqwk))
+				return false;
 			m_cache.markAsSeen(it);
+			//m_planeTable.upsertSquawk(crc, sqwk);
 		}
 		
 		logStatsSent(downlinkFormat);
@@ -73,18 +79,22 @@ public:
 		}
 
 		if ((downlinkFormat == 4) || (downlinkFormat == 0)) {
-			const auto alt = ModeS::convertToFeet( ModeS::extractSquawkAlt_Short(frameShort));
-			if (!((alt > 0) && m_cache.checkAltitude(it, alt))) {
+			const auto alt_bits = ModeS::extractSquawkAlt_Short(frameShort);
+			const auto alt = ModeS::decodeAltitude(alt_bits);
+			if (!m_cache.checkAltitude(it, alt)) {
 				return false;
 			} else {
 				m_cache.markAsSeen(it);
+				//m_planeTable.upsertAlt(crc, alt);
 			}
 		}
 
-		if ((downlinkFormat == 5) && !m_cache.checkSquawk(it, ModeS::extractSquawkAlt_Short(frameShort))) {
-			return false;
-		} else {
+		if (downlinkFormat == 5) {
+			const auto sqwk = ModeS::extractSquawkAlt_Short(frameShort);
+			if (!m_cache.checkSquawk(it, sqwk))
+				return false;
 			m_cache.markAsSeen(it);
+			//m_planeTable.upsertSquawk(crc, sqwk);
 		}
 		
 		logStatsSent(downlinkFormat);
@@ -118,6 +128,7 @@ public:
 			m_currTime++;
 		}
 		logStats(Stats::NUM_ITERATIONS);
+		//m_planeTable.tick();
 	}
 
 
@@ -485,6 +496,8 @@ private:
 #endif
 	
 	ShiftRegisters<NumStreams, RegLayout> m_shiftRegisters;
+
+	//PlaneTable m_planeTable;
 };
 
 template<>
