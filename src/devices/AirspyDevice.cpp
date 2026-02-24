@@ -127,34 +127,35 @@ bool AirspyDevice::applySetting(const std::string& key, const std::string& value
         return false;
 
     if (key == "frequency") {
-        return airspy_set_freq(m_dev, std::stoul(value)) == AIRSPY_SUCCESS;
+        return setFrequency(std::stoul(value));
     }
 
     if (key == "linearity_gain") {
-        return airspy_set_linearity_gain(m_dev, std::stoi(value)) == AIRSPY_SUCCESS;
+        return setLinearityGain(std::stoi(value));
     }
 
     if (key == "sensitivity_gain") {
-        return airspy_set_sensitivity_gain(m_dev, std::stoi(value)) == AIRSPY_SUCCESS;
+        return setSensitivityGain(std::stoi(value));
     }
 
     if (key == "lna_gain") {
-        return airspy_set_lna_gain(m_dev, std::stoi(value)) == AIRSPY_SUCCESS;
+        return setLnaGain(std::stoi(value));
     }
 
     if (key == "mixer_gain") {
-        return airspy_set_mixer_gain(m_dev, std::stoi(value)) == AIRSPY_SUCCESS;
+        return setMixerGain(std::stoi(value));
     }
 
     if (key == "vga_gain") {
-        return airspy_set_vga_gain(m_dev, std::stoi(value)) == AIRSPY_SUCCESS;
+        return setVgaGain(std::stoi(value));
     }
 
     if (key == "bias_tee") {
         bool enabled = (value == "1" || value == "true" || value == "on");
-        return airspy_set_rf_bias(m_dev, enabled ? 1 : 0) == AIRSPY_SUCCESS;
+        return setBiasTee(enabled);
     }
 
     // Unknown key
     return false;
 }
+
