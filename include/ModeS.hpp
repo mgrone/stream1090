@@ -30,6 +30,10 @@ namespace ModeS {
 		return ((frameShort >> 24) & 0x1fff);
 	}
 
+	constexpr inline uint8_t extractSurvInterrogator_Short(const uint64_t& frameShort) {
+		return ((frameShort >> 39) & 0xf);
+	}
+
 	constexpr inline uint16_t decodeSquawk(uint16_t bits) {
 		uint16_t a = ((bits >> 11) & 1) | (((bits >> 9) & 1) << 1) | (((bits >> 7) & 1) << 2);
 		uint16_t c = ((bits >> 12) & 1) | (((bits >> 10) & 1) << 1) | (((bits >> 8) & 1) << 2);

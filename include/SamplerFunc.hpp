@@ -60,7 +60,7 @@ struct SamplerFunc {
     // make sure that we really upsample
     static_assert(RatioInput < RatioOutput);
 
-    static constexpr void sample(float* __restrict in, float* __restrict out) noexcept {
+    static constexpr void sample(const float* __restrict in, float* __restrict out) noexcept {
         // we could move this into the precomputed coefficients.
         // Sadly this is then not the same anymore
         constexpr float scale = (1.0f / (float(numOut)));
