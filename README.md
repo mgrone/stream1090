@@ -147,9 +147,16 @@ Here, again it is a question of how much CPU you would like to invest. If you ca
 #### Verbose (-v)
 If you run into problems with your native device support. Add this flag to see if the device is starting up properly.
 
+### Device access
+
+**Important:** Regardless if you want to use native device support or the stdin way, you will need exclusive access to the device. That means, if you have for example an rtl-sdr dongle and readsb is currently using it, shut it down.
+
 ### First steps with stdin
 Depending on your hardware you have at least ```rtl-sdr``` or ```airspy``` installed. Both come with their command line utils (```rtl_sdr``` and ```airspy_rx```) that enables
-you to write the device data stream to stdout. It is now straightforward to get things going. We will do something like this
+you to write the device data stream to stdout. 
+
+
+It is now straightforward to get things going. We will do something like this
 ```
  rtl-sdr/airspy
        | 
@@ -312,6 +319,19 @@ If you want to disable the statistics completely, rebuild the project and set th
 ```
 cmake ../ --fresh -DENABLE_STATS=OFF && make
 ```
+
+### Readsb as a service
+If you have readsb running as a service by for example using the install script. 
+You may have to edit the config file ```/etc/default/readsb```. Especially when readsb has been compiled with native RTL-SDR support. So if you want readsb to not use the dongle, you have to get rid of this
+```
+RECEIVER_OPTIONS="--device 0 --device-type rtlsdr --gain auto --ppm 0"
+```
+by setting it to nothing
+```
+RECEIVER_OPTIONS=""
+```
+Make sure that ```NET_OPTIONS="..."``` contains ```--net-ri-port 30001```
+
 
 ### Dump1090-fa
 If you want to use dump1090-fa instead, you have to basically follow the same steps as with readsb. However, there is a slight difference about the options. You will have to edit ```/etc/default/dump1090-fa``` and do the following:
