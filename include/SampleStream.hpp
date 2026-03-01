@@ -24,6 +24,7 @@ class SampleStream {
     public:
     // for now we will keep one extra sample buffer as history
     static constexpr size_t NumSampleBuffers = 2;
+    static constexpr size_t TotalSampleBufferLength = NumSampleBuffers * Sampler::SampleBufferSize + Sampler::SampleBufferOverlap;
 
     SampleStream() {
         // The resulting magnitude of the input samples which may also be used to directly read the magnitude of the samples
@@ -31,12 +32,22 @@ class SampleStream {
         m_inputMagnitude = std::make_unique<float[]>(Sampler::InputBufferSize + Sampler::InputBufferOverlap);
     
         // the samples that we get from upsampling
-        m_samples = std::make_unique<float[]>(NumSampleBuffers * Sampler::SampleBufferSize + Sampler::SampleBufferOverlap);
+        m_samples = std::make_unique<float[]>(TotalSampleBufferLength);
     }
    
     // the main method that streams from InputStream using inputReader
     template<typename InputReaderType>
     void read(InputReaderType& inputReader);
+
+    /*float getRSSI(const size_t streamIndex, const size_t bitIndex, const size_t numBits = 1) const {
+        constexpr size_t bitDelay = 128;
+        constexpr size_t readBufferLength = NumSampleBuffers * Sampler::SampleBufferSize;
+        const size_t currReadIndex = m_readPos - m_samples.get(); 
+        const size_t blockOffset = ((currReadIndex + (readBufferLength - bitDelay))) % readBufferLength;
+        const float* readPos = m_samples.get() + streamIndex; 
+        (void)numBits;
+        return 0.0f;
+    }*/
 
     private:
 
@@ -45,6 +56,8 @@ class SampleStream {
     
     std::unique_ptr<float[]> m_inputMagnitude;
 	std::unique_ptr<float[]> m_samples;
+    const float* m_readPos = nullptr;
+    float* m_writePos = nullptr;
 };
 
 
@@ -62,9 +75,9 @@ inline void SampleStream<Sampler>::read(InputReaderType& inputReader) {
     while (!inputReader.eof()) {
         // the read and write positions for the current sample buffer based its index.
         // we start reading at 0 + i * size           
-        const float* sampleReadPos  = m_samples.get() + currSampleBufferIndex * Sampler::SampleBufferSize;
-        // however, new values will written NumStream / 2 later which is the overlap. 
-        float* sampleWritePos = m_samples.get() + currSampleBufferIndex * Sampler::SampleBufferSize + Sampler::SampleBufferOverlap;
+        m_readPos = m_samples.get() + currSampleBufferIndex * Sampler::SampleBufferSize;
+        // however, new values will be written NumStream / 2 later which is the overlap. 
+        m_writePos = m_samples.get() + currSampleBufferIndex * Sampler::SampleBufferSize + Sampler::SampleBufferOverlap;
         
         // check if actually we need the sampler to resample, or if this is a 1:1 sampling
         if constexpr(Sampler::isPassthrough) {
@@ -72,13 +85,13 @@ inline void SampleStream<Sampler>::read(InputReaderType& inputReader) {
             // we will directly read into the samples buffer. There is no need for using the sampler at all.
             // This works because the amount the input reader is getting us in this particular case is exactly the ChunkSize
             static_assert(Sampler::NumBlocks == Sampler::InputBufferSize);
-            inputReader.readMagnitude(sampleWritePos);
+            inputReader.readMagnitude(m_writePos);
         } else {
             // tell the input reader to get us some data. Directly as magnitude.
             inputReader.readMagnitude(m_inputMagnitude.get() + Sampler::InputBufferOverlap);
             // now ask the Sampler to resample the input magnitude to the output samples
             // similar to the input buffer, write after the overlap to keep some old values for the next iteration
-            Sampler::sample(m_inputMagnitude.get(), sampleWritePos);
+            Sampler::sample(m_inputMagnitude.get(), m_writePos);
         }
 
         // extract phase shifted bits using manchester encoding
@@ -93,10 +106,13 @@ inline void SampleStream<Sampler>::read(InputReaderType& inputReader) {
                 // stream 1 << compare 3 and 4
                 // ....
                 // because the message might be shifted by one symbol
-                m_newBits[j] = sampleReadPos[i + j] > sampleReadPos[i + j + Sampler::SampleBufferOverlap];  
+                //m_newBits[j] = sampleReadPos[i + j] > sampleReadPos[i + j + Sampler::SampleBufferOverlap];  
+                m_newBits[j] = m_readPos[j] > m_readPos[j + (Sampler::NumStreams >> 1)]; //m_sampleReadPos[i + j] > sampleReadPos[i + j + Sampler::SampleBufferOverlap];  
             }
             // and tell the demodulator to deal with the new bits
             m_demod.shiftInNewBits(m_newBits);
+            //std::cerr << getRSSI(0, 0, 1) << std::endl;
+            m_readPos += Sampler::NumStreams;
         }
         
         // for the next round we move overlap many values from the end to the beginning of the input buffer

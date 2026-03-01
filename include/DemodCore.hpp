@@ -237,6 +237,13 @@ public:
 			
 			// if we know this plane
 			if (e.isValid()) {
+				m_cache.markAsTrustedSeen(e);
+				// and send the 112 bit message to the output
+				return sendFrameLongAligned(downlinkFormat, crc, frame, e);
+			} else {
+				m_cache.markAsTrustedSeen(m_cache.insertWithCA(icaoWithCA));
+			} /*
+			if (e.isValid()) {
 				// if we trust this address and the we have seen it not that long ago
 				if (m_cache.isTrusted(e)) {
 					// mark the plane as seen
@@ -251,16 +258,16 @@ public:
 					//  can enter the list of trustworthy senders
 					//  After many experiments, this turned out to be
 					//  the way to go. 
-					// ---------------------------------------------- 
+					// ----------------------------------------------  
 					m_cache.markAsTrustedSeen(e);
 					// and send the 112 bit message to the output
 					return sendFrameLongAligned(downlinkFormat, crc, frame, e);
-				}
-			} else {
+				} 
+			} else { 
 				m_cache.markAsTrustedSeen(m_cache.insertWithCA(icaoWithCA));
 				// and send the 112 bit message to the output
 				return sendFrameLongAligned(downlinkFormat, crc, frame, e);
-			}	
+			}	*/
 		} else {
 			// the crc is not zero, so we might have a broken message
 			logStats(Stats::DF17_BAD_MESSAGE);
