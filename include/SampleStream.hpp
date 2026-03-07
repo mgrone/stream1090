@@ -16,17 +16,24 @@
 #include "DemodCore.hpp"
 #include "MathUtils.hpp"
 #include "Sampler.hpp"
+#include "MessageHandler.hpp"
 
 // the main stream class. This class manages reading from the input stream
 // and also manages the buffers
 template<typename Sampler>
 class SampleStream {
     public:
+    //if personal use
+#if defined(OUTPUT_RAW) && OUTPUT_RAW
+    using MessageHandlerType = RawOutputMessageHandler<Sampler::NumStreams>;
+#else
+    using MessageHandlerType = StdOutMessageHandler<Sampler::NumStreams>;
+#endif
     // for now we will keep one extra sample buffer as history
     static constexpr size_t NumSampleBuffers = 2;
     static constexpr size_t TotalSampleBufferLength = NumSampleBuffers * Sampler::SampleBufferSize + Sampler::SampleBufferOverlap;
 
-    SampleStream() {
+    SampleStream() : m_messageHandler(), m_demod(m_messageHandler) {
         // The resulting magnitude of the input samples which may also be used to directly read the magnitude of the samples
         // This buffer holds overlap many old values plus the new data  
         m_inputMagnitude = std::make_unique<float[]>(Sampler::InputBufferSize + Sampler::InputBufferOverlap);
@@ -51,7 +58,8 @@ class SampleStream {
 
     private:
 
-    DemodCore<Sampler::NumStreams> m_demod;
+    MessageHandlerType m_messageHandler;
+    DemodCore<MessageHandlerType, Sampler::NumStreams> m_demod;
     uint32_t m_newBits[Sampler::NumStreams];
     
     std::unique_ptr<float[]> m_inputMagnitude;

@@ -106,3 +106,65 @@ namespace ModeS {
 		out.flush();
 	}
 } // end of namespace
+
+namespace MLAT {
+	template<int NumStreams>
+	constexpr uint64_t sampleIndexToMlatTime(uint64_t sampleTime) {
+		constexpr double ratio = 12.0/(double)NumStreams;
+		return (uint64_t)(sampleTime * ratio);
+	}
+
+	template<>
+	constexpr uint64_t sampleIndexToMlatTime<8>(uint64_t sampleTime) {
+		// for 8 Mhz we have 1.5 * 8 = 12
+		return sampleTime + (sampleTime >> 1);
+	}
+
+	template<>
+	constexpr uint64_t sampleIndexToMlatTime<16>(uint64_t sampleTime) {
+		// for 16 Mhz we have 0.75 * 16 = (0.5 + 0.25) * 16 = 12
+		return (sampleTime >> 1) + (sampleTime >> 2);
+	}
+
+	template<>
+	constexpr uint64_t sampleIndexToMlatTime<6>(uint64_t sampleTime) {
+		// for 6 Mhz we have 2.0 * 6 = 12
+		return (sampleTime << 1);
+	}
+
+	template<>
+	constexpr uint64_t sampleIndexToMlatTime<12>(uint64_t sampleTime) {
+		// for 12 Mhz nothing to do
+		return sampleTime;
+	}
+
+	template<>
+	constexpr uint64_t sampleIndexToMlatTime<24>(uint64_t sampleTime) {
+		// for 24 Mhz we simply divide by 2
+		return (sampleTime >> 1);
+	}
+
+	template<>
+	constexpr uint64_t sampleIndexToMlatTime<48>(uint64_t sampleTime) {
+		// for 48 Mhz we simply divide by 4
+		return (sampleTime >> 2);
+	}
+
+	template<>
+	constexpr uint64_t sampleIndexToMlatTime<10>(uint64_t sampleTime) {
+		// for 10 Mhz we have 12/10 = 6/5 = 1 + 1/5
+		return sampleTime + sampleTime/5;
+	}
+
+	template<>
+	constexpr uint64_t sampleIndexToMlatTime<20>(uint64_t sampleTime) {
+		// for 20 Mhz we have 12/20 = 6/10 = 1/2 + 1/10 
+		return (sampleTime >> 1) + sampleTime/10;
+	}
+
+	template<>
+	constexpr uint64_t sampleIndexToMlatTime<40>(uint64_t sampleTime) {
+		// for 40 Mhz we have 12/40 = 3/10 = 1/4 + 1/20 
+		return (sampleTime >> 2) + sampleTime/20;
+	}
+} // end of namespace MLAT

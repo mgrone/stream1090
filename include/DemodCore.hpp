@@ -15,13 +15,14 @@
 #include "Stats.hpp"
 #include <cmath>
 #include "ShiftRegisters.hpp"
+#include "MessageHandler.hpp"
 //#include "PlaneTable.hpp"
 
-template<int NumStreams>
+template<MessageHandler MessageHandlerType, int NumStreams>
 class DemodCore {
 public:
 	// default constructor
-	DemodCore() {
+	explicit DemodCore(MessageHandlerType& messageHandler) : m_messageHandler(messageHandler) {
 		// nothing
 	}
 
@@ -33,7 +34,11 @@ public:
 		#endif
 	}
 
-	bool sendFrameLongAligned(const uint8_t downlinkFormat, CRC::crc_t, const Bits128& frame, const ICAOTable::Iterator& it) {
+	bool sendFrameLongAligned(int streamIndex,
+							  const uint8_t downlinkFormat, 
+							  CRC::crc_t, 
+							  const Bits128& frame, 
+							  const ICAOTable::Iterator& it) {
 		if (((m_currTime - m_prevTimeLongSent) < NumStreams) && (m_prevFrameLongSent == frame)) {
 			logStatsDup(downlinkFormat);
 			return false;
@@ -63,16 +68,11 @@ public:
 		m_prevFrameLongSent = frame;
 		m_prevTimeLongSent = m_currTime;
 
-
-#if defined(OUTPUT_RAW) && OUTPUT_RAW
-		ModeS::printFrameLongRaw(std::cout, frame);
-#else
-		ModeS::printFrameLongMLAT(std::cout, currTimeTo12MhzTimeStamp() + RegLayout::OffsetMLAT_Long , frame);
-#endif
+		m_messageHandler.handleLong(streamIndex, m_currTime, frame);
 		return true;
 	}
 
-	bool sendFrameShortAligned(const uint8_t downlinkFormat, CRC::crc_t, const uint64_t& frameShort, const ICAOTable::Iterator& it) {
+	bool sendFrameShortAligned(int streamIndex, const uint8_t downlinkFormat, CRC::crc_t, const uint64_t& frameShort, const ICAOTable::Iterator& it) {
 		if (((m_currTime - m_prevTimeShortSent) < NumStreams) && (m_prevFrameShortSent == frameShort)) {
 			logStatsDup(downlinkFormat);
 			return false;
@@ -101,11 +101,7 @@ public:
 		m_prevFrameShortSent = frameShort;
 		m_prevTimeShortSent = m_currTime;
 
-#if defined(OUTPUT_RAW) && OUTPUT_RAW
-		ModeS::printFrameShortRaw(std::cout, frameShort);
-#else 
-		ModeS::printFrameShortMLAT(std::cout, currTimeTo12MhzTimeStamp() + RegLayout::OffsetMLAT_Short, frameShort);
-#endif
+		m_messageHandler.handleShort(streamIndex, m_currTime, frameShort);
 		return true;
 	}
 	
@@ -117,14 +113,7 @@ public:
 		// the streams and crc's are ready
 		m_cache.tick();
 		for (auto i = 0; i < NumStreams; i++) {
-			if constexpr(RegLayout::SameStart) {
-				handleStream(i);
-			} else { 
-				if (!handleStreamShort(i)) {
-					handleStreamLong(i); 
-				} 				
-			}
-			
+			handleStream(i);			
 			m_currTime++;
 		}
 		logStats(Stats::NUM_ITERATIONS);
@@ -239,35 +228,10 @@ public:
 			if (e.isValid()) {
 				m_cache.markAsTrustedSeen(e);
 				// and send the 112 bit message to the output
-				return sendFrameLongAligned(downlinkFormat, crc, frame, e);
+				return sendFrameLongAligned(streamIndex, downlinkFormat, crc, frame, e);
 			} else {
 				m_cache.markAsTrustedSeen(m_cache.insertWithCA(icaoWithCA));
-			} /*
-			if (e.isValid()) {
-				// if we trust this address and the we have seen it not that long ago
-				if (m_cache.isTrusted(e)) {
-					// mark the plane as seen
-					m_cache.markAsTrustedSeen(e);
-					// and send the 112 bit message to the output
-					return sendFrameLongAligned(downlinkFormat, crc, frame, e);
-				} else if (m_cache.isAlive(e)) {
-					// we have seen this entry before and it has been put there by DF11.
-					// Good enough. Promote it and insert the address into the trusted table. 
-					// -----------------------------------------------
-					//  NOTE: this is the only place where an address
-					//  can enter the list of trustworthy senders
-					//  After many experiments, this turned out to be
-					//  the way to go. 
-					// ----------------------------------------------  
-					m_cache.markAsTrustedSeen(e);
-					// and send the 112 bit message to the output
-					return sendFrameLongAligned(downlinkFormat, crc, frame, e);
-				} 
-			} else { 
-				m_cache.markAsTrustedSeen(m_cache.insertWithCA(icaoWithCA));
-				// and send the 112 bit message to the output
-				return sendFrameLongAligned(downlinkFormat, crc, frame, e);
-			}	*/
+			} 
 		} else {
 			// the crc is not zero, so we might have a broken message
 			logStats(Stats::DF17_BAD_MESSAGE);
@@ -295,7 +259,7 @@ public:
 					// and keep the trusted entry alive
 					m_cache.markAsTrustedSeen(e);
 					// send the 112 bit message to the output
-					return sendFrameLongAligned(downlinkFormat, crc, toRepair, e);
+					return sendFrameLongAligned(streamIndex, downlinkFormat, crc, toRepair, e);
 				} else {
 					//return sendFrameLongAligned(downlinkFormat, crc, toRepair, e);
 				}				
@@ -329,7 +293,7 @@ public:
 			// log that this message is a good message
 			logStats(Stats::COMM_B_GOOD_MESSAGE);
 			// output the message
-			return sendFrameLongAligned(downlinkFormat, crc, frame, e);
+			return sendFrameLongAligned(streamIndex, downlinkFormat, crc, frame, e);
 		}
 
 		return false;
@@ -362,14 +326,14 @@ public:
 			// log that this message is a good message
 			logStats(Stats::ACAS_SURV_GOOD_MESSAGE);
 			// output the message
-			return sendFrameShortAligned(downlinkFormat, crc, frameShort, e);		
+			return sendFrameShortAligned(streamIndex, downlinkFormat, crc, frameShort, e);		
 		} 
 		return false;
 	}
 
 	/// @brief Helper function for all-call replies (DF11) with a crc of zero. Either received correctly or repaired with 1-bit error correction
 	/// @return returns true if a message has been send to the output
-	bool handleDF11ShortMessageWithZeroCRC(const uint64_t& frameShort, bool repaired) {
+	bool handleDF11ShortMessageWithZeroCRC(int streamIndex, const uint64_t& frameShort, bool repaired) {
 		const auto icaoWithCA = ModeS::extractICAOWithCA_Short(frameShort);
 		const auto e = m_cache.findWithCA(icaoWithCA);
 		
@@ -388,7 +352,7 @@ public:
 			// we consider this a valid message
 			m_cache.markAsSeen(e);
 			// and output the message
-			return sendFrameShortAligned(11, 0, frameShort, e);
+			return sendFrameShortAligned(streamIndex, 11, 0, frameShort, e);
 		} 
 		m_cache.markAsSeen(e);
 		return false;
@@ -406,7 +370,7 @@ public:
 	
 		if (crc == 0) {
 			logStats(Stats::DF11_ICAO_CA_FOUND_GOOD_CRC);
-			return handleDF11ShortMessageWithZeroCRC(frameShort, false);
+			return handleDF11ShortMessageWithZeroCRC(streamIndex, frameShort, false);
 		} else  {
 			// ask the 1 bit error correction table for short messages for help
 			const auto fix_op = CRC::df11ErrorTable.lookup(crc);
@@ -416,7 +380,7 @@ public:
 				CRC::applyFixOp(fix_op, frameShort, 0);
 				logStats(Stats::DF11_ICAO_CA_FOUND_1_BIT_FIX);
 				// we are good now and proceed as with the normal zero crc case
-				return handleDF11ShortMessageWithZeroCRC(frameShort, true);
+				return handleDF11ShortMessageWithZeroCRC(streamIndex, frameShort, true);
 			} else {
 				// the crc is not good and no repairs with the error table. We do now a dirty trick here.
 				// get the address including the CA field
@@ -429,7 +393,7 @@ public:
 					// make sure to have this sender address in the list of known but not thrustworthy addresses
 					m_cache.markAsSeen(e);
 					// The only remaining data in this short message is the parity block. Fix it and output the message
-					return sendFrameShortAligned(11, 0, frameShort ^ crc, e);
+					return sendFrameShortAligned(streamIndex, 11, 0, frameShort ^ crc, e);
 				}
 			}
 		}
@@ -468,11 +432,6 @@ private:
 	static constexpr uint64_t secondsToNumSamples(float secs) {
 		return (samplesPerSecond() * secs);
 	}
-
-	constexpr uint64_t currTimeTo12MhzTimeStamp() {
-		constexpr double ratio = 12.0/(double)NumStreams;
-		return (uint64_t)(m_currTime * ratio);
-	}
 	
 	// while dealing with a single stream, this holds a copy of the frame
 	// from the previous stream  
@@ -500,69 +459,12 @@ private:
 	
 	// the current time measured in samples.
 	uint64_t m_currTime{ 0 };
-
-#if defined(MSG_RIGHT_ALIGN) && MSG_RIGHT_ALIGN
-	using RegLayout = RegisterLayout_Right;
-#else
-	using RegLayout = RegisterLayout_Left;
-#endif
 	
-	ShiftRegisters<NumStreams, RegLayout> m_shiftRegisters;
+	// the shift registers for the bits
+	ShiftRegisters<NumStreams> m_shiftRegisters;
 
+	MessageHandlerType& m_messageHandler;
 	//PlaneTable m_planeTable;
 };
 
-template<>
-constexpr uint64_t DemodCore<8>::currTimeTo12MhzTimeStamp() {
-	// for 8 Mhz we have 1.5 * 8 = 12
-	return m_currTime + (m_currTime >> 1);
-}
-
-template<>
-constexpr uint64_t DemodCore<16>::currTimeTo12MhzTimeStamp() {
-	// for 16 Mhz we have 0.75 * 16 = (0.5 + 0.25) * 16 = 12
-	return (m_currTime >> 1) + (m_currTime >> 2);
-}
-
-template<>
-constexpr uint64_t DemodCore<6>::currTimeTo12MhzTimeStamp() {
-	// for 6 Mhz we have 2.0 * 6 = 12
-	return (m_currTime << 1);
-}
-
-template<>
-constexpr uint64_t DemodCore<12>::currTimeTo12MhzTimeStamp() {
-	// for 12 Mhz nothing to do
-	return m_currTime;
-}
-
-template<>
-constexpr uint64_t DemodCore<24>::currTimeTo12MhzTimeStamp() {
-	// for 24 Mhz we simply divide by 2
-	return (m_currTime >> 1);
-}
-
-template<>
-constexpr uint64_t DemodCore<48>::currTimeTo12MhzTimeStamp() {
-	// for 48 Mhz we simply divide by 4
-	return (m_currTime >> 2);
-}
-
-template<>
-constexpr uint64_t DemodCore<10>::currTimeTo12MhzTimeStamp() {
-	// for 10 Mhz we have 12/10 = 6/5 = 1 + 1/5
-	return m_currTime + m_currTime/5;
-}
-
-template<>
-constexpr uint64_t DemodCore<20>::currTimeTo12MhzTimeStamp() {
-	// for 20 Mhz we have 12/20 = 6/10 = 1/2 + 1/10 
-	return (m_currTime >> 1) + m_currTime/10;
-}
-
-template<>
-constexpr uint64_t DemodCore<40>::currTimeTo12MhzTimeStamp() {
-	// for 40 Mhz we have 12/40 = 3/10 = 1/4 + 1/20 
-	return (m_currTime >> 2) + m_currTime/20;
-}
 
