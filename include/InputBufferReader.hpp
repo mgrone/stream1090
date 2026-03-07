@@ -29,7 +29,7 @@ public:
     }
 
     bool eof() { 
-        return m_reader.eof() || shutdownRequested(); 
+        return m_reader.eof() || ProcessSignals::shutdownRequested(); 
     }
 
 private:

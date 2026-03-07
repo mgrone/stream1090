@@ -119,6 +119,11 @@ public:
         };
 
         log("[Stream1090] Device is running.");
+        // we are good up to here. If we are running native support we will install
+        // some signal handlers so we can shutdown properly the device drivers
+        log("[Stream1090] Installing sig handlers.");
+        ProcessSignals::install();
+        
         auto start_wct = std::chrono::steady_clock::now();
         InputBufferReader<
             RawFormatType,

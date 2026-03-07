@@ -41,7 +41,7 @@ public:
     }
 
     bool eof() const {
-        return m_eof || shutdownRequested();
+        return m_eof || ProcessSignals::shutdownRequested();
     }
 
 private:

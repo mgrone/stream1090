@@ -13,7 +13,7 @@
 #include <chrono>
 #include <optional>
 
-#define STREAM1090_VERSION "260301"
+#define STREAM1090_VERSION "260307"
 
 #include "MainInstance.hpp"
 
@@ -86,20 +86,23 @@ void print_rate_pairs() {
 
 void print_help() {
     std::cout << "Stream1090 build " << STREAM1090_VERSION << "\n";
-#if defined(STREAM1090_CUSTOM_INPUT) && STREAM1090_CUSTOM_INPUT
-    std::cout << "(custom input mode)\n";
-#endif
+    if (GlobalOptions::CustomInputMode) {
+        std::cout << "(custom input mode)\n";
+    }
 
-    std::cout << "Native device support:";
-#ifdef STREAM1090_HAVE_AIRSPY
-    std::cout << " Airspy";
-#endif
-#ifdef STREAM1090_HAVE_RTLSDR
-    std::cout << " RTL-SDR";
-#endif
-#if !defined(STREAM1090_HAVE_AIRSPY) && !defined(STREAM1090_HAVE_RTLSDR)
-    std::cout << " none";
-#endif
+    std::cout << "Native device support:" << std::endl;
+    if (GlobalOptions::NativeAirspySupport) {
+        std::cout << " Airspy";
+    }
+
+    if (GlobalOptions::NativeRtlSdrSupport) {
+        std::cout << " RTL-SDR";
+    }
+
+    if (!GlobalOptions::NativeRtlSdrSupport && !GlobalOptions::NativeAirspySupport) {
+        std::cout << " none";    
+    }
+
     std::cout << "\n\n";
 
     std::cout <<
@@ -261,7 +264,6 @@ std::vector<float> load_taps_from_file(const std::string& filename) {
 }
 
 int main(int argc, char** argv) {
-    install_signal_handlers();
     RuntimeVars r_vars;
     CompileTimeVars c_vars;
 
@@ -276,22 +278,47 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    // ------------------------
+    // Device config loading
+    // ------------------------
     IniConfig dev_ini;
-    if (!args.deviceConfig.empty() && !dev_ini.load(args.deviceConfig)) {
+
+    // if no device config is given 
+    if (args.deviceConfig.empty()) {
+        //we assume stdin input
         r_vars.deviceType = InputDeviceType::STREAM;
+        std::cerr << "[Stream1090] Reading from Stdin" << std::endl;
     } else {
-        auto& cfg = dev_ini.get();   
+        // if a device config file is given, cannot be loaded, we bail out 
+        if(!dev_ini.load(args.deviceConfig)) {
+            std::cerr << "[Stream1090] Cannot load device config from" << args.deviceConfig << std::endl;
+            return 1;
+        }
+
+        // look into the ini file
+        auto& cfg = dev_ini.get();
+        // is it airspy or rtlsdr config?   
         if (cfg.count("airspy")) {
             r_vars.deviceType = InputDeviceType::AIRSPY;
             r_vars.deviceConfigSection = cfg.at("airspy");
+            // make sure that we have native device support
+            if (!GlobalOptions::NativeAirspySupport) {
+                std::cerr << "[Stream1090] Error. No native device support for airspy" << std::endl;
+                return 1;
+            }
         } else if (cfg.count("rtlsdr")) {
             r_vars.deviceType = InputDeviceType::RTLSDR;
             r_vars.deviceConfigSection = cfg.at("rtlsdr");
-        } else {
-            r_vars.deviceType = InputDeviceType::STREAM;
+            if (!GlobalOptions::NativeRtlSdrSupport) {
+                std::cerr << "[Stream1090] Error. No native device support for rtlsdr" << std::endl;
+                return 1;
+            }
         }
     }
 
+    // ------------------------
+    // FIR taps loading
+    // ------------------------
     if (!args.tapsFile.empty()) {
         r_vars.filterTaps = load_taps_from_file(args.tapsFile);
         if (r_vars.filterTaps.empty()) {
@@ -300,8 +327,12 @@ int main(int argc, char** argv) {
         }
     }
 
+    // set the verbose flag
     r_vars.verbose = args.verbose;
 
+    // ------------------------
+    // Sample speed parsing
+    // ------------------------
     c_vars.inputRate = parse_sample_rate(args.sampleRate);
 
     // Case 1: user provided both -s and -u
@@ -316,6 +347,7 @@ int main(int argc, char** argv) {
             return 1;
         }
     }
+
     // Case 2: user provided only -s
     else {
         auto def = find_default_output_rate(c_vars.inputRate);
@@ -329,36 +361,42 @@ int main(int argc, char** argv) {
         c_vars.outputRate = *def;
 
         if (args.verbose) {
-            std::cout << "[Stream1090] Auto-selected output rate: "
+            std::cerr << "[Stream1090] Auto-selected output rate: "
                     << float(c_vars.outputRate)/1'000'000.0f << " MHz\n";
         }
     }
 
-    // TODO: Change this
-#if defined(STREAM1090_CUSTOM_INPUT) && STREAM1090_CUSTOM_INPUT
-    c_vars.rawFormat = InputFormatType::IQ_FLOAT32;
-    c_vars.pipelineOption = IQPipelineOptions::NONE;
-#else     
-    c_vars.rawFormat = (c_vars.inputRate < Rate_6_0_Mhz)
-        ? InputFormatType::IQ_UINT8_RTL_SDR
-        : InputFormatType::IQ_UINT16_RAW_AIRSPY;
+    // ------------------------
+    // Format and pipeline
+    // ------------------------
+    if (GlobalOptions::CustomInputMode) {
+        c_vars.rawFormat = InputFormatType::IQ_FLOAT32;
+        c_vars.pipelineOption = IQPipelineOptions::NONE;
+    } else {
+        // the default behaviour
+        c_vars.rawFormat = (c_vars.inputRate < Rate_6_0_Mhz)
+            ? InputFormatType::IQ_UINT8_RTL_SDR
+            : InputFormatType::IQ_UINT16_RAW_AIRSPY;
 
-    c_vars.pipelineOption = IQPipelineOptions::NONE;
-    if (!r_vars.filterTaps.empty()) {
-        if (c_vars.rawFormat == InputFormatType::IQ_UINT8_RTL_SDR) {
-            c_vars.pipelineOption = IQPipelineOptions::IQ_FIR_RTL_SDR_FILE;
-        } else {
-            c_vars.pipelineOption = IQPipelineOptions::IQ_FIR_FILE;
+        c_vars.pipelineOption = IQPipelineOptions::NONE;
+        if (!r_vars.filterTaps.empty()) {
+            if (c_vars.rawFormat == InputFormatType::IQ_UINT8_RTL_SDR) {
+                c_vars.pipelineOption = IQPipelineOptions::IQ_FIR_RTL_SDR_FILE;
+            } else {
+                c_vars.pipelineOption = IQPipelineOptions::IQ_FIR_FILE;
+            }
+        } else if (args.iq_filter) {
+            if (c_vars.rawFormat == InputFormatType::IQ_UINT8_RTL_SDR) {
+                c_vars.pipelineOption = IQPipelineOptions::IQ_FIR_RTL_SDR;
+            } else {
+                c_vars.pipelineOption = IQPipelineOptions::IQ_FIR;
+            }        
         }
-    } else if (args.iq_filter) {
-        if (c_vars.rawFormat == InputFormatType::IQ_UINT8_RTL_SDR) {
-            c_vars.pipelineOption = IQPipelineOptions::IQ_FIR_RTL_SDR;
-        } else {
-            c_vars.pipelineOption = IQPipelineOptions::IQ_FIR;
-        }        
     }
-#endif
         
+    // ------------------------
+    // Let's go
+    // ------------------------
     if (!runInstanceFromPresets(c_vars, r_vars)) {
         std::cerr << "[Stream1090] Configuration is not supported: "<< c_vars.inputRate << " -> " << c_vars.outputRate << std::endl;
         return -1;
