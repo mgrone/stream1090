@@ -34,6 +34,21 @@ public:
 		#endif
 	}
 
+	// This is the main entry function called by the SampleStream. 
+	// NumStreams many new bits are shifted in. The crc's are updated
+	// and the streams are being checked for new messages
+	void shiftInNewBits(uint32_t* cmp) {
+		m_shiftRegisters.shiftInNewBits(cmp); 
+		// the streams and crc's are ready
+		m_cache.tick();
+		for (auto i = 0; i < NumStreams; i++) {
+			handleStream(i);			
+			m_currTime++;
+		}
+		logStats(Stats::NUM_ITERATIONS);
+		//m_planeTable.tick();
+	}
+
 	bool sendFrameLongAligned(int streamIndex,
 							  const uint8_t downlinkFormat, 
 							  CRC::crc_t, 
@@ -104,22 +119,6 @@ public:
 		m_messageHandler.handleShort(streamIndex, m_currTime, frameShort);
 		return true;
 	}
-	
-	// This is the main entry function called by the SampleStream. 
-	// NumStreams many new bits are shifted in. The crc's are updated
-	// and the streams are being checked for new messages
-	void shiftInNewBits(uint32_t* cmp) {
-		m_shiftRegisters.shiftInNewBits(cmp); 
-		// the streams and crc's are ready
-		m_cache.tick();
-		for (auto i = 0; i < NumStreams; i++) {
-			handleStream(i);			
-			m_currTime++;
-		}
-		logStats(Stats::NUM_ITERATIONS);
-		//m_planeTable.tick();
-	}
-
 
 	bool phaseDupCheckShort(const uint64_t& frameShort) {
 		if (frameShort == m_prevShortFrame)
@@ -136,45 +135,6 @@ public:
 		m_prevLongFrame = frameLong;
 		return false;
 	}
-
-	bool handleStreamLong(int streamIndex) {	
-		const auto downlinkFormat = m_shiftRegisters.getDF_112(streamIndex);
-		switch (downlinkFormat)
-		{
-		// Extended squitter messages
-		case 17:
-		case 18:
-		case 19:
-			return handleExtSquitterLongMessage(streamIndex, downlinkFormat);
-
-		//  ACAS, Comm-B Messages
-		case 16:
-		case 20:
-		case 21:
-			return handleAcasCommBLongMessage(streamIndex, downlinkFormat);
-		default:
-			break;
-		}
-		return false;
-	}
-
-	bool handleStreamShort(int streamIndex) {
-
-		const auto downlinkFormat = m_shiftRegisters.getDF_56(streamIndex);
-		switch (downlinkFormat)
-		{
-		case 0: // acas
-		case 4: // surveillance altitude
-		case 5: // surveillance identity
-			return handleAcasSurvShortMessage(streamIndex, downlinkFormat);
-		case 11: // DF 11 messages
-			return handleDF11ShortMessage(streamIndex);
-		default:
-			break;
-		}
-		return false;
-	}
-
 
 	// Dispatcher function for handling messages based on the downlink format  
 	bool handleStream(int streamIndex) {
@@ -270,7 +230,6 @@ public:
 	}
 
 	/// @brief Handler for long ACAS and Comm-B messages
-	/// @param downlinkFormat the downlink format (16,20,21) 
 	/// @return returns true if a message has been send to the output
 	bool handleAcasCommBLongMessage(int streamIndex, const uint8_t& downlinkFormat) {
 		auto frame = m_shiftRegisters.extractAlignedFrameLong(streamIndex);
@@ -299,10 +258,7 @@ public:
 		return false;
 	}
 
-	
-
 	/// @brief This function handles the downlink formats 0 (short acas reply), 4 (altitude reply), and 5 (identity reply)
-	/// @param downlinkFormat the downlink format (0, 4, 5) 
 	/// @return returns true if a message has been send to the output
 	bool handleAcasSurvShortMessage(int streamIndex, const uint8_t& downlinkFormat) {
 		// get the short message frame
@@ -466,5 +422,3 @@ private:
 	MessageHandlerType& m_messageHandler;
 	//PlaneTable m_planeTable;
 };
-
-
