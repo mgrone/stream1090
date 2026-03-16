@@ -94,6 +94,16 @@ public:
         return true;
    }
 
+    static constexpr auto constructMessageHandler(SampleStream<SamplerType>& sampleStream) {
+        if constexpr(GlobalOptions::RSSIEnabled) {
+            return RssiStdOutMessageHandler(sampleStream);   
+        } else if constexpr(GlobalOptions::OutputRawEnabled) {
+            return RawOutputMessageHandler();
+        } else {
+            return StdOutMessageHandler();
+        }
+    }
+
     void run_async_device(auto& iqPipeline) {
         RingBuffer ringBuffer;
         Writer writer(ringBuffer);
@@ -132,7 +142,10 @@ public:
             decltype(iqPipeline)
         > inputReader(iqPipeline, ringBuffer);
 
-        SampleStream<SamplerType>().read(inputReader);
+        SampleStream<SamplerType> sampleStream;
+        auto messageHandler = constructMessageHandler(sampleStream);
+        sampleStream.read(inputReader, messageHandler);
+
         log("[Stream1090] Shutting down device.");
         m_device->close();
         auto end_wct = std::chrono::steady_clock::now();
@@ -152,7 +165,11 @@ public:
             decltype(iqPipeline)
         > inputReader(iqPipeline, std::cin);
 
-        SampleStream<SamplerType>().read(inputReader);
+        
+        SampleStream<SamplerType> sampleStream;
+        auto messageHandler = constructMessageHandler(sampleStream);
+        sampleStream.read(inputReader, messageHandler);
+
         auto end_wct = std::chrono::steady_clock::now();
         auto dur_wct_secs = std::chrono::duration_cast<std::chrono::milliseconds>(end_wct - start_wct).count();
         log((std::ostringstream() << "[Stream1090] Finished. (" << dur_wct_secs/1000.0 << "s)").str());

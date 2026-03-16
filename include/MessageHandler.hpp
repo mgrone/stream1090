@@ -33,7 +33,6 @@ public:
     AVRWriter m_writer;
 };
 
-template<int NumStreams>
 class RawOutputMessageHandler {
 public:
     void handleShort(int, uint64_t, const uint64_t frame) {

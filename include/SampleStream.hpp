@@ -23,40 +23,12 @@
 // and also manages the buffers
 template<typename Sampler>
 class SampleStream {
-
-    struct DummyProvider {
-        DummyProvider(const SampleStream<Sampler>& sampleStream) : m_sampleStream(sampleStream) {};
-
-        uint8_t getRSSI(int streamIndex) const {
-            return m_sampleStream.getRSSI(streamIndex);
-        }
-
-        const SampleStream<Sampler>& m_sampleStream;
-    };
-    public:
-    //if personal use
-#if defined(STREAM1090_OUTPUT_RAW) && STREAM1090_OUTPUT_RAW
-    using MessageHandlerType = RawOutputMessageHandler<Sampler::NumStreams>;
-#else
-    #if defined(STREAM1090_RSSI) && STREAM1090_RSSI
-        using MessageHandlerType = RssiStdOutMessageHandler<DummyProvider>;
-    #else
-        using MessageHandlerType = StdOutMessageHandler;
-    #endif
-#endif
+public:
     // for now we will keep one extra sample buffer as history
     static constexpr size_t NumSampleBuffers = 2;
     static constexpr size_t TotalSampleBufferLength = NumSampleBuffers * Sampler::SampleBufferSize + Sampler::SampleBufferOverlap;
 
-    SampleStream() 
-      : m_provider(*this),
-#if defined(STREAM1090_RSSI) && STREAM1090_RSSI
-        m_messageHandler(m_provider), 
-#else
-        m_messageHandler(),
-#endif
-        m_demod(m_messageHandler) 
-    {
+    SampleStream() {
         // The resulting magnitude of the input samples which may also be used to directly read the magnitude of the samples
         // This buffer holds overlap many old values plus the new data  
         m_inputMagnitude = std::make_unique<float[]>(Sampler::InputBufferSize + Sampler::InputBufferOverlap);
@@ -66,8 +38,8 @@ class SampleStream {
     }
    
     // the main method that streams from InputStream using inputReader
-    template<typename InputReaderType>
-    void read(InputReaderType& inputReader);
+    template<typename InputReaderType, MessageHandler Handler>
+    void read(InputReaderType& inputReader, Handler& messageHandler);
 
     uint8_t getRSSI(int) const {
         // we first have to compute the beginning of the message
@@ -100,29 +72,30 @@ class SampleStream {
         return uint8_t(res * 255.0);
     }
 
-    private:
-
-    DummyProvider m_provider;
-    MessageHandlerType m_messageHandler;
-    DemodCore<MessageHandlerType, Sampler::NumStreams> m_demod;
-    uint32_t m_newBits[Sampler::NumStreams];
+private:
+    uint32_t m_newBits[Sampler::NumStreams];    
     
     std::unique_ptr<float[]> m_inputMagnitude;
 	std::unique_ptr<float[]> m_samples;
+
     const float* m_readPos = nullptr;
     float* m_writePos = nullptr;
 };
 
 
 template<typename Sampler>
-template<typename InputReaderType>
-inline void SampleStream<Sampler>::read(InputReaderType& inputReader) {   
+template<typename InputReaderType, MessageHandler Handler>
+inline void SampleStream<Sampler>::read(InputReaderType& inputReader, Handler& messageHandler) {  
+     
     // make sure the overlap parts at the beginning of the buffers are zeroed
     std::fill(m_inputMagnitude.get(), m_inputMagnitude.get() + Sampler::InputBufferOverlap, 0.0f);
     std::fill(m_samples.get(), m_samples.get() + Sampler::SampleBufferOverlap, 0.0f);
 
     // we have a buffer of sample buffers. The active one is referenced by this index.
     size_t currSampleBufferIndex = 0;
+
+    // the core logic for message recognition
+    DemodCore<Sampler::NumStreams, Handler> demodCore(messageHandler);
 
      // the main loop for reading the stream
     while (!inputReader.eof()) {
@@ -163,7 +136,7 @@ inline void SampleStream<Sampler>::read(InputReaderType& inputReader) {
                 m_newBits[j] = m_readPos[j] > m_readPos[j + (Sampler::NumStreams >> 1)]; //m_sampleReadPos[i + j] > sampleReadPos[i + j + Sampler::SampleBufferOverlap];  
             }
             // and tell the demodulator to deal with the new bits
-            m_demod.shiftInNewBits(m_newBits);
+            demodCore.shiftInNewBits(m_newBits);
             // advance the readpos
             m_readPos += Sampler::NumStreams;
         }

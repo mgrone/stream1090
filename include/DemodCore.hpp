@@ -18,11 +18,11 @@
 #include "MessageHandler.hpp"
 //#include "PlaneTable.hpp"
 
-template<MessageHandler MessageHandlerType, int NumStreams>
+template<int NumStreams, MessageHandler Handler>
 class DemodCore {
 public:
 	// default constructor
-	explicit DemodCore(MessageHandlerType& messageHandler) : m_messageHandler(messageHandler) {
+	explicit DemodCore(Handler& messageHandler) : m_messageHandler(messageHandler) {
 		// nothing
 	}
 
@@ -411,6 +411,6 @@ private:
 	// the shift registers for the bits
 	ShiftRegisters<NumStreams> m_shiftRegisters;
 
-	MessageHandlerType& m_messageHandler;
+	Handler& m_messageHandler;
 	//PlaneTable m_planeTable;
 };
