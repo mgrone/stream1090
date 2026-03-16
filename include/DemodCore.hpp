@@ -83,7 +83,7 @@ public:
 		m_prevFrameLongSent = frame;
 		m_prevTimeLongSent = m_currTime;
 
-		m_messageHandler.handleLong(streamIndex, m_currTime, frame);
+		m_messageHandler.handleLong(streamIndex, MLAT::sampleIndexToMlatTime<NumStreams>(m_currTime), frame);
 		return true;
 	}
 
@@ -116,7 +116,7 @@ public:
 		m_prevFrameShortSent = frameShort;
 		m_prevTimeShortSent = m_currTime;
 
-		m_messageHandler.handleShort(streamIndex, m_currTime, frameShort);
+		m_messageHandler.handleShort(streamIndex, MLAT::sampleIndexToMlatTime<NumStreams>(m_currTime), frameShort);
 		return true;
 	}
 
@@ -220,9 +220,7 @@ public:
 					m_cache.markAsTrustedSeen(e);
 					// send the 112 bit message to the output
 					return sendFrameLongAligned(streamIndex, downlinkFormat, crc, toRepair, e);
-				} else {
-					//return sendFrameLongAligned(downlinkFormat, crc, toRepair, e);
-				}				
+				};				
 			}
 			logStats(Stats::DF17_REPAIR_FAILED);
 		}
@@ -406,12 +404,6 @@ private:
 
 	// plane lookup table
 	ICAOTable m_cache;
-
-	// After this amount of seconds, a trusted address is not considered as valid anymore
-	uint64_t m_trustedTimeOut { secondsToNumSamples(30.0) };
-
-	// here we use a shorter timeout. After this amount of seconds, an address is no longer valid.
-	uint64_t m_notTrustedTimeOut { secondsToNumSamples(2.0) };
 	
 	// the current time measured in samples.
 	uint64_t m_currTime{ 0 };

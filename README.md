@@ -364,9 +364,10 @@ Make sure your gain setting is right and matches your setup.
 
 - Why is the signal level not shown?
 
-Stream1090 simply does not know the signal level of a message. 
-This would require the concept of noise, high and low levels which is not present in stream1090.
-
+Stream1090 does not care directly about the signal level of a message.
+There is internal support for RSSI output, but this is by default off.
+This is mostly, because it is not required, costs CPU usage, and it may mislead users. See [here](./RSSI.md) for details and some rules of thumb about RSSI.
+ 
 - What about MLAT?
 
 MLAT timestamp is part of the output.

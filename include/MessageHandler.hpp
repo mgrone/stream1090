@@ -10,6 +10,7 @@
 #include <iostream>
 #include "Bits128.hpp"
 #include "ModeS.hpp"
+#include "AVRWriter.hpp"
 
 template<typename H>
 concept MessageHandler = requires(H h, int bitStream, uint64_t ts, uint64_t f, const Bits128& b) {
@@ -17,16 +18,19 @@ concept MessageHandler = requires(H h, int bitStream, uint64_t ts, uint64_t f, c
     { h.handleLong(bitStream, ts, b) };
 };
 
-template<int NumStreams>
 class StdOutMessageHandler {
 public:
-    void handleShort(int, uint64_t timeStamp, const uint64_t frame) {
-        ModeS::printFrameShortMLAT(std::cout,  MLAT::sampleIndexToMlatTime<NumStreams>(timeStamp), frame);
+    explicit StdOutMessageHandler() : m_writer(std::cout) {}
+
+    void handleShort(int, uint64_t MLAT_timeStamp, const uint64_t frame) {
+        m_writer.write_short_MLAT(MLAT_timeStamp, frame);
     }
 
-    void handleLong(int, uint64_t timeStamp, const Bits128& frame) {
-        ModeS::printFrameLongMLAT(std::cout, MLAT::sampleIndexToMlatTime<NumStreams>(timeStamp), frame);
+    void handleLong(int, uint64_t MLAT_timeStamp, const Bits128& frame) {
+        m_writer.write_long_MLAT(MLAT_timeStamp, frame);
     }
+
+    AVRWriter m_writer;
 };
 
 template<int NumStreams>
@@ -39,4 +43,31 @@ public:
     void handleLong(int, uint64_t, const Bits128& frame) {
         ModeS::printFrameLongRaw(std::cout, frame);
     }
+};
+
+template<typename R>
+concept RssiProvider = requires(R r, int streamIndex) {
+    { r.getRSSI(streamIndex) } -> std::convertible_to<uint8_t>;
+};
+
+template<RssiProvider R>
+class RssiStdOutMessageHandler {
+public:
+    explicit RssiStdOutMessageHandler(const R& rssi)
+        : m_writer(std::cout), 
+          rssiProvider(rssi) {}
+
+    void handleShort(int streamIndex, uint64_t MLAT_timeStamp, const uint64_t frame) {
+        uint8_t rssi = rssiProvider.getRSSI(streamIndex);
+        m_writer.write_short_MLAT_RSSI(MLAT_timeStamp, frame, rssi);
+    }
+
+    void handleLong(int streamIndex, uint64_t MLAT_timeStamp, const Bits128& frame) {
+        uint8_t rssi = rssiProvider.getRSSI(streamIndex);
+        m_writer.write_long_MLAT_RSSI(MLAT_timeStamp, frame, rssi);
+    }
+
+private:
+    AVRWriter m_writer;
+    const R& rssiProvider;
 };

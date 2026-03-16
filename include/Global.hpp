@@ -22,8 +22,8 @@ struct GlobalOptions {
         static constexpr bool StatsAtTheEndOnly = false;
     #endif
 
-    #ifdef OUTPUT_RAW
-        static constexpr bool OutputRawEnabled = (OUTPUT_RAW != 0);
+    #ifdef STREAM1090_OUTPUT_RAW
+        static constexpr bool OutputRawEnabled = (STREAM1090_OUTPUT_RAW != 0);
     #else
         static constexpr bool OutputRawEnabled = false;
     #endif
@@ -32,6 +32,12 @@ struct GlobalOptions {
         static constexpr bool CustomInputMode = (STREAM1090_CUSTOM_INPUT != 0);
     #else
         static constexpr bool CustomInputMode = false;
+    #endif
+
+    #ifdef STREAM1090_RSSI
+        static constexpr bool RSSIEnabled = (STREAM1090_RSSI != 0);
+    #else
+        static constexpr bool RSSIEnabled = false;
     #endif
 
     #ifdef STREAM1090_HAVE_RTLSDR

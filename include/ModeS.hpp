@@ -11,6 +11,7 @@
 #include <iostream>
 #include <iomanip>
 #include <chrono>
+#include <format>
 
 namespace ModeS {
 
@@ -72,16 +73,6 @@ namespace ModeS {
 		return 0;
 	}
 	
-	inline void printFrameShortMLAT(std::ostream& out, uint64_t timeStamp, const uint64_t& frameShort) {
-		// timestamp + frame = @ + 48 bit timestamp + 56 bit frame
-		out << '@' << std::hex << std::setfill('0') << std::setw(12) << (timeStamp & 0xffffffffffffull) << std::setw(14) << (frameShort & 0xffffffffffffffull) << ";" << std::endl;
-	}
-
-	inline void printFrameLongMLAT(std::ostream& out, uint64_t timeStamp, const Bits128& frame) {
-		// timestamp + frame = @ + 48 bit timestamp + 48 + 64 = 112 bit frame
-		out << '@' << std::hex << std::setfill('0') << std::setw(12) << (timeStamp & 0xffffffffffffull) << (frame.high() & 0xffffffffffffull) << std::setw(16) << frame.low() << ";" << std::endl;
-	}
-
 	inline uint64_t currentTimestamp() {
 		return std::chrono::duration_cast<std::chrono::milliseconds>(
 				   std::chrono::steady_clock::now().time_since_epoch()
@@ -168,3 +159,4 @@ namespace MLAT {
 		return (sampleTime >> 2) + sampleTime/20;
 	}
 } // end of namespace MLAT
+

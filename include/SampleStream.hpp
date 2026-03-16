@@ -18,22 +18,45 @@
 #include "Sampler.hpp"
 #include "MessageHandler.hpp"
 
+
 // the main stream class. This class manages reading from the input stream
 // and also manages the buffers
 template<typename Sampler>
 class SampleStream {
+
+    struct DummyProvider {
+        DummyProvider(const SampleStream<Sampler>& sampleStream) : m_sampleStream(sampleStream) {};
+
+        uint8_t getRSSI(int streamIndex) const {
+            return m_sampleStream.getRSSI(streamIndex);
+        }
+
+        const SampleStream<Sampler>& m_sampleStream;
+    };
     public:
     //if personal use
-#if defined(OUTPUT_RAW) && OUTPUT_RAW
+#if defined(STREAM1090_OUTPUT_RAW) && STREAM1090_OUTPUT_RAW
     using MessageHandlerType = RawOutputMessageHandler<Sampler::NumStreams>;
 #else
-    using MessageHandlerType = StdOutMessageHandler<Sampler::NumStreams>;
+    #if defined(STREAM1090_RSSI) && STREAM1090_RSSI
+        using MessageHandlerType = RssiStdOutMessageHandler<DummyProvider>;
+    #else
+        using MessageHandlerType = StdOutMessageHandler;
+    #endif
 #endif
     // for now we will keep one extra sample buffer as history
     static constexpr size_t NumSampleBuffers = 2;
     static constexpr size_t TotalSampleBufferLength = NumSampleBuffers * Sampler::SampleBufferSize + Sampler::SampleBufferOverlap;
 
-    SampleStream() : m_messageHandler(), m_demod(m_messageHandler) {
+    SampleStream() 
+      : m_provider(*this),
+#if defined(STREAM1090_RSSI) && STREAM1090_RSSI
+        m_messageHandler(m_provider), 
+#else
+        m_messageHandler(),
+#endif
+        m_demod(m_messageHandler) 
+    {
         // The resulting magnitude of the input samples which may also be used to directly read the magnitude of the samples
         // This buffer holds overlap many old values plus the new data  
         m_inputMagnitude = std::make_unique<float[]>(Sampler::InputBufferSize + Sampler::InputBufferOverlap);
@@ -46,18 +69,40 @@ class SampleStream {
     template<typename InputReaderType>
     void read(InputReaderType& inputReader);
 
-    /*float getRSSI(const size_t streamIndex, const size_t bitIndex, const size_t numBits = 1) const {
-        constexpr size_t bitDelay = 128;
+    uint8_t getRSSI(int) const {
+        // we first have to compute the beginning of the message
+        //streamIndex = (streamIndex + (Sampler::NumStreams >> 2)) % Sampler::NumStreams; 
+        // the current m_readpos is 128 ahead in every stream with respect to the first bit of the message
+        constexpr size_t bitDelay = 128-8;
+        
+        // how many samples are we ahead
+        constexpr size_t samplesDelay = bitDelay * Sampler::NumStreams;
+
+        // the number of samples that can be read before warping around (this excludes the overlap)
         constexpr size_t readBufferLength = NumSampleBuffers * Sampler::SampleBufferSize;
-        const size_t currReadIndex = m_readPos - m_samples.get(); 
-        const size_t blockOffset = ((currReadIndex + (readBufferLength - bitDelay))) % readBufferLength;
-        const float* readPos = m_samples.get() + streamIndex; 
-        (void)numBits;
-        return 0.0f;
-    }*/
+
+        // at which index are we reading right now?
+        const size_t currReadPosIndex = m_readPos - m_samples.get(); 
+        // we
+        const size_t messageBegin = (currReadPosIndex + (readBufferLength - samplesDelay)) % readBufferLength;
+
+        const float* readPos = m_samples.get() + messageBegin; 
+
+        float res = 0.0;
+        // this for now a very crude and shitty estimate
+        for (size_t i = 0; i < Sampler::NumStreams; i++) {
+            float f = std::max(readPos[i], readPos[i + (Sampler::NumStreams >> 1)]);
+            res = std::max(res, f);
+        }
+        
+        res = std::min(1.41f, res) / 1.41f;
+
+        return uint8_t(res * 255.0);
+    }
 
     private:
 
+    DummyProvider m_provider;
     MessageHandlerType m_messageHandler;
     DemodCore<MessageHandlerType, Sampler::NumStreams> m_demod;
     uint32_t m_newBits[Sampler::NumStreams];
@@ -119,7 +164,7 @@ inline void SampleStream<Sampler>::read(InputReaderType& inputReader) {
             }
             // and tell the demodulator to deal with the new bits
             m_demod.shiftInNewBits(m_newBits);
-            //std::cerr << getRSSI(0, 0, 1) << std::endl;
+            // advance the readpos
             m_readPos += Sampler::NumStreams;
         }
         
