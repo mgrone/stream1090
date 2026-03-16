@@ -8,6 +8,23 @@
 
 #include <iostream>
 
+namespace hex_detail {
+    // LUT construction for byte => 2 hex digits
+    consteval std::array<char, 512> make_hex_table() {
+        std::array<char, 512> t{};
+        for (int i = 0; i < 256; ++i) {
+            unsigned hi = (i >> 4) & 0xF;
+            unsigned lo = i & 0xF;
+            t[i*2]     = hi < 10 ? '0' + hi : 'A' + (hi - 10);
+            t[i*2 + 1] = lo < 10 ? '0' + lo : 'A' + (lo - 10);
+        }
+        return t;
+    }
+
+    inline constexpr auto ByteToHex = make_hex_table();
+}
+
+
 class AVRWriter {
 public:
     AVRWriter(std::ostream& out) : m_out(out) {
@@ -19,8 +36,8 @@ public:
         char* p = m_buf;
 
         *p++ = '@';
-        p = write_hex_fixed(p, ts & 0xffffffffffffull, 12);
-        p = write_hex_fixed(p, frameShort & 0xffffffffffffffull, 14);
+        p = write_hex_fixed<12>(p, ts & 0xffffffffffffull);
+        p = write_hex_fixed<14>(p, frameShort & 0xffffffffffffffull);
         *p++ = ';';
         *p++ = '\n';
 
@@ -33,9 +50,9 @@ public:
         char* p = m_buf;
 
         *p++ = '@';
-        p = write_hex_fixed(p, ts & 0xffffffffffffull, 12);
-        p = write_hex_fixed(p, frame.high() & 0xffffffffffffull, 12);
-        p = write_hex_fixed(p, frame.low(), 16);
+        p = write_hex_fixed<12>(p, ts & 0xffffffffffffull);
+        p = write_hex_fixed<12>(p, frame.high() & 0xffffffffffffull);
+        p = write_hex_fixed<16>(p, frame.low());
         *p++ = ';';
         *p++ = '\n';
 
@@ -48,9 +65,9 @@ public:
         char* p = m_buf;
 
         *p++ = '<';
-        p = write_hex_fixed(p, ts & 0xffffffffffffull, 12);
-        p = write_hex_fixed(p, rssi, 2);
-        p = write_hex_fixed(p, frameShort & 0xffffffffffffffull, 14);
+        p = write_hex_fixed<12>(p, ts & 0xffffffffffffull);
+        p = write_hex_fixed<2>(p, rssi);
+        p = write_hex_fixed<14>(p, frameShort & 0xffffffffffffffull);
         *p++ = ';';
         *p++ = '\n';
 
@@ -63,10 +80,10 @@ public:
         char* p = m_buf;
 
         *p++ = '<';
-        p = write_hex_fixed(p, ts & 0xffffffffffffull, 12);
-        p = write_hex_fixed(p, rssi, 2);
-        p = write_hex_fixed(p, frame.high() & 0xffffffffffffull, 12);
-        p = write_hex_fixed(p, frame.low(), 16);
+        p = write_hex_fixed<12>(p, ts & 0xffffffffffffull);
+        p = write_hex_fixed<2>(p, rssi);
+        p = write_hex_fixed<12>(p, frame.high() & 0xffffffffffffull);
+        p = write_hex_fixed<16>(p, frame.low());
         *p++ = ';';
         *p++ = '\n';
 
@@ -75,19 +92,29 @@ public:
     }
 
 private:
-    static char hex_digit(unsigned v) {
-        return v < 10 ? char('0' + v) : char('A' + (v - 10));
-    }
+    template<int DIGITS>
+    static inline char* write_hex_fixed(char* out, uint64_t value) {
+        static_assert(DIGITS > 0);
+        static_assert(DIGITS % 2 == 0);
 
-    static char* write_hex_fixed(char* out, uint64_t value, int digits) {
-        for (int i = digits - 1; i >= 0; --i) {
-            out[i] = hex_digit(value & 0xF);
-            value >>= 4;
+        constexpr int BYTES = DIGITS / 2;
+        int shift = (BYTES - 1) * 8;
+
+        for (int i = 0; i < BYTES; ++i) {
+            uint8_t b = (value >> shift) & 0xFF;
+            const char* h = &hex_detail::ByteToHex[b * 2];
+            *out++ = h[0];
+            *out++ = h[1];
+            shift -= 8;
         }
-        return out + digits;
+
+        return out;
     }
 
+    // the buffer for the output
     char m_buf[96];
+
+    // the stream to write ot
     std::ostream& m_out;
 };
 
