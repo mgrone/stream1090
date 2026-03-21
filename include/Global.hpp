@@ -56,19 +56,32 @@ struct GlobalOptions {
 namespace ProcessSignals {
 
     static std::atomic<bool> g_shutdownRequested{false};
+    static std::atomic<bool> g_reloadRequested{false};
 
     inline bool shutdownRequested() {
         return g_shutdownRequested.load(std::memory_order_relaxed);
+    }
+
+    inline bool reloadRequested() {
+        return g_reloadRequested.load(std::memory_order_relaxed);
+    }
+
+    inline void clearReload() {
+        g_reloadRequested.store(false, std::memory_order_relaxed);
     }
 
     static void handle_sigint(int) {
         g_shutdownRequested.store(true, std::memory_order_relaxed);
     }
 
-    inline void install() {
-        std::signal(SIGINT, handle_sigint);
-        std::signal(SIGTERM, handle_sigint);
+    static void handle_sighup(int) {
+        g_reloadRequested.store(true, std::memory_order_relaxed);
     }
 
-} // end of namespace
+    inline void install() {
+        std::signal(SIGINT,  handle_sigint);
+        std::signal(SIGTERM, handle_sigint);
+        std::signal(SIGHUP,  handle_sighup);
+    }
+} // end of namespace ProcessSignals
 

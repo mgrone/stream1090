@@ -28,8 +28,15 @@ mixer_gain = 13
 vga_gain = 13
 ```
 
-Then slowly (this will take some minute(s) => i am working on reloading these settings at runtime), raise the LNA value until you get into some range that works. Works = until your Min RSSI value is above -45, -40 or more is ok. Avg should then get into its 30s or higher. Do not care about the max RSSI.   
+Then slowly (this will take some time), raise the LNA value until you get into some range that works. Works = until your Min RSSI value is above -45, -40 or more is ok. Avg should then get into its 30s or higher. Do not care about the max RSSI.   
 
 Reasoning: LNA will up the SNR which will separate the good signal from the noise and weak signals. We do not want that. Stream1090 is a truffle pig. It will sniffle through the noise.
 
 This should give you a lower bound for the LNA value.
+
+### SIGHUP support
+
+There is now basic experimental support for the SIGHUP signal. If you are using native device support (RTL-SDR or Airspy). This signal can be send via ```kill -HUP <process id of stream1090>``` telling stream1090 to reload the ini file. You can figure the PID via ```ps```or ```pidof stream1090``` when it is running.
+
+
+Clearly there are some things you will not be able to change like serial (and sample rate which is not part of the ini anyways). The purpose is to not have to restart for adjusting gain settings. For airspy, make sure you know what you are doing when switching between manual and automatic gain controls.

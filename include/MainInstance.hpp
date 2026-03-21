@@ -40,6 +40,7 @@ struct CompileTimeVars {
 
 struct RuntimeVars {
     InputDeviceType deviceType = InputDeviceType::STREAM;
+    IniConfig deviceConfig;
     IniConfig::Section deviceConfigSection;
     std::vector<float> filterTaps;
     bool verbose = true;
@@ -67,6 +68,35 @@ public:
     using RingBuffer  = RingBufferAsync<RawType, SamplerType::InputBufferSize * 2>;
     using Writer      = typename RingBuffer::Writer;
     
+    bool reloadDeviceConfig() {
+        // Re-read the INI file from disk
+        if (!m_runtimeVars.deviceConfig.reload()) {
+            log("[Stream1090] Failed to reload INI file.");
+            return false;
+        }
+
+        auto& cfg = m_runtimeVars.deviceConfig.get();
+
+        // Extract the correct section
+        if (m_runtimeVars.deviceType == InputDeviceType::AIRSPY) {
+            if (!cfg.count("airspy")) {
+                log("[Stream1090] Reloaded INI missing [airspy] section.");
+                return false;
+            }
+            m_runtimeVars.deviceConfigSection = cfg.at("airspy");
+        }
+
+        else if (m_runtimeVars.deviceType == InputDeviceType::RTLSDR) {
+            if (!cfg.count("rtlsdr")) {
+                log("[Stream1090] Reloaded INI missing [rtlsdr] section.");
+                return false;
+            }
+            m_runtimeVars.deviceConfigSection = cfg.at("rtlsdr");
+        }
+
+        return true;
+    }
+
     bool setup_device() {
         const auto& cfg = m_runtimeVars.deviceConfigSection;
         
@@ -108,10 +138,8 @@ public:
         RingBuffer ringBuffer;
         Writer writer(ringBuffer);
 
-        // setup the device with writer
         m_device = DeviceFactory<RawType>::create(m_runtimeVars.deviceType, inputRate, writer);
-        
-        if (m_device == nullptr) {
+        if (!m_device) {
             log("[Stream1090] Device instantiation failed.");
             return;
         }
@@ -126,15 +154,51 @@ public:
         if (!m_device->start()) {
             log("[Stream1090] Device refuses to start. Aborting.");
             return;
-        };
-
+        }
         log("[Stream1090] Device is running.");
-        // we are good up to here. If we are running native support we will install
-        // some signal handlers so we can shutdown properly the device drivers
+
         log("[Stream1090] Installing sig handlers.");
         ProcessSignals::install();
-        
+
+        // -------------------------------
+        // WATCHDOG THREAD
+        // -------------------------------
+        std::thread watchdog([this] {
+            using namespace std::chrono_literals;
+
+            while (!ProcessSignals::shutdownRequested()) {
+
+                // 1) Device health check
+                if (m_device && m_device->lastCallbackAge() > 1000ms) {
+                    log("[Stream1090] No samples for 1s. Device lost?");
+                    m_device->close();
+                    std::raise(SIGTERM);
+                    break;
+                }
+
+                // 2) Reload request (SIGHUP)
+                if (ProcessSignals::reloadRequested()) {
+                    ProcessSignals::clearReload();
+                    log("[Stream1090] Reload requested. Re-reading config file.");
+
+                    if (reloadDeviceConfig()) {
+                        log("[Stream1090] Applying new configuration.");
+                        m_device->applyReloadedConfig(m_runtimeVars.deviceConfigSection);
+                    } else {
+                        log("[Stream1090] Reload failed. Keeping old settings.");
+                    }
+                }
+
+                std::this_thread::sleep_for(200ms);
+            }
+        });
+
+
+        // -------------------------------
+        // DSP PIPELINE (blocking)
+        // -------------------------------
         auto start_wct = std::chrono::steady_clock::now();
+
         InputBufferReader<
             RawFormatType,
             SamplerType::InputBufferSize * 2,
@@ -146,14 +210,23 @@ public:
         auto messageHandler = constructMessageHandler(sampleStream);
         sampleStream.read(inputReader, messageHandler);
 
+        // -------------------------------
+        // SHUTDOWN
+        // -------------------------------
         log("[Stream1090] Shutting down device.");
         m_device->close();
+        log("[Stream1090] Device closed down.");
+
+        if (watchdog.joinable())
+            watchdog.join();
+
         auto end_wct = std::chrono::steady_clock::now();
         auto dur_wct_secs = std::chrono::duration_cast<std::chrono::milliseconds>(end_wct - start_wct).count();
         log("[Stream1090] Shutdown completed.");
         log((std::ostringstream() << "[Stream1090] Finished. (" << dur_wct_secs/1000.0 << "s)").str());
         std::exit(0);
     }
+
 
     void run_sync_stdin(auto& iqPipeline) {
         log("[Stream1090] Reading from stdin");

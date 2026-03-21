@@ -281,40 +281,51 @@ int main(int argc, char** argv) {
     // ------------------------
     // Device config loading
     // ------------------------
-    IniConfig dev_ini;
 
-    // if no device config is given 
     if (args.deviceConfig.empty()) {
-        //we assume stdin input
+        // No config file → stdin mode
         r_vars.deviceType = InputDeviceType::STREAM;
         std::cerr << "[Stream1090] Reading from Stdin" << std::endl;
     } else {
-        // if a device config file is given, cannot be loaded, we bail out 
-        if(!dev_ini.load(args.deviceConfig)) {
-            std::cerr << "[Stream1090] Cannot load device config from" << args.deviceConfig << std::endl;
+        // Load config file
+        IniConfig dev_ini(args.deviceConfig);
+
+        if (!dev_ini.load()) {
+            std::cerr << "[Stream1090] Cannot load device config from "
+                    << args.deviceConfig << std::endl;
             return 1;
         }
 
-        // look into the ini file
+        // Store full config (including filename)
+        r_vars.deviceConfig = dev_ini;
+
+        // Detect device type
         auto& cfg = dev_ini.get();
-        // is it airspy or rtlsdr config?   
+
         if (cfg.count("airspy")) {
             r_vars.deviceType = InputDeviceType::AIRSPY;
             r_vars.deviceConfigSection = cfg.at("airspy");
-            // make sure that we have native device support
+
             if (!GlobalOptions::NativeAirspySupport) {
                 std::cerr << "[Stream1090] Error. No native device support for airspy" << std::endl;
                 return 1;
             }
+
         } else if (cfg.count("rtlsdr")) {
             r_vars.deviceType = InputDeviceType::RTLSDR;
             r_vars.deviceConfigSection = cfg.at("rtlsdr");
+
             if (!GlobalOptions::NativeRtlSdrSupport) {
                 std::cerr << "[Stream1090] Error. No native device support for rtlsdr" << std::endl;
                 return 1;
             }
+
+        } else {
+            std::cerr << "[Stream1090] Error. Config file does not contain [airspy] or [rtlsdr] section." << std::endl;
+            return 1;
         }
     }
+
 
     // ------------------------
     // FIR taps loading

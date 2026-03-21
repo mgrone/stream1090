@@ -16,7 +16,19 @@ public:
     using Section = std::map<std::string, std::string>;
     using Data = std::map<std::string, Section>;
 
-    bool load(const std::string& filename) {
+    explicit IniConfig(std::string filename = "")
+        : m_filename(std::move(filename)) {}
+
+    bool load() {
+        if (m_filename.empty())
+            return false;
+        return loadFromFile(m_filename);
+    }
+
+    bool loadFromFile(const std::string& filename) {
+        m_filename = filename;
+        data.clear();
+
         std::ifstream file(filename);
         if (!file.is_open())
             return false;
@@ -27,11 +39,9 @@ public:
         while (std::getline(file, line)) {
             trim(line);
 
-            // Skip empty lines and comments
             if (line.empty() || line[0] == '#' || line[0] == ';')
                 continue;
 
-            // Section header
             if (line.front() == '[' && line.back() == ']') {
                 currentSection = line.substr(1, line.size() - 2);
                 trim(currentSection);
@@ -39,7 +49,6 @@ public:
                 continue;
             }
 
-            // Key-value pair
             auto pos = line.find('=');
             if (pos == std::string::npos)
                 continue;
@@ -56,15 +65,21 @@ public:
         return true;
     }
 
+    bool reload() {
+        return loadFromFile(m_filename);
+    }
+
     const Data& get() const { return data; }
 
 private:
     Data data;
+    std::string m_filename;
 
     static void trim(std::string& s) {
         auto notSpace = [](int ch) { return !std::isspace(ch); };
-
         s.erase(s.begin(), std::find_if(s.begin(), s.end(), notSpace));
         s.erase(std::find_if(s.rbegin(), s.rend(), notSpace).base(), s.end());
     }
 };
+
+
