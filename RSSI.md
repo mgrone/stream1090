@@ -40,3 +40,37 @@ There is now basic experimental support for the SIGHUP signal. If you are using 
 
 
 Clearly there are some things you will not be able to change like serial (and sample rate which is not part of the ini anyways). The purpose is to not have to restart for adjusting gain settings. For airspy, make sure you know what you are doing when switching between manual and automatic gain controls.
+
+### Gain mixer fun:
+Someone was joking around in the past. Here you go with your ALSA-Mixer style gain control. 
+
+```
+Gain Mixer — AIRSPY  (h=help)
+
+    Frequency:   1090000000 Hz
+      10        13        13
+
+
+
+
+                █         █
+                █         █
+      █         █         █
+      █         █         █
+      █         █         █
+      █         █         █
+      █         █         █
+      █         █         █
+      █         █         █
+      █         █         █
+     [LNA]     MIX       VGA
+    Bias-T: OFF   (b)
+
+
+
+  ←/→ select   ↑/↓ adjust   h help   s SIGHUP   q quit
+``` 
+You need to provide the config file and the pid
+```
+python gain_mixer.py --config ../configs/airspy.ini --pid <pid of stream1090 instance running>
+```
