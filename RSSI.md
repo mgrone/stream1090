@@ -74,3 +74,4 @@ You need to provide the config file and the pid
 ```
 python gain_mixer.py --config ../configs/airspy.ini --pid <pid of stream1090 instance running>
 ```
+Make sure you have sufficient rights to send a ```kill -HUP```. 
