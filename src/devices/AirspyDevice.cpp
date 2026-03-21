@@ -44,12 +44,15 @@ bool AirspyDevice::open_with_serial(uint64_t serial) {
     if (airspy_set_samplerate(m_dev, getSampleRate() * 2) != AIRSPY_SUCCESS)
         return false;
 
+    if (airspy_set_freq(m_dev, m_state.frequency) != AIRSPY_SUCCESS)
+        return false;
+
     // Apply initial shadow state
-    setFrequency(m_state.frequency);
+    /*setFrequency(m_state.frequency);
     setLnaGain(m_state.lna_gain);
     setMixerGain(m_state.mixer_gain);
     setVgaGain(m_state.vga_gain);
-    setBiasTee(m_state.bias_tee);
+    setBiasTee(m_state.bias_tee);*/
 
     return true;
 }

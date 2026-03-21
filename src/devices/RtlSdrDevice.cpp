@@ -48,13 +48,13 @@ bool RtlSdrDevice::open_with_serial(uint64_t serial) {
     rtlsdr_set_center_freq(m_dev, m_state.frequency);
 
     // Apply shadow state
-    setAgc(m_state.agc);
+    /*setAgc(m_state.agc);
     setGain(m_state.gain_db);
     setBiasTee(m_state.bias_tee);
     setPpm(m_state.ppm);
     setOffsetTuning(m_state.offset_tuning);
     setDirectSampling(m_state.direct_sampling);
-    setTunerBandwidth(m_state.tuner_bandwidth);
+    setTunerBandwidth(m_state.tuner_bandwidth);*/
 
     rtlsdr_reset_buffer(m_dev);
     return true;

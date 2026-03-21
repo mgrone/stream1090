@@ -39,7 +39,7 @@ public:
 
 private:
     struct ShadowState {
-        uint32_t frequency = 1090000000; // ADS-B default
+        uint32_t frequency = 1090000000;
         int linearity_gain = 5;
         int sensitivity_gain = 5;
         int lna_gain = 5;
