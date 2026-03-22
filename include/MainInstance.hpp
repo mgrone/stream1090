@@ -165,15 +165,16 @@ public:
         // -------------------------------
         std::thread watchdog([this] {
             using namespace std::chrono_literals;
-
             while (!ProcessSignals::shutdownRequested()) {
 
                 // 1) Device health check
-                if (m_device && m_device->lastCallbackAge() > 1000ms) {
-                    log("[Stream1090] No samples for 1s. Device lost?");
-                    m_device->close();
-                    std::raise(SIGTERM);
-                    break;
+                if (m_device && m_device->hasSeenCallback()) {
+                    if (m_device->lastCallbackAge() > 1000ms) {
+                        log("[Stream1090] No samples for 1000ms. Device lost?");
+                        m_device->close();
+                        ProcessSignals::handle_sigint(0);
+                        break;
+                    }
                 }
 
                 // 2) Reload request (SIGHUP)
@@ -191,6 +192,7 @@ public:
 
                 std::this_thread::sleep_for(200ms);
             }
+            log("[Stream1090] Watchdog is done.");
         });
 
 
@@ -199,16 +201,20 @@ public:
         // -------------------------------
         auto start_wct = std::chrono::steady_clock::now();
 
-        InputBufferReader<
-            RawFormatType,
-            SamplerType::InputBufferSize * 2,
-            8,
-            decltype(iqPipeline)
-        > inputReader(iqPipeline, ringBuffer);
+        if (m_device->isRunning()) {
+            log("[Stream1090] Device is running, starting stream.");
+            InputBufferReader<
+                RawFormatType,
+                SamplerType::InputBufferSize * 2,
+                8,
+                decltype(iqPipeline)
+            > inputReader(iqPipeline, ringBuffer);
 
-        SampleStream<SamplerType> sampleStream;
-        auto messageHandler = constructMessageHandler(sampleStream);
-        sampleStream.read(inputReader, messageHandler);
+            SampleStream<SamplerType> sampleStream;
+            auto messageHandler = constructMessageHandler(sampleStream);
+            
+            sampleStream.read(inputReader, messageHandler);
+        }
 
         // -------------------------------
         // SHUTDOWN
@@ -217,11 +223,13 @@ public:
         m_device->close();
         log("[Stream1090] Device closed down.");
 
-        if (watchdog.joinable())
-            watchdog.join();
-
         auto end_wct = std::chrono::steady_clock::now();
         auto dur_wct_secs = std::chrono::duration_cast<std::chrono::milliseconds>(end_wct - start_wct).count();
+        if (watchdog.joinable()) {
+            log("[Stream1090] Watchdog joining.");
+            watchdog.join();
+            log("[Stream1090] Watchdog joined.");
+        }
         log("[Stream1090] Shutdown completed.");
         log((std::ostringstream() << "[Stream1090] Finished. (" << dur_wct_secs/1000.0 << "s)").str());
         std::exit(0);

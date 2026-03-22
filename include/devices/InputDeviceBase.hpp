@@ -47,6 +47,11 @@ public:
                              std::memory_order_relaxed);
     }
 
+    // used by the watchdog to only kill devices which are actually alive
+    bool hasSeenCallback() const {
+        return m_hasSeenCallback.load(std::memory_order_relaxed);
+    }
+    
     // Used by watchdog to detect cable pulls
     std::chrono::milliseconds lastCallbackAge() const {
         auto now  = std::chrono::steady_clock::now();
@@ -74,6 +79,10 @@ protected:
     SampleRate m_sampleRate;
     IAsyncWriter<T>& m_bufferWriter;
     std::atomic<bool> m_running{false};
+
+    // flag if the callback has been triggered at least once.
+    std::atomic<bool> m_hasSeenCallback{false};
+
     // timestamp when the last time the callback was called.
     std::atomic<std::chrono::steady_clock::time_point> m_lastCallback;
 };
