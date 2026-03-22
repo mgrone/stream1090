@@ -44,7 +44,7 @@ include(CMakePackageConfigHelpers)
 set(VERSION_INFO_MAJOR_VERSION 0) # increment major on api compatibility changes
 set(VERSION_INFO_MINOR_VERSION 6) # increment minor on feature-level changes
 set(VERSION_INFO_PATCH_VERSION git) # increment patch for bug fixes and docs
-include(Version) # setup version info
+#include(Version) # setup version info
 
 ########################################################################
 # Compiler specific setup
@@ -186,16 +186,16 @@ INSTALL(
 ########################################################################
 # Create CMake Config File
 ########################################################################
-write_basic_package_version_file(
-  "${CMAKE_CURRENT_BINARY_DIR}/rtlsdr/rtlsdrConfigVersion.cmake"
-  VERSION ${VERSION}
-  COMPATIBILITY AnyNewerVersion
-  )
+#write_basic_package_version_file(
+#  "${CMAKE_CURRENT_BINARY_DIR}/rtlsdr/rtlsdrConfigVersion.cmake"
+#  VERSION ${VERSION}
+#  COMPATIBILITY AnyNewerVersion
+#  )
 
-configure_file(cmake/rtlsdrConfig.cmake
-  "${CMAKE_CURRENT_BINARY_DIR}/rtlsdr/rtlsdrConfig.cmake"
-  COPYONLY
-  )
+#configure_file(cmake/rtlsdrConfig.cmake
+#  "${CMAKE_CURRENT_BINARY_DIR}/rtlsdr/rtlsdrConfig.cmake"
+#  COPYONLY
+#  )
 
 set(ConfigPackageLocation lib/cmake/rtlsdr)
 install(EXPORT RTLSDR-export
@@ -214,5 +214,5 @@ install(
 ########################################################################
 # Print Summary
 ########################################################################
-MESSAGE(STATUS "Building for version: ${VERSION} / ${LIBVER}")
-MESSAGE(STATUS "Using install prefix: ${CMAKE_INSTALL_PREFIX}")
+#MESSAGE(STATUS "Building for version: ${VERSION} / ${LIBVER}")
+#MESSAGE(STATUS "Using install prefix: ${CMAKE_INSTALL_PREFIX}")
