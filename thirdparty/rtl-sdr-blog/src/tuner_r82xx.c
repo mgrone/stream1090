@@ -1543,14 +1543,16 @@ int r82xx_set_vga_gain_new(struct r82xx_priv *priv, int gain)
 // ---------------------------------------------------------
 int r82xx_set_lna_gain(struct r82xx_priv *priv, int gain)
 {
-    if (!priv)
+    int rc;
+
+	if (!priv)
         return -1;
 
     if (gain < 0 || gain > 15)
         return -1;
 
     // Disable LNA auto-gain (bit 4 = 1)
-    int rc = r82xx_write_reg_mask(priv, 0x05, 0x10, 0x10);
+    rc = r82xx_write_reg_mask(priv, 0x05, 0x10, 0x10);
     if (rc < 0)
         return rc;
 
@@ -1565,6 +1567,8 @@ int r82xx_set_lna_gain(struct r82xx_priv *priv, int gain)
 // ---------------------------------------------------------
 int r82xx_set_mixer_gain(struct r82xx_priv *priv, int gain)
 {
+	int rc;
+
     if (!priv)
         return -1;
 
@@ -1572,7 +1576,7 @@ int r82xx_set_mixer_gain(struct r82xx_priv *priv, int gain)
         return -1;
 
     // Disable mixer auto-gain (bit 4 = 0)
-    int rc = r82xx_write_reg_mask(priv, 0x07, 0x00, 0x10);
+    rc = r82xx_write_reg_mask(priv, 0x07, 0x00, 0x10);
     if (rc < 0)
         return rc;
 
