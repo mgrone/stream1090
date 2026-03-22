@@ -51,7 +51,14 @@ struct GlobalOptions {
     #else
         static constexpr bool NativeAirspySupport = false;
     #endif
+
+    #ifdef STREAM1090_HAVE_RTLSDR_BLOG
+        static constexpr bool RtlSdrBlogAdvanced = (STREAM1090_HAVE_RTLSDR_BLOG != 0);
+    #else
+        static constexpr bool RtlSdrBlogAdvanced = false;
+    #endif
 };
+
 
 namespace ProcessSignals {
 

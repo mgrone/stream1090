@@ -30,14 +30,16 @@ public:
     bool setBiasTee(bool enabled);
     bool setPpm(int ppm);
     bool setOffsetTuning(bool enabled);
-    bool setDirectSampling(int mode);
     bool setTunerBandwidth(uint32_t bw);
-
+    bool setLnaGain(int value);
+    bool setMixerGain(int value);
+    bool setVgaGain(int value);
+    
     bool applySetting(const std::string& key, const std::string& value) override;
 
     // Reload hook
     void applyReloadedConfig(const IniConfig::Section& cfg) override;
-
+    
 private:
     int nearestGain(int requested);
 
@@ -48,7 +50,9 @@ private:
         bool bias_tee = false;
         int ppm = 0;
         bool offset_tuning = false;
-        int direct_sampling = 0;
+        int lna_gain = 5;
+        int mixer_gain = 5;
+        int vga_gain = 5;
         uint32_t tuner_bandwidth = 0;
     };
 

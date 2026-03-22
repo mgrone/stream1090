@@ -12,17 +12,18 @@ endif()
 # ------------------------------------------------------------
 # Options
 # ------------------------------------------------------------
-option(ENABLE_STATS      "Compile with STATS_ENABLED" ON)
-option(END_STATS         "Compile with STATS_END_ONLY" OFF)
-option(ENABLE_OUTPUT_RAW "Compile with OUTPUT_RAW" OFF)
-option(ENABLE_CUSTOM_INPUT "Compile with STREAM1090_CUSTOM_INPUT" OFF)
-option(ENABLE_RSSI "Compile with STREAM1090_ENABLE_RSSI" OFF)
+option(ENABLE_STATS          "Compile with STATS_ENABLED" ON)
+option(END_STATS             "Compile with STATS_END_ONLY" OFF)
+option(ENABLE_OUTPUT_RAW     "Compile with OUTPUT_RAW" OFF)
+option(ENABLE_CUSTOM_INPUT   "Compile with STREAM1090_CUSTOM_INPUT" OFF)
+option(ENABLE_RSSI           "Compile with STREAM1090_ENABLE_RSSI" OFF)
+option(ENABLE_RTLSDR_BLOG    "Enable vendored RTL-SDR Blog fork" OFF)
 
 set(STATS_DEF        STATS_ENABLED=$<BOOL:${ENABLE_STATS}>)
 set(STATS_END_DEF    STATS_END_ONLY=$<BOOL:${END_STATS}>)
 set(OUTPUT_DEF       STREAM1090_OUTPUT_RAW=$<BOOL:${ENABLE_OUTPUT_RAW}>)
 set(CUSTOM_INPUT_DEF STREAM1090_CUSTOM_INPUT=$<BOOL:${ENABLE_CUSTOM_INPUT}>)
-set(RSSI_DEF STREAM1090_RSSI=$<BOOL:${ENABLE_RSSI}>)
+set(RSSI_DEF         STREAM1090_RSSI=$<BOOL:${ENABLE_RSSI}>)
 
 # ------------------------------------------------------------
 # Compiler settings
@@ -57,18 +58,44 @@ else()
     message(STATUS "[stream1090] Airspy support disabled (libairspy not found)")
 endif()
 
-# --- RTL-SDR -------------------------------------------------
-pkg_check_modules(RTLSDR QUIET librtlsdr)
-if(RTLSDR_FOUND)
-    message(STATUS "[stream1090] RTL-SDR support enabled")
+# ------------------------------------------------------------
+# RTL-SDR backend
+# ------------------------------------------------------------
+if(ENABLE_RTLSDR_BLOG)
+    message(STATUS "[stream1090] Using vendored RTL-SDR Blog fork")
+
+    set(DETACH_KERNEL_DRIVER ON CACHE BOOL "" FORCE)
+    add_subdirectory(thirdparty/rtl-sdr-blog)
+
     list(APPEND DEVICE_SOURCES       src/devices/RtlSdrDevice.cpp)
-    list(APPEND DEVICE_LIBS          ${RTLSDR_LIBRARIES})
-    list(APPEND DEVICE_INCLUDE_DIRS  ${RTLSDR_INCLUDE_DIRS})
+    list(APPEND DEVICE_LIBS          rtlsdr)
+    list(APPEND DEVICE_INCLUDE_DIRS  thirdparty/rtl-sdr-blog/include)
     list(APPEND DEVICE_DEFINITIONS   STREAM1090_HAVE_RTLSDR)
+    list(APPEND DEVICE_DEFINITIONS   STREAM1090_HAVE_RTLSDR_BLOG)
+
 else()
-    message(STATUS "[stream1090] RTL-SDR support disabled (librtlsdr not found)")
+    message(STATUS "[stream1090] Trying system librtlsdr...")
+
+    find_package(PkgConfig)
+    pkg_check_modules(RTLSDR QUIET librtlsdr)
+
+    if(RTLSDR_FOUND)
+        message(STATUS "[stream1090] System librtlsdr found")
+
+        list(APPEND DEVICE_SOURCES       src/devices/RtlSdrDevice.cpp)
+        list(APPEND DEVICE_LIBS          ${RTLSDR_LIBRARIES})
+        list(APPEND DEVICE_INCLUDE_DIRS  ${RTLSDR_INCLUDE_DIRS})
+        list(APPEND DEVICE_DEFINITIONS   STREAM1090_HAVE_RTLSDR)
+
+    else()
+        message(STATUS "[stream1090] RTL-SDR support disabled (no Blog fork, no system librtlsdr)")
+    endif()
 endif()
 
+
+# ------------------------------------------------------------
+# Feature flags
+# ------------------------------------------------------------
 if (ENABLE_RSSI)
     message(STATUS "[stream1090] RSSI output enabled")
 else()
@@ -85,7 +112,7 @@ endif()
 file(GLOB STREAM1090_CORE src/*.cpp)
 
 # ------------------------------------------------------------
-# Main executable (formerly stream1090_test)
+# Main executable
 # ------------------------------------------------------------
 add_executable(stream1090
     main.cpp

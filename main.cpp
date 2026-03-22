@@ -13,7 +13,7 @@
 #include <chrono>
 #include <optional>
 
-#define STREAM1090_VERSION "260322"
+#define STREAM1090_VERSION "260322_2"
 
 #include "MainInstance.hpp"
 
@@ -96,7 +96,11 @@ void print_help() {
     }
 
     if (GlobalOptions::NativeRtlSdrSupport) {
-        std::cout << " RTL-SDR";
+        if (GlobalOptions::RtlSdrBlogAdvanced) {
+            std::cout << "  RTL-SDR Blog (advanced)";
+        } else {
+            std::cout << "  RTL-SDR";
+        }
     }
 
     if (!GlobalOptions::NativeRtlSdrSupport && !GlobalOptions::NativeAirspySupport) {
