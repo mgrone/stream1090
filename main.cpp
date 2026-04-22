@@ -13,7 +13,7 @@
 #include <chrono>
 #include <optional>
 
-#define STREAM1090_VERSION "260322_2"
+#define STREAM1090_VERSION "260422"
 
 #include "MainInstance.hpp"
 
@@ -114,12 +114,10 @@ void print_help() {
     "  stream1090 [options]\n\n"
     "Options:\n"
     "  -s <rate>            Input sample rate in MHz (required)\n"
-    "  -u <rate>            Output/upsample rate in MHz\n"
+    "  -u <rate>            Upsample rate in MHz\n"
     "  -d <file.ini>        Device configuration INI file for native devices\n"
-    "                       See config/airspy.ini or config/rtlsdr.ini\n"
-    "                       Note that native device support requires librtlsdr-dev\n"
-    "                       and/or libairspy-dev to be installed.\n"
-    "  -q                   Enables IQ FIR filter with built-in taps (default or custom)\n"
+    "                       See configs/airspy.ini or configs/rtlsdr.ini\n"                       
+    "  -q                   Enables IQ FIR filter with built-in taps\n"
     "  -f <taps file>       Taps to load that are used for the IQ FIR filter\n"
     "  -v                   Verbose output\n"
     "  -h, --help           Show this help message\n\n";
@@ -128,11 +126,8 @@ void print_help() {
     
     std::cout <<
     "Examples:\n"
-    "  rtl_sdr -g 0 -f 1090000000 -s 2400000 - | ./build/stream1090 -s 2.4 -u 8\n"
-    "  ./build/stream1090 -s 2.4 -u 8 -d ./configs/rtlsdr.ini\n"
-    "\n"
-    "  airspy_rx -t 4 -g 20 -f 1090.000 -a 12000000 -r - | ./build/stream1090 -s 6 -u 12 -q\n"
-    "  ./build/stream1090 -s 6 -u 12 -d ./configs/airspy.ini -q\n\n";
+    "  ./build/stream1090 -s 2.4 -u 8 -q -d ./configs/rtlsdr.ini\n"
+    "  ./build/stream1090 -s 6 -u 12 -q -d ./configs/airspy.ini\n\n";
 }
 
 

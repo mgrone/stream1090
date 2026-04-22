@@ -16,7 +16,7 @@ option(ENABLE_STATS          "Compile with STATS_ENABLED" ON)
 option(END_STATS             "Compile with STATS_END_ONLY" OFF)
 option(ENABLE_OUTPUT_RAW     "Compile with OUTPUT_RAW" OFF)
 option(ENABLE_CUSTOM_INPUT   "Compile with STREAM1090_CUSTOM_INPUT" OFF)
-option(ENABLE_RSSI           "Compile with STREAM1090_ENABLE_RSSI" OFF)
+option(ENABLE_RSSI           "Compile with STREAM1090_ENABLE_RSSI" ON)
 option(ENABLE_RTLSDR_BLOG    "Enable vendored RTL-SDR Blog fork" OFF)
 
 set(STATS_DEF        STATS_ENABLED=$<BOOL:${ENABLE_STATS}>)
