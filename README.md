@@ -30,6 +30,7 @@ situations, a higher overall message rate can be achieved compared to a preamble
 - [Upsampling](#Upsampling)
 - [Low-Pass Filter](#low-pass-filter)
 - [Stack Integration](#stack-integration)
+- [Experimental Features](#experimental-features)
 
 This is a first draft of the new README. The old complicated one is [here](OLD_README.md)
 
@@ -265,11 +266,36 @@ If you want to run stream1090 as a service, it makes sense to disable the statis
 cmake ../ --fresh -DENABLE_STATS=OFF && make
 ```
 
+## Experimental Features
 ### SIGHUP support
 
-There is now basic experimental support for the SIGHUP signal. This signal can be send via ```kill -HUP <process id of stream1090>``` telling stream1090 to reload the device specific ini file. You can figure the PID via ```ps```or ```pidof stream1090``` when it is running.
+There is now basic experimental support for the SIGHUP signal. This signal can be send via ```kill -HUP <process id of stream1090>``` telling stream1090 to reload the device specific ini file. You can figure out the PID via ```ps```or ```pidof stream1090``` when it is running.
 
-Clearly there are some things you will not be able to change like serial (and sample rate which is not part of the ini anyways). The purpose is to not have to restart for adjusting gain settings. For airspy, make sure you know what you are doing when switching between manual and automatic gain controls.
+Clearly, there are some things you will not be able to change like serial (and sample rate which is not part of the ini anyways). The purpose is to not have to restart for adjusting gain settings. For airspy, make sure you know what you are doing when switching between manual and simple gain controls.
+
+### Advanced RTL-SDR gain controls
+
+If you have an RTL-SDR device and still not happy, you can push things further. Stream1090 comes with a hacked version of the [RTL-SDR-BLOG](https://github.com/rtlsdrblog/rtl-sdr-blog) lib which in turn is a fork of librtlsdr. There are two aspects here.
+- This lib behaves differently in terms of results. Might be in your favour.
+- If you have an R82xx tuner, this version gives you gain control over the LNA, MIX and VGA stages.
+
+If you want to use it, there is no need to download anything nor building and such. Stream1090's CMake project will take care of it. Go to the build folder and rebuild with
+```
+cmake ../ --fresh -DENABLE_RTLSDR_BLOG=1 && make
+``` 
+Check if everything has worked out by running ```./stream1090 -h```. The native device support section should now list ```RTL-SDR Blog (advanced)```.
+
+Regarding the manual gain control of the stages: I am not taking any responsibility here. It might work, it might not. I added these functions to the lib. There are usually good reasons that these functions are not exposed.
+
+
+However, in the ini file you can now add something like
+```
+lna_gain = 14
+mixer_gain = 13
+vga_gain = 10
+``` 
+
+
 
 
 ## FAQ & Troubleshooting
