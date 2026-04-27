@@ -16,7 +16,7 @@ int airspy_callback(airspy_transfer_t* transfer) {
     if (!self->isRunning())
         return 0;
 
-    self->markCallback();
+    self->markAsAlive();
 
     const uint16_t* samples = reinterpret_cast<const uint16_t*>(transfer->samples);
     size_t count = transfer->sample_count;

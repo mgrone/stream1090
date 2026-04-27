@@ -10,7 +10,7 @@ static void rtlsdr_callback(unsigned char* buf, uint32_t len, void* ctx) {
     if (!self->isRunning())
         return;
 
-    self->markCallback();
+    self->markAsAlive();
     self->writeDataToBuffer(buf, len);
 }
 
@@ -57,7 +57,7 @@ bool RtlSdrDevice::open_with_serial(uint64_t serial) {
     if (!check("rtlsdr_set_direct_sampling(0)",
             rtlsdr_set_direct_sampling(m_dev, 0)))
         return false;
-
+    
     if (!check("rtlsdr_set_sample_rate",
             rtlsdr_set_sample_rate(m_dev, getSampleRate())))
         return false;
@@ -65,11 +65,6 @@ bool RtlSdrDevice::open_with_serial(uint64_t serial) {
     if (!check("rtlsdr_set_center_freq",
             rtlsdr_set_center_freq(m_dev, 1090000000)))
         return false;
-
-    /*
-    if (!check("setAgc", setAgc(m_state.agc) ? 0 : -1)) return false;
-    ...
-    */
 
     if (!check("rtlsdr_reset_buffer",
             rtlsdr_reset_buffer(m_dev)))

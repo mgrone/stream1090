@@ -160,21 +160,25 @@ public:
         log("[Stream1090] Installing sig handlers.");
         ProcessSignals::install();
 
+        // if we made it until here. We assume that this device is ready and alive.
+        // We mark it here as such, because especially the rtlsdr driver needs some
+        // time to startup which sometimes may exceed the timeout of the watchdog.
+        // In other words, the driver is still initializing, but takes so long that
+        // the watchdog thinks it is dead and tries to kill it.
+        m_device->markAsAlive();
+
         // -------------------------------
         // WATCHDOG THREAD
         // -------------------------------
         std::thread watchdog([this] {
             using namespace std::chrono_literals;
             while (!ProcessSignals::shutdownRequested()) {
-
-                // 1) Device health check
-                if (m_device && m_device->hasSeenCallback()) {
-                    if (m_device->lastCallbackAge() > 1000ms) {
-                        log("[Stream1090] No samples for 1000ms. Device lost?");
-                        m_device->close();
-                        ProcessSignals::handle_sigint(0);
-                        break;
-                    }
+                // 1) Device health check. Is the device still alive?
+                if (m_device && m_device->lastSignOfLife() > 1000ms) {
+                    log("[Stream1090] No samples for 1000ms. Device lost?");
+                    m_device->close();
+                    ProcessSignals::handle_sigint(0);
+                    break;
                 }
 
                 // 2) Reload request (SIGHUP)

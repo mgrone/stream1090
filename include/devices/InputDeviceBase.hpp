@@ -19,7 +19,7 @@ public:
     InputDeviceBase(SampleRate sampleRate, IAsyncWriter<T>& bufferWriter)
         : m_sampleRate(sampleRate), m_bufferWriter(bufferWriter)
     {
-        m_lastCallback.store(std::chrono::steady_clock::now(),
+        m_lastSignOfLife.store(std::chrono::steady_clock::now(),
                              std::memory_order_relaxed);
     }
 
@@ -42,20 +42,15 @@ public:
     };
 
     // Called by device callback threads
-    void markCallback() {
-        m_lastCallback.store(std::chrono::steady_clock::now(),
+    void markAsAlive() {
+        m_lastSignOfLife.store(std::chrono::steady_clock::now(),
                              std::memory_order_relaxed);
-    }
-
-    // used by the watchdog to only kill devices which are actually alive
-    bool hasSeenCallback() const {
-        return m_hasSeenCallback.load(std::memory_order_relaxed);
     }
     
     // Used by watchdog to detect cable pulls
-    std::chrono::milliseconds lastCallbackAge() const {
+    std::chrono::milliseconds lastSignOfLife() const {
         auto now  = std::chrono::steady_clock::now();
-        auto last = m_lastCallback.load(std::memory_order_relaxed);
+        auto last = m_lastSignOfLife.load(std::memory_order_relaxed);
         return std::chrono::duration_cast<std::chrono::milliseconds>(now - last);
     }
 
@@ -80,9 +75,6 @@ protected:
     IAsyncWriter<T>& m_bufferWriter;
     std::atomic<bool> m_running{false};
 
-    // flag if the callback has been triggered at least once.
-    std::atomic<bool> m_hasSeenCallback{false};
-
     // timestamp when the last time the callback was called.
-    std::atomic<std::chrono::steady_clock::time_point> m_lastCallback;
+    std::atomic<std::chrono::steady_clock::time_point> m_lastSignOfLife;
 };

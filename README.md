@@ -75,7 +75,7 @@ As a next step, we configure stream1090 for a test run without any decoder. The 
 The latter ones are passed via command line, while the device specific ones are located in a config file. 
 
 ### Device specific configuration
-The stream1090 directory contains a folder named ```./configs```. There you can find two device specifig files, ```rtlsdr.ini``` and ```airspy.ini```. 
+The stream1090 directory contains a folder named ```./configs```. There you can find two device specific files, ```rtlsdr.ini``` and ```airspy.ini```. 
 Edit the corresponding file for your device and read the comments. For now you may only want to adjust the gain settings with one exception:
 
 **Important:** If you are powering an LNA via bias-tee, you have to turn that on by setting ```bias_tee = true```. It is off by default.
@@ -134,7 +134,7 @@ Stream1090 is build around the idea to take the samples from the SDR that come i
 ```
 -s <rate>   Input sample rate in MHz
 ```
-and upsample them to a higher rate before processing them. This usample rate can be specified via
+and upsample them to a higher rate before processing them. This upsample rate can be specified via
 ```
 -u <rate>   Upsample rate in MHz
 ```
@@ -299,10 +299,6 @@ vga_gain = 10
 
 
 ## FAQ & Troubleshooting
-- I accidently tripped over the cable. Now stream1090 hangs. Why?
-  
-  The device got disconnected and it may happen that stream1090 does not shutdown properly. The problem is known and it is been worked on. You will have to do a ```kill -9 <pid of stream1090>```.
-
 - Why is my message rate 0-2 messages per second?
 
   You most likely feed in the wrong format or at a wrong sampling speed.
