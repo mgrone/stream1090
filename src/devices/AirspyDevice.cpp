@@ -7,9 +7,6 @@
 #include "devices/AirspyDevice.hpp"
 #include <iostream>
 
-// ----------------------
-// Callback
-// ----------------------
 int airspy_callback(airspy_transfer_t* transfer) {
     auto* self = reinterpret_cast<AirspyDevice*>(transfer->ctx);
 

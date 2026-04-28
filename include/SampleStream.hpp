@@ -14,7 +14,6 @@
 #include <cstring>
 
 #include "DemodCore.hpp"
-#include "MathUtils.hpp"
 #include "Sampler.hpp"
 #include "MessageHandler.hpp"
 
