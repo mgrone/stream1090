@@ -1,11 +1,3 @@
-#!/usr/bin/env python3
-
-# SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright 2026 Martin Gronemann
-#
-# This file is part of stream1090 and is licensed under the GNU General
-# Public License v3.0. See the top-level LICENSE file for details.
-#
 import argparse
 import numpy as np
 from scipy.optimize import differential_evolution
@@ -32,10 +24,10 @@ def parse_args():
     p.add_argument("--fs-up", type=int, required=True,
                    help="Upsampled rate (Hz)")
 
-    p.add_argument("--taps", type=int, default=15,
+    p.add_argument("--num-taps", type=int, default=15,
                    help="Number of FIR taps")
 
-    p.add_argument("--k", type=int, default=9,
+    p.add_argument("--num-gain-points", type=int, default=9,
                    help="Number of interior gain points")
 
     p.add_argument("--margin", type=float, default=0.5,
@@ -65,28 +57,18 @@ def parse_args():
 args = parse_args()
 
 # ============================================================
-#  Config (center seed fixed for now)
+#  Config
 # ============================================================
 
 DATA_PATH = args.data
 FILTER_PATH = "./diff_evolve_fir_temp.txt"
 FS = args.fs
 FS_UP = args.fs_up
-NUMTAPS = args.taps
-K = args.k
+NUMTAPS = args.num_taps
+K = args.num_gain_points
 
-CENTER_SEED = [
-    1.1316168334764158,
-    0.20308185445041663,
-    -0.18880172571207673,
-    1.1015299202753106,
-    -0.13136240939270896,
-    0.3352500341043928,
-    0.5515897246310204,
-    0.30513096033801856,
-    0.7708951792896465,
-]
-
+# Dynamic center seed: smooth low-pass shape
+CENTER_SEED = np.linspace(1.0, 0.0, K + 2)[1:-1].astype(np.float64)
 CENTER_SEED_MARGIN = args.margin
 
 G_DC = 1.0
@@ -102,7 +84,7 @@ LOGFILE = args.log
 # ============================================================
 
 PARAMS_RE = re.compile(r"# Best params:\s*\[(.*)\]")
-BOUNDS_RE = re.compile(r"# \[([0-9eE\+\-\.]+),\s*([0-9eE\+\-\.]+)\]")
+BOUNDS_RE = re.compile(r"# \[([0-9eE+\-\.]+),\s*([0-9eE+\-\.]+)\]")
 
 def _parse_float_list(s: str):
     return [float(x.strip()) for x in s.split(",") if x.strip()]
@@ -114,14 +96,11 @@ def load_best_params_and_bounds_from_log(path: str):
     with open(path, "r") as f:
         lines = f.readlines()
 
-    # scan forward, but keep last occurrence
     for i, line in enumerate(lines):
         m = PARAMS_RE.match(line)
         if m:
             best_params = _parse_float_list(m.group(1))
-            # reset bounds; next lines will refill
             bounds = []
-            # parse following lines as bounds until non-bound line
             j = i + 1
             while j < len(lines):
                 bm = BOUNDS_RE.match(lines[j])
@@ -136,7 +115,6 @@ def load_best_params_and_bounds_from_log(path: str):
         raise ValueError(f"No 'Best params' found in log {path}")
 
     if bounds and len(bounds) != len(best_params):
-        # if mismatch, ignore bounds (safer)
         bounds = []
 
     return np.array(best_params, dtype=np.float64), bounds
@@ -150,7 +128,6 @@ def make_bounds_around_center(center: np.ndarray, margin: float):
         bounds.append((lo, hi))
     return bounds
 
-
 # ============================================================
 #  FIR builder
 # ============================================================
@@ -159,11 +136,7 @@ def build_lowpass_firwin2(params, K, g_dc=G_DC, g_nyq=G_NYQ):
     params = np.asarray(params, dtype=np.float64)
     g_interior = params[:K]
 
-    freq = np.concatenate((
-        [0.0],
-        [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9],
-        [1.0],
-    ))
+    freq = np.linspace(0.0, 1.0, K + 2)
     g = np.concatenate(([g_dc], g_interior, [g_nyq]))
 
     h = firwin2(NUMTAPS, freq, g).astype(np.float32)
@@ -205,22 +178,14 @@ def count_messages(out: bytes) -> int:
     for line in out.splitlines():
         if not line:
             continue
-
-        # Must start with '@' or '<'
         if line[0] not in (ord('@'), ord('<')):
             continue
-
-        # Must end with ';'
         if not line.endswith(b";"):
             continue
-
         payload = line[1:-1]
-
         if not is_hex(payload):
             continue
-
         count += 1
-
     return count
 
 
@@ -237,12 +202,9 @@ def count_df17(out: bytes) -> int:
 
         payload = line[1:-1]
 
-        # Skip timestamp + RSSI if present
         if line[0] == ord('<'):
-            # < ts(12) rssi(2) frame(...) >
             frame_hex = payload[14:]
         else:
-            # @ ts(12) frame(...)
             frame_hex = payload[12:]
 
         try:
@@ -258,7 +220,7 @@ def count_df17(out: bytes) -> int:
 #  Best-so-far tracking
 # ============================================================
 
-best_score = -np.inf      # scalar objective
+best_score = -np.inf
 best_total = -np.inf
 best_df17 = -np.inf
 best_params = None
@@ -384,7 +346,6 @@ def evaluate_filter(params):
 #  DE loop
 # ============================================================
 
-# decide center + bounds (seed vs resume)
 if args.resume:
     resume_center, resume_bounds = load_best_params_and_bounds_from_log(args.resume)
 
@@ -395,10 +356,9 @@ if args.resume:
         center = resume_center
         bounds = make_bounds_around_center(center, args.margin)
 else:
-    center = np.array(CENTER_SEED, dtype=np.float64)
+    center = CENTER_SEED.copy()
     bounds = make_bounds_around_center(center, CENTER_SEED_MARGIN)
 
-# baseline with built-in filter (per dataset)
 baseline_score, baseline_total, baseline_df17 = evaluate_builtin_filter()
 best_score = baseline_score
 best_total = baseline_total
