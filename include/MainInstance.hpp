@@ -160,7 +160,7 @@ public:
         log("[Stream1090] Installing sig handlers.");
         ProcessSignals::install();
 
-        // if we made it until here. We assume that this device is ready and alive.
+        // If we made it until here, we assume that this device is ready and alive.
         // We mark it here as such, because especially the rtlsdr driver needs some
         // time to startup which sometimes may exceed the timeout of the watchdog.
         // In other words, the driver is still initializing, but takes so long that

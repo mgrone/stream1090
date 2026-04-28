@@ -1,3 +1,11 @@
+#!/usr/bin/env python3
+
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright 2026 Martin Gronemann
+#
+# This file is part of stream1090 and is licensed under the GNU General
+# Public License v3.0. See the top-level LICENSE file for details.
+#
 import argparse
 import numpy as np
 from scipy.optimize import differential_evolution
