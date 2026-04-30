@@ -9,8 +9,7 @@ MIX_STEPS = [
     0, 5, 10, 10, 19, 9, 10, 25, 17, 10, 8, 16, 13, 6, 3, -8
 ]
 
-VGA_BLOG_INDEX = 11        # RTL-SDR Blog fork
-VGA_UPSTREAM_INDEX = 8     # Upstream librtlsdr
+VGA_INDEX = 8    
 
 def r82xx_gain_to_indices(requested_gain_tenth_db):
     total = 0
@@ -44,19 +43,19 @@ def build_gain_mapping():
         )
 
         if rf_gain not in table:
-            table[rf_gain] = (lna, mix, VGA_UPSTREAM_INDEX, VGA_BLOG_INDEX)
+            table[rf_gain] = (lna, mix, VGA_INDEX)
 
     return table
 
 def main():
     table = build_gain_mapping()
 
-    print("# Gain (dB) | LNA | MIX | VGA | VGA_blog")
+    print("# Gain (dB) | LNA | MIX | VGA |")
     print("# --------------------------------------------")
 
-    for gain, (lna, mix, vga_up, vga_blog) in sorted(table.items()):
+    for gain, (lna, mix, vga) in sorted(table.items()):
         print(f"#{gain/10:10.1f} | {lna:3d} | {mix:3d} |"
-              f" {vga_up:2d}  |  {vga_blog:2d}")
+              f" {vga:2d}  |")
 
 if __name__ == "__main__":
     main()
