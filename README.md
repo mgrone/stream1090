@@ -295,9 +295,6 @@ mixer_gain = 13
 vga_gain = 10
 ``` 
 
-
-
-
 ## FAQ & Troubleshooting
 - Why is my message rate 0-2 messages per second?
 
@@ -312,4 +309,9 @@ The compiler will create for each configuration a separate pipeline.
 
 ## Acknowledgments 
 I would like to thank several people that provided sample data, tried it in their setups and also did some early tests with airspy.
-rhodan76, wiedehopf, caius, abcd567. cnuver, jrg1956, jimmerk2. Thank you very much!
+
+rhodan76, wiedehopf, caius, abcd567, cnuver, jrg1956, jimmerk2. 
+
+I would also thank Airspy and Nooelec for their support!
+
+Thank you all very much!
