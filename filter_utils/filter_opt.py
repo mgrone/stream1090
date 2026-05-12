@@ -1,3 +1,12 @@
+#!/usr/bin/env python3
+
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright 2026 Martin Gronemann
+#
+# This file is part of stream1090 and is licensed under the GNU General
+# Public License v3.0. See the top-level LICENSE file for details.
+#
+
 import argparse
 import numpy as np
 from scipy.optimize import differential_evolution
@@ -27,7 +36,7 @@ def parse_args():
     p.add_argument("--num-taps", type=int, default=15,
                    help="Number of FIR taps")
 
-    p.add_argument("--num-gain-points", type=int, default=9,
+    p.add_argument("--num-gain-points", type=int, default=7,
                    help="Number of interior gain points")
 
     p.add_argument("--margin", type=float, default=0.5,
@@ -36,8 +45,8 @@ def parse_args():
     p.add_argument("--log", default="de_log.txt",
                    help="Log file path")
 
-    p.add_argument("--maxiter", type=int, default=40)
-    p.add_argument("--popsize", type=int, default=20)
+    p.add_argument("--maxiter", type=int, default=20)
+    p.add_argument("--popsize", type=int, default=10)
     p.add_argument("--alpha", type=float, default=2.0)
 
     p.add_argument("--bounds-min", type=float, default=-2.0)
@@ -165,7 +174,7 @@ def is_lowpass(h, min_dc=0.1, max_hf_ratio=0.7):
     return True
 
 # ============================================================
-#  Output parsing
+#  Output parsing (unified one-pass parser)
 # ============================================================
 
 HEX = set(b"0123456789ABCDEFabcdef")
@@ -173,48 +182,50 @@ HEX = set(b"0123456789ABCDEFabcdef")
 def is_hex(s: bytes) -> bool:
     return all(c in HEX for c in s)
 
-def count_messages(out: bytes) -> int:
-    count = 0
-    for line in out.splitlines():
-        if not line:
-            continue
-        if line[0] not in (ord('@'), ord('<')):
-            continue
-        if not line.endswith(b";"):
-            continue
-        payload = line[1:-1]
-        if not is_hex(payload):
-            continue
-        count += 1
-    return count
 
+def parse_frames(out: bytes):
+    """
+    One-pass parser:
+    - total messages
+    - long_count: number of 112-bit frames
+    - df_counts: dict DF -> count
+    """
+    total = 0
+    long_count = 0
+    df_counts = {}
 
-def extract_df_from_frame_hex(frame_hex: bytes) -> int:
-    bits = bin(int(frame_hex, 16))[2:].zfill(len(frame_hex) * 4)
-    return int(bits[:5], 2)
-
-
-def count_df17(out: bytes) -> int:
-    count = 0
     for line in out.splitlines():
         if not line or line[0] not in (ord('@'), ord('<')) or not line.endswith(b";"):
             continue
 
         payload = line[1:-1]
 
+        # Strip MLAT prefix
         if line[0] == ord('<'):
             frame_hex = payload[14:]
         else:
             frame_hex = payload[12:]
 
+        # Validate hex
+        if not is_hex(frame_hex):
+            continue
+
+        total += 1
+
+        # Long frame = 112 bits = 28 hex chars
+        if len(frame_hex) == 28:
+            long_count += 1
+
+        # Extract DF (first 5 bits)
         try:
-            df = extract_df_from_frame_hex(frame_hex)
-            if df == 17:
-                count += 1
+            bits = bin(int(frame_hex, 16))[2:].zfill(len(frame_hex) * 4)
+            df = int(bits[:5], 2)
+            df_counts[df] = df_counts.get(df, 0) + 1
         except Exception:
             pass
 
-    return count
+    return total, long_count, df_counts
+
 
 # ============================================================
 #  Best-so-far tracking
@@ -264,9 +275,10 @@ def evaluate_builtin_filter():
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
     out, _ = proc.communicate()
 
-    total = count_messages(out)
-    df17 = count_df17(out)
-    score = total + args.df17_weight * df17
+    total, long_count, df_counts = parse_frames(out)
+    df17 = df_counts.get(17, 0)
+    # score = total + args.df17_weight * df17
+    score = total + long_count
 
     return score, total, df17
 
@@ -303,10 +315,11 @@ def evaluate_filter(params):
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
     out, _ = proc.communicate()
 
-    total = count_messages(out)
-    df17 = count_df17(out)
-
-    score = total + args.df17_weight * df17
+    total, long_count, df_counts = parse_frames(out)
+    df17 = df_counts.get(17, 0)
+    # score = total + args.df17_weight * df17
+    score = total + long_count
+    
     print(score)
 
     if score > best_score:
@@ -360,9 +373,9 @@ else:
     bounds = make_bounds_around_center(center, CENTER_SEED_MARGIN)
 
 baseline_score, baseline_total, baseline_df17 = evaluate_builtin_filter()
-best_score = baseline_score
-best_total = baseline_total
-best_df17 = baseline_df17
+# best_score = baseline_score
+# best_total = baseline_total
+# best_df17 = baseline_df17
 best_params = None
 best_taps = None
 
