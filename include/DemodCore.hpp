@@ -54,13 +54,10 @@ public:
 							  CRC::crc_t, 
 							  const Bits128& frame, 
 							  const ICAOTable::Iterator& it) {
-
-		auto& e = m_cache.getEntry(it);
-		static constexpr uint32_t DUP_WINDOW_TICKS = 30 * NumStreams;
-		if ((m_currTime - e.last_time) < DUP_WINDOW_TICKS) {
-		    e.last_time = m_currTime;
-    		logStatsDup(downlinkFormat);
-    		return false;
+		if (((m_currTime - m_prevTimeLongSent) < NumStreams * 10) && (m_prevFrameLongSent == frame)) {
+			m_prevTimeLongSent = m_currTime;
+			logStatsDup(downlinkFormat);
+			return false;
 		}
 
 		if ((downlinkFormat == 20) || (downlinkFormat == 16)) {
@@ -82,23 +79,20 @@ public:
 			m_cache.markAsSeen(it);
 			//m_planeTable.upsertSquawk(crc, sqwk);
 		}
-	
+		
 		logStatsSent(downlinkFormat);
 		m_prevFrameLongSent = frame;
 		m_prevTimeLongSent = m_currTime;
-		e.last_time = m_currTime;
 
 		m_messageHandler.handleLong(streamIndex, MLAT::sampleIndexToMlatTime<NumStreams>(m_currTime), frame);
 		return true;
 	}
 
 	bool sendFrameShortAligned(int streamIndex, const uint8_t downlinkFormat, CRC::crc_t, const uint64_t& frameShort, const ICAOTable::Iterator& it) {
-		auto& e = m_cache.getEntry(it);
-		static constexpr uint32_t DUP_WINDOW_TICKS = 30 * NumStreams;
-		if ((m_currTime - e.last_time) < DUP_WINDOW_TICKS) {
-		    e.last_time = m_currTime;
-    		logStatsDup(downlinkFormat);
-    		return false;
+		if (((m_currTime - m_prevTimeShortSent) < NumStreams * 10) && (m_prevFrameShortSent == frameShort)) {
+			m_prevTimeShortSent = m_currTime;
+			logStatsDup(downlinkFormat);
+			return false;
 		}
 
 		if ((downlinkFormat == 4) || (downlinkFormat == 0)) {
@@ -123,7 +117,7 @@ public:
 		logStatsSent(downlinkFormat);
 		m_prevFrameShortSent = frameShort;
 		m_prevTimeShortSent = m_currTime;
-		e.last_time = m_currTime;
+
 		m_messageHandler.handleShort(streamIndex, MLAT::sampleIndexToMlatTime<NumStreams>(m_currTime), frameShort);
 		return true;
 	}
