@@ -18,7 +18,7 @@ option(ENABLE_OUTPUT_RAW     "Compile with OUTPUT_RAW" OFF)
 option(ENABLE_CUSTOM_INPUT   "Compile with STREAM1090_CUSTOM_INPUT" OFF)
 option(ENABLE_RSSI           "Compile with STREAM1090_ENABLE_RSSI" ON)
 option(ENABLE_RTLSDR_BLOG    "Enable vendored RTL-SDR Blog fork" OFF)
-option(ENABLE_PER_PLANE_DUP  "Enable per plane de-duplication" OFF)
+option(ENABLE_PER_PLANE_DUP  "Enable per plane de-duplication" ON)
 
 set(STATS_DEF        STATS_ENABLED=$<BOOL:${ENABLE_STATS}>)
 set(STATS_END_DEF    STATS_END_ONLY=$<BOOL:${END_STATS}>)
