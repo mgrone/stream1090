@@ -34,10 +34,12 @@ public:
 
 		// time to live for the trusted version
 		uint16_t ttl_trusted;
-
-		// timestamp of the last message that was either emitted or was a dupe
-		uint32_t last_time;
     };
+
+	struct MsgStatEntry {
+		// timestamp of the last message that was either emitted or was a dupe
+		uint64_t last_time;
+	};
 
 	struct SquawkAlt {
 		// the last sqauwk code received
@@ -68,10 +70,13 @@ public:
 
 	ICAOTable() {
 		m_table = std::make_unique<Entry[]>(Size);
-		std::fill(m_table.get(), m_table.get() + Size, Entry{0x0, 0, 0, 0});
+		std::fill(m_table.get(), m_table.get() + Size, Entry{0x0, 0, 0});
 
 		m_squawkAlt = std::make_unique<SquawkAlt[]>(Size);
 		std::fill(m_squawkAlt.get(), m_squawkAlt.get() + Size, SquawkAlt{0, 0, 0, 0});
+
+		m_msgStatTable = std::make_unique<MsgStatEntry[]>(Size);
+		std::fill(m_msgStatTable.get(), m_msgStatTable.get() + Size, MsgStatEntry{0});
 	}
 
 	Iterator insertWithCA(uint32_t icaoWithCA) {
@@ -159,8 +164,8 @@ public:
 		return false;
 	}
 
-	Entry& getEntry(const Iterator& it) {
-		return m_table[it.key];
+	MsgStatEntry& getMsgStatEntry(const Iterator& it) {
+		return m_msgStatTable[it.key];
 	}
 private:
 	void doTickForEntry(uint16_t index) {
@@ -184,7 +189,7 @@ private:
 		entry.icao = 0x0;
 		entry.ttl_trusted = 0;
 		entry.ttl = 0;
-		entry.last_time = 0;
+		m_msgStatTable[index].last_time = 0;
 		m_squawkAlt[index] = SquawkAlt{0, 0, 0, 0};
 	}
 
@@ -195,6 +200,9 @@ private:
     // the table with the icao addresses including transponder CA 
 	std::unique_ptr<Entry[]> m_table;
 
-	// the table with the icao addresses including transponder CA 
+	// the table for the squawk and altitude data  
 	std::unique_ptr<SquawkAlt[]> m_squawkAlt;
+
+	// the table with the msg timestamps
+	std::unique_ptr<MsgStatEntry[]> m_msgStatTable;
 };

@@ -54,11 +54,21 @@ public:
 							  CRC::crc_t, 
 							  const Bits128& frame, 
 							  const ICAOTable::Iterator& it) {
+#if defined(STREAM1090_PER_PLANE_DUP) && STREAM1090_PER_PLANE_DUP		
+		auto& e = m_cache.getMsgStatEntry(it);
+		static constexpr uint64_t DUP_WINDOW_TICKS = 30 * NumStreams;
+		if ((m_currTime - e.last_time) < DUP_WINDOW_TICKS) {
+		    e.last_time = m_currTime;
+    		logStatsDup(downlinkFormat);
+    		return false;
+		}
+#else 
 		if (((m_currTime - m_prevTimeLongSent) < NumStreams * 10) && (m_prevFrameLongSent == frame)) {
 			m_prevTimeLongSent = m_currTime;
 			logStatsDup(downlinkFormat);
 			return false;
 		}
+#endif
 
 		if ((downlinkFormat == 20) || (downlinkFormat == 16)) {
 			const auto alt_bits = ModeS::extractSquawkAlt_Long(frame);
@@ -81,19 +91,34 @@ public:
 		}
 		
 		logStatsSent(downlinkFormat);
+
+#if defined(STREAM1090_PER_PLANE_DUP) && STREAM1090_PER_PLANE_DUP		
+		e.last_time = m_currTime;
+#else 
 		m_prevFrameLongSent = frame;
 		m_prevTimeLongSent = m_currTime;
-
+#endif
+		
 		m_messageHandler.handleLong(streamIndex, MLAT::sampleIndexToMlatTime<NumStreams>(m_currTime), frame);
 		return true;
 	}
 
 	bool sendFrameShortAligned(int streamIndex, const uint8_t downlinkFormat, CRC::crc_t, const uint64_t& frameShort, const ICAOTable::Iterator& it) {
+#if defined(STREAM1090_PER_PLANE_DUP) && STREAM1090_PER_PLANE_DUP		
+		auto& e = m_cache.getMsgStatEntry(it);
+		static constexpr uint64_t DUP_WINDOW_TICKS = 30 * NumStreams;
+		if ((m_currTime - e.last_time) < DUP_WINDOW_TICKS) {
+		    e.last_time = m_currTime;
+    		logStatsDup(downlinkFormat);
+    		return false;
+		}
+#else
 		if (((m_currTime - m_prevTimeShortSent) < NumStreams * 10) && (m_prevFrameShortSent == frameShort)) {
 			m_prevTimeShortSent = m_currTime;
 			logStatsDup(downlinkFormat);
 			return false;
 		}
+#endif
 
 		if ((downlinkFormat == 4) || (downlinkFormat == 0)) {
 			const auto alt_bits = ModeS::extractSquawkAlt_Short(frameShort);
@@ -114,9 +139,15 @@ public:
 			//m_planeTable.upsertSquawk(crc, sqwk);
 		}
 		
+
 		logStatsSent(downlinkFormat);
+
+#if defined(STREAM1090_PER_PLANE_DUP) && STREAM1090_PER_PLANE_DUP
+		e.last_time = m_currTime;
+#else 
 		m_prevFrameShortSent = frameShort;
 		m_prevTimeShortSent = m_currTime;
+#endif
 
 		m_messageHandler.handleShort(streamIndex, MLAT::sampleIndexToMlatTime<NumStreams>(m_currTime), frameShort);
 		return true;

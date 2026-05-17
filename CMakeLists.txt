@@ -18,12 +18,14 @@ option(ENABLE_OUTPUT_RAW     "Compile with OUTPUT_RAW" OFF)
 option(ENABLE_CUSTOM_INPUT   "Compile with STREAM1090_CUSTOM_INPUT" OFF)
 option(ENABLE_RSSI           "Compile with STREAM1090_ENABLE_RSSI" ON)
 option(ENABLE_RTLSDR_BLOG    "Enable vendored RTL-SDR Blog fork" OFF)
+option(ENABLE_PER_PLANE_DUP  "Enable per plane de-duplication" OFF)
 
 set(STATS_DEF        STATS_ENABLED=$<BOOL:${ENABLE_STATS}>)
 set(STATS_END_DEF    STATS_END_ONLY=$<BOOL:${END_STATS}>)
 set(OUTPUT_DEF       STREAM1090_OUTPUT_RAW=$<BOOL:${ENABLE_OUTPUT_RAW}>)
 set(CUSTOM_INPUT_DEF STREAM1090_CUSTOM_INPUT=$<BOOL:${ENABLE_CUSTOM_INPUT}>)
 set(RSSI_DEF         STREAM1090_RSSI=$<BOOL:${ENABLE_RSSI}>)
+set(PER_PLANEDUP_DEF STREAM1090_PER_PLANE_DUP=$<BOOL:${ENABLE_PER_PLANE_DUP}>)
 
 # ------------------------------------------------------------
 # Compiler settings
@@ -106,6 +108,12 @@ if (ENABLE_CUSTOM_INPUT)
     message(STATUS "[stream1090] Custom input mode enabled")
 endif()
 
+if (ENABLE_PER_PLANE_DUP)
+    message(STATUS "[stream1090] Per plane dedup mode enabled")
+else()
+    message(STATUS "[stream1090] Per plane dedup mode disabled")
+endif()
+
 # ------------------------------------------------------------
 # Core sources
 # ------------------------------------------------------------
@@ -133,6 +141,7 @@ target_compile_definitions(stream1090 PRIVATE
     ${OUTPUT_DEF}
     ${CUSTOM_INPUT_DEF}
     ${RSSI_DEF}
+    ${PER_PLANEDUP_DEF}
     ${DEVICE_DEFINITIONS}
 )
 

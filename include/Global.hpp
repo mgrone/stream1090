@@ -57,6 +57,13 @@ struct GlobalOptions {
     #else
         static constexpr bool RtlSdrBlogAdvanced = false;
     #endif
+
+    #ifdef STREAM1090_PER_PLANE_DUP
+        static constexpr bool PerPlaneDup = (STREAM1090_PER_PLANE_DUP != 0);
+    #else
+        static constexpr bool PerPlaneDup = false;
+    #endif
+
 };
 
 
