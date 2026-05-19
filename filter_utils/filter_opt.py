@@ -69,6 +69,7 @@ args = parse_args()
 #  Config
 # ============================================================
 
+STREAM1090_EXE = "../build/stream1090_opt"
 DATA_PATH = args.data
 FILTER_PATH = "./diff_evolve_fir_temp.txt"
 FS = args.fs
@@ -262,11 +263,9 @@ def evaluate_builtin_filter():
     else:
         output_mhz = default_output_rate(input_mhz)
 
-    exe = "../build/stream1090"
-
     cmd = [
         "bash", "-c",
-        f"cat {DATA_PATH} | {exe} "
+        f"cat {DATA_PATH} | {STREAM1090_EXE} "
         f"-s {input_mhz} "
         f"-u {output_mhz} "
         f"-q"
@@ -279,6 +278,8 @@ def evaluate_builtin_filter():
     df17 = df_counts.get(17, 0)
     # score = total + args.df17_weight * df17
     score = total + long_count
+    # score = total + df_counts.get(17, 0)
+    #score = df_counts.get(17, 0) + df_counts.get(11, 0) * 0.25
 
     return score, total, df17
 
@@ -302,11 +303,9 @@ def evaluate_filter(params):
     else:
         output_mhz = default_output_rate(input_mhz)
 
-    exe = "../build/stream1090"
-
     cmd = [
         "bash", "-c",
-        f"cat {DATA_PATH} | {exe} "
+        f"cat {DATA_PATH} | {STREAM1090_EXE} "
         f"-s {input_mhz} "
         f"-u {output_mhz} "
         f"-f {FILTER_PATH}"
@@ -319,6 +318,8 @@ def evaluate_filter(params):
     df17 = df_counts.get(17, 0)
     # score = total + args.df17_weight * df17
     score = total + long_count
+    # score = total + df_counts.get(17, 0)
+    #score = df_counts.get(17, 0) + df_counts.get(11, 0) * 0.25
     
     print(score)
 
@@ -445,7 +446,7 @@ while True:
 
     alpha = args.alpha
     margins = alpha * np.abs(best - second)
-    margins = np.clip(margins, 0.05, 0.5)
+    margins = np.clip(margins, 0.025, 0.5)
 
     bounds = []
     for i in range(K):
