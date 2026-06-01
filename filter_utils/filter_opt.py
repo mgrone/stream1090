@@ -69,7 +69,7 @@ args = parse_args()
 #  Config
 # ============================================================
 
-STREAM1090_EXE = "../build/stream1090_opt"
+STREAM1090_EXE = "../build/stream1090"
 DATA_PATH = args.data
 FILTER_PATH = "./diff_evolve_fir_temp.txt"
 FS = args.fs

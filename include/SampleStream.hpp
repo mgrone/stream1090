@@ -17,82 +17,155 @@
 #include "Sampler.hpp"
 #include "MessageHandler.hpp"
 
+#pragma once
+#include <memory>
+#include <cstring>
+#include <algorithm>
+
+// will get is hpp anyways
+template<typename T, size_t BlockSize, size_t NumBlocks, size_t Delay = 0>
+class BlockRing {
+public:
+    static constexpr size_t TotalSize = BlockSize * NumBlocks + Delay;
+
+    BlockRing(const T& initValue)
+        : m_data(std::make_unique<T[]>(TotalSize)),
+          m_readPos(0),
+          m_writePos(Delay),
+          m_fullBlocks(0)
+    {
+        std::fill(m_data.get(), m_data.get() + TotalSize, initValue);
+    }
+
+    // Pointer where the writer writes the next block
+    T* writePos() {
+        return m_data.get() + m_writePos;
+    }
+
+    // Commit one written block and advance the writer
+    void advanceWritePos() {
+        m_writePos += BlockSize;
+
+        // Wrap condition: writing beyond the buffer end
+        if (m_writePos + BlockSize > TotalSize) {
+
+            // Copy last Delay samples to the front
+            if constexpr (Delay > 0) {
+                std::memcpy(
+                    m_data.get(),                          // destination
+                    m_data.get() + (TotalSize - Delay),    // source
+                    Delay * sizeof(T)
+                );
+            }
+
+            // Reset writer to the Delay offset
+            m_writePos = Delay;
+        }
+
+        m_fullBlocks++;
+    }
+
+    // Pointer where the reader reads the next block
+    const T* readPos() const {
+        return m_data.get() + m_readPos;
+    }
+
+    // Commit one consumed block and advance the reader
+    void advanceReadPos() {
+        m_readPos += BlockSize;
+
+        // Reader wraps after NumBlocks blocks
+        if (m_readPos >= BlockSize * NumBlocks) {
+            m_readPos = 0;
+        }
+
+        m_fullBlocks--;
+    }
+
+    // Reader can check if a block is available
+    bool isReadable() const {
+        return m_fullBlocks > 0;
+    }
+
+    // Writer can check if space is available
+    bool isWritable() const {
+        return m_fullBlocks < NumBlocks;
+    }
+
+    const T& lookBack(size_t k, size_t offsetInBlock = 0) const {
+        // Convert read pointer + offset to absolute ring index
+        size_t absoluteIndex = m_readPos + offsetInBlock;
+        if (absoluteIndex >= TotalSize)
+            absoluteIndex -= TotalSize;
+
+        // Now go back k samples
+        size_t lookBackIndex = absoluteIndex + TotalSize - k;
+        if (lookBackIndex >= TotalSize)
+            lookBackIndex -= TotalSize;
+
+        return m_data[lookBackIndex];
+    }
+
+private:
+    std::unique_ptr<T[]> m_data;
+
+    size_t m_readPos;      // next block to read
+    size_t m_writePos;     // next block to write
+    size_t m_fullBlocks;   // number of complete blocks available
+};
+
 
 // the main stream class. This class manages reading from the input stream
 // and also manages the buffers
 template<typename Sampler>
 class SampleStream {
 public:
+    static constexpr size_t NumInputBuffers = 2;
     // for now we will keep one extra sample buffer as history
     static constexpr size_t NumSampleBuffers = 2;
     static constexpr size_t TotalSampleBufferLength = NumSampleBuffers * Sampler::SampleBufferSize + Sampler::SampleBufferOverlap;
 
-    SampleStream() {
-        // The resulting magnitude of the input samples which may also be used to directly read the magnitude of the samples
-        // This buffer holds overlap many old values plus the new data  
-        m_inputMagnitude = std::make_unique<float[]>(Sampler::InputBufferSize + Sampler::InputBufferOverlap);
-    
-        // the samples that we get from upsampling
-        m_samples = std::make_unique<float[]>(TotalSampleBufferLength);
-    }
+    SampleStream() : m_inputRingBuffer(0.0f), m_sampleRingBuffer(0.0f) { }
    
     // the main method that streams from InputStream using inputReader
     template<typename InputReaderType, MessageHandler Handler>
     void read(InputReaderType& inputReader, Handler& messageHandler);
 
     uint8_t getRSSI(int) const {
-        // we first have to compute the beginning of the message
-        //streamIndex = (streamIndex + (Sampler::NumStreams >> 2)) % Sampler::NumStreams; 
-        // the current m_readpos is 128 ahead in every stream with respect to the first bit of the message
-        constexpr size_t bitDelay = 128-8;
-        
-        // how many samples are we ahead
+        // we are 128 bits behind and are looking for the preamble pulse
+        constexpr size_t bitDelay     = 128 - 8;
+        // how much is that in samples?
         constexpr size_t samplesDelay = bitDelay * Sampler::NumStreams;
-
-        // the number of samples that can be read before warping around (this excludes the overlap)
-        constexpr size_t readBufferLength = NumSampleBuffers * Sampler::SampleBufferSize;
-
-        // at which index are we reading right now?
-        const size_t currReadPosIndex = m_readPos - m_samples.get(); 
-        // we
-        const size_t messageBegin = (currReadPosIndex + (readBufferLength - samplesDelay)) % readBufferLength;
-
-        const float* readPos = m_samples.get() + messageBegin; 
-
-        float res = 0.0;
-        // this for now a very crude and shitty estimate
-        for (size_t i = 0; i < Sampler::NumStreams; i++) {
-            float f = std::max(readPos[i], readPos[i + (Sampler::NumStreams >> 1)]);
-            res = std::max(res, f);
+        // how far is the demodulator in the block?
+        const auto offsetInBlock = m_readPos - m_sampleRingBuffer.readPos();
+        // check the rssi of the surounding samples. This index is the first to
+        // catch the message, usually with bad RSSI
+        float rssi = 0.0f;
+        for (size_t s = 0; s < Sampler::NumStreams; s++) {
+            float v = std::max(m_sampleRingBuffer.lookBack(samplesDelay + s, offsetInBlock), 
+                               m_sampleRingBuffer.lookBack(samplesDelay + s - (Sampler::NumStreams >> 1), offsetInBlock));
+            rssi = std::max(rssi, v);
         }
-        
-        res = std::min(1.41f, res) / 1.41f;
-
-        return uint8_t(res * 255.0);
+        // normalize
+        rssi = std::min(1.41f, rssi) / 1.41f;
+        // and return as byte
+        return uint8_t(rssi * 255.0);
     }
 
 private:
     uint32_t m_newBits[Sampler::NumStreams];    
-    
-    std::unique_ptr<float[]> m_inputMagnitude;
-	std::unique_ptr<float[]> m_samples;
-
+    // we have one ring buffer for the IQ pipeline
+    BlockRing<float, Sampler::InputBufferSize,  NumInputBuffers,  Sampler::InputBufferOverlap>  m_inputRingBuffer;
+    // and one for the upsampled magnitudes
+    BlockRing<float, Sampler::SampleBufferSize, NumSampleBuffers, Sampler::SampleBufferOverlap> m_sampleRingBuffer;
+    // not nice. Will change
     const float* m_readPos = nullptr;
-    float* m_writePos = nullptr;
 };
 
 
 template<typename Sampler>
 template<typename InputReaderType, MessageHandler Handler>
 inline void SampleStream<Sampler>::read(InputReaderType& inputReader, Handler& messageHandler) {  
-     
-    // make sure the overlap parts at the beginning of the buffers are zeroed
-    std::fill(m_inputMagnitude.get(), m_inputMagnitude.get() + Sampler::InputBufferOverlap, 0.0f);
-    std::fill(m_samples.get(), m_samples.get() + Sampler::SampleBufferOverlap, 0.0f);
-
-    // we have a buffer of sample buffers. The active one is referenced by this index.
-    size_t currSampleBufferIndex = 0;
-
     // the core logic for message recognition
     DemodCore<Sampler::NumStreams, Handler> demodCore(messageHandler);
 
@@ -100,58 +173,53 @@ inline void SampleStream<Sampler>::read(InputReaderType& inputReader, Handler& m
     while (!inputReader.eof()) {
         // the read and write positions for the current sample buffer based its index.
         // we start reading at 0 + i * size           
-        m_readPos = m_samples.get() + currSampleBufferIndex * Sampler::SampleBufferSize;
         // however, new values will be written NumStream / 2 later which is the overlap. 
-        m_writePos = m_samples.get() + currSampleBufferIndex * Sampler::SampleBufferSize + Sampler::SampleBufferOverlap;
-        
         // check if actually we need the sampler to resample, or if this is a 1:1 sampling
         if constexpr(Sampler::isPassthrough) {
             // tell the input reader to get us some data. Directly as magnitude. Since this is a passthrough sampler
             // we will directly read into the samples buffer. There is no need for using the sampler at all.
             // This works because the amount the input reader is getting us in this particular case is exactly the ChunkSize
             static_assert(Sampler::NumBlocks == Sampler::InputBufferSize);
-            inputReader.readMagnitude(m_writePos);
+            inputReader.readMagnitude(m_sampleRingBuffer.writePos());
+            m_sampleRingBuffer.advanceWritePos();
         } else {
             // tell the input reader to get us some data. Directly as magnitude.
-            inputReader.readMagnitude(m_inputMagnitude.get() + Sampler::InputBufferOverlap);
+            //inputReader.readMagnitude(m_inputMagnitude.get() + Sampler::InputBufferOverlap);
+            inputReader.readMagnitude(m_inputRingBuffer.writePos());
+            m_inputRingBuffer.advanceWritePos();
             // now ask the Sampler to resample the input magnitude to the output samples
             // similar to the input buffer, write after the overlap to keep some old values for the next iteration
-            Sampler::sample(m_inputMagnitude.get(), m_writePos);
-        }
-
-        // extract phase shifted bits using manchester encoding
-        for (size_t i = 0; i < Sampler::SampleBufferSize; i += Sampler::NumStreams) {
-           // numIterations++;
-            for (size_t j = 0; j < Sampler::NumStreams; j++) {
-                // Think of having a sample stream of 2Mhz (so what we get from the planes)
-                // stream 0 << compare 0 and 1 
-                // stream 1 << compare 1 and 2
-                // 
-                // stream 0 << compare 2 and 3
-                // stream 1 << compare 3 and 4
-                // ....
-                // because the message might be shifted by one symbol
-                //m_newBits[j] = sampleReadPos[i + j] > sampleReadPos[i + j + Sampler::SampleBufferOverlap];  
-                m_newBits[j] = m_readPos[j] > m_readPos[j + (Sampler::NumStreams >> 1)]; //m_sampleReadPos[i + j] > sampleReadPos[i + j + Sampler::SampleBufferOverlap];  
+            if (m_inputRingBuffer.isReadable()) {
+                Sampler::sample(m_inputRingBuffer.readPos(), m_sampleRingBuffer.writePos());
+                m_inputRingBuffer.advanceReadPos();
+                m_sampleRingBuffer.advanceWritePos();
             }
-            // and tell the demodulator to deal with the new bits
-            demodCore.shiftInNewBits(m_newBits);
-            // advance the readpos
-            m_readPos += Sampler::NumStreams;
         }
         
-        // for the next round we move overlap many values from the end to the beginning of the input buffer
-        std::memcpy(m_inputMagnitude.get(), m_inputMagnitude.get() + Sampler::InputBufferSize, Sampler::InputBufferOverlap * sizeof(float));
 
-        // for the sample buffer we advance to the index to the next sample buffer.
-        currSampleBufferIndex++;
-
-        // if we reached the end of the buffer of sample buffers
-        if (currSampleBufferIndex == NumSampleBuffers) {
-            // reset the index
-            currSampleBufferIndex = 0;
-            // move overlap many samples from the end to the beginning. These are numstreams / 2 many.
-            std::memcpy(m_samples.get(),  m_samples.get() + Sampler::SampleBufferSize * NumSampleBuffers, Sampler::SampleBufferOverlap * sizeof(float));
+        if (m_sampleRingBuffer.isReadable()) {
+            m_readPos = m_sampleRingBuffer.readPos();
+            // extract phase shifted bits using manchester encoding
+            for (size_t i = 0; i < Sampler::SampleBufferSize; i += Sampler::NumStreams) {
+            // numIterations++;
+                for (size_t j = 0; j < Sampler::NumStreams; j++) {
+                    // Think of having a sample stream of 2Mhz (so what we get from the planes)
+                    // stream 0 << compare 0 and 1 
+                    // stream 1 << compare 1 and 2
+                    // 
+                    // stream 0 << compare 2 and 3
+                    // stream 1 << compare 3 and 4
+                    // ....
+                    // because the message might be shifted by one symbol
+                    //m_newBits[j] = sampleReadPos[i + j] > sampleReadPos[i + j + Sampler::SampleBufferOverlap];  
+                    m_newBits[j] = m_readPos[j] > m_readPos[j + (Sampler::NumStreams >> 1)]; //m_sampleReadPos[i + j] > sampleReadPos[i + j + Sampler::SampleBufferOverlap];  
+                }
+                // and tell the demodulator to deal with the new bits
+                demodCore.shiftInNewBits(m_newBits);
+                // advance the readpos
+                m_readPos += Sampler::NumStreams;
+            }
+            m_sampleRingBuffer.advanceReadPos();
         }
     }
 }
