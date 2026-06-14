@@ -13,56 +13,50 @@
 #include "AVRWriter.hpp"
 
 template<typename H>
-concept MessageHandler = requires(H h, int bitStream, uint64_t ts, uint64_t f, const Bits128& b) {
-    { h.handleShort(bitStream, ts, f) };
-    { h.handleLong(bitStream, ts, b) };
+concept MessageHandler = requires(H h, uint64_t sampleIndex, uint64_t frameShort, const Bits128& frameLong) {
+    { h.handleShort(sampleIndex, frameShort) };
+    { h.handleLong(sampleIndex, frameLong) };
 };
 
+template<typename Sampler>
 class StdOutMessageHandler {
 public:
     explicit StdOutMessageHandler() : m_writer(std::cout) {}
 
-    void handleShort(int, uint64_t MLAT_timeStamp, const uint64_t frame) {
+    void handleShort(uint64_t sampleIndex, const uint64_t frame) {
+        const uint64_t MLAT_timeStamp = MLAT::sampleIndexToMlatTime<Sampler::NumStreams>(sampleIndex);
         m_writer.write_short_MLAT(MLAT_timeStamp, frame);
     }
 
-    void handleLong(int, uint64_t MLAT_timeStamp, const Bits128& frame) {
+    void handleLong(uint64_t sampleIndex, const Bits128& frame) {
+        const uint64_t MLAT_timeStamp = MLAT::sampleIndexToMlatTime<Sampler::NumStreams>(sampleIndex);
         m_writer.write_long_MLAT(MLAT_timeStamp, frame);
     }
 
     AVRWriter m_writer;
 };
 
-class RawOutputMessageHandler {
-public:
-    void handleShort(int, uint64_t, const uint64_t frame) {
-        ModeS::printFrameShortRaw(std::cout, frame);
-    }
-
-    void handleLong(int, uint64_t, const Bits128& frame) {
-        ModeS::printFrameLongRaw(std::cout, frame);
-    }
-};
-
 template<typename R>
-concept RssiProvider = requires(R r, int streamIndex) {
-    { r.getRSSI(streamIndex) } -> std::convertible_to<uint8_t>;
+concept RssiProvider = requires(R r) {
+    { r.getRSSI() } -> std::convertible_to<uint8_t>;
 };
 
-template<RssiProvider R>
+template<typename Sampler, RssiProvider R>
 class RssiStdOutMessageHandler {
 public:
     explicit RssiStdOutMessageHandler(const R& rssi)
         : m_writer(std::cout), 
           rssiProvider(rssi) {}
 
-    void handleShort(int streamIndex, uint64_t MLAT_timeStamp, const uint64_t frame) {
-        uint8_t rssi = rssiProvider.getRSSI(streamIndex);
+    void handleShort(uint64_t sampleIndex, const uint64_t frame) {
+        const uint64_t MLAT_timeStamp = MLAT::sampleIndexToMlatTime<Sampler::NumStreams>(sampleIndex);
+        const uint8_t rssi = rssiProvider.getRSSI();
         m_writer.write_short_MLAT_RSSI(MLAT_timeStamp, frame, rssi);
     }
 
-    void handleLong(int streamIndex, uint64_t MLAT_timeStamp, const Bits128& frame) {
-        uint8_t rssi = rssiProvider.getRSSI(streamIndex);
+    void handleLong(uint64_t sampleIndex, const Bits128& frame) {
+        const uint64_t MLAT_timeStamp = MLAT::sampleIndexToMlatTime<Sampler::NumStreams>(sampleIndex);
+        const uint8_t rssi = rssiProvider.getRSSI();
         m_writer.write_long_MLAT_RSSI(MLAT_timeStamp, frame, rssi);
     }
 

@@ -126,11 +126,9 @@ public:
 
     static constexpr auto constructMessageHandler(SampleStream<SamplerType>& sampleStream) {
         if constexpr(GlobalOptions::RSSIEnabled) {
-            return RssiStdOutMessageHandler(sampleStream);   
-        } else if constexpr(GlobalOptions::OutputRawEnabled) {
-            return RawOutputMessageHandler();
+            return RssiStdOutMessageHandler<SamplerType, SampleStream<SamplerType> >(sampleStream);
         } else {
-            return StdOutMessageHandler();
+            return StdOutMessageHandler<SamplerType>();
         }
     }
 

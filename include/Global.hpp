@@ -22,12 +22,6 @@ struct GlobalOptions {
         static constexpr bool StatsAtTheEndOnly = false;
     #endif
 
-    #ifdef STREAM1090_OUTPUT_RAW
-        static constexpr bool OutputRawEnabled = (STREAM1090_OUTPUT_RAW != 0);
-    #else
-        static constexpr bool OutputRawEnabled = false;
-    #endif
-
     #ifdef STREAM1090_CUSTOM_INPUT
         static constexpr bool CustomInputMode = (STREAM1090_CUSTOM_INPUT != 0);
     #else
@@ -57,13 +51,6 @@ struct GlobalOptions {
     #else
         static constexpr bool RtlSdrBlogAdvanced = false;
     #endif
-
-    #ifdef STREAM1090_PER_PLANE_DUP
-        static constexpr bool PerPlaneDup = (STREAM1090_PER_PLANE_DUP != 0);
-    #else
-        static constexpr bool PerPlaneDup = false;
-    #endif
-
 };
 
 

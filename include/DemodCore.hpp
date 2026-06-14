@@ -16,7 +16,6 @@
 #include <cmath>
 #include "ShiftRegisters.hpp"
 #include "MessageHandler.hpp"
-//#include "PlaneTable.hpp"
 
 template<int NumStreams, MessageHandler Handler>
 class DemodCore {
@@ -46,15 +45,13 @@ public:
 			m_currTime++;
 		}
 		logStats(Stats::NUM_ITERATIONS);
-		//m_planeTable.tick();
 	}
 
-	bool sendFrameLongAligned(int streamIndex,
+	bool sendFrameLongAligned(int,
 							  const uint8_t downlinkFormat, 
 							  CRC::crc_t, 
 							  const Bits128& frame, 
 							  const ICAOTable::Iterator& it) {
-#if defined(STREAM1090_PER_PLANE_DUP) && STREAM1090_PER_PLANE_DUP		
 		auto& e = m_cache.getMsgStatEntry(it);
 		static constexpr uint64_t DUP_WINDOW_TICKS = 30 * NumStreams;
 		if ((m_currTime - e.last_time) < DUP_WINDOW_TICKS) {
@@ -62,23 +59,14 @@ public:
     		logStatsDup(downlinkFormat);
     		return false;
 		}
-#else 
-		if (((m_currTime - m_prevTimeLongSent) < NumStreams * 10) && (m_prevFrameLongSent == frame)) {
-			m_prevTimeLongSent = m_currTime;
-			logStatsDup(downlinkFormat);
-			return false;
-		}
-#endif
 
 		if ((downlinkFormat == 20) || (downlinkFormat == 16)) {
 			const auto alt_bits = ModeS::extractSquawkAlt_Long(frame);
 			const auto alt = ModeS::decodeAltitude(alt_bits);
-			//m_planeTable.upsertAlt(crc, alt);
 			if (!m_cache.checkAltitude(it, alt)) {	
 				return false;
 			} else {
 				m_cache.markAsSeen(it);
-				//m_planeTable.upsertAlt(crc, alt);
 			}
 		}
 		
@@ -87,24 +75,15 @@ public:
 			if (!m_cache.checkSquawk(it, sqwk))
 				return false;
 			m_cache.markAsSeen(it);
-			//m_planeTable.upsertSquawk(crc, sqwk);
 		}
 		
 		logStatsSent(downlinkFormat);
-
-#if defined(STREAM1090_PER_PLANE_DUP) && STREAM1090_PER_PLANE_DUP		
-		e.last_time = m_currTime;
-#else 
-		m_prevFrameLongSent = frame;
-		m_prevTimeLongSent = m_currTime;
-#endif
-		
-		m_messageHandler.handleLong(streamIndex, MLAT::sampleIndexToMlatTime<NumStreams>(m_currTime), frame);
+		e.last_time = m_currTime;		
+		m_messageHandler.handleLong(m_currTime, frame);
 		return true;
 	}
 
-	bool sendFrameShortAligned(int streamIndex, const uint8_t downlinkFormat, CRC::crc_t, const uint64_t& frameShort, const ICAOTable::Iterator& it) {
-#if defined(STREAM1090_PER_PLANE_DUP) && STREAM1090_PER_PLANE_DUP		
+	bool sendFrameShortAligned(int, const uint8_t downlinkFormat, CRC::crc_t, const uint64_t& frameShort, const ICAOTable::Iterator& it) {
 		auto& e = m_cache.getMsgStatEntry(it);
 		static constexpr uint64_t DUP_WINDOW_TICKS = 30 * NumStreams;
 		if ((m_currTime - e.last_time) < DUP_WINDOW_TICKS) {
@@ -112,13 +91,6 @@ public:
     		logStatsDup(downlinkFormat);
     		return false;
 		}
-#else
-		if (((m_currTime - m_prevTimeShortSent) < NumStreams * 10) && (m_prevFrameShortSent == frameShort)) {
-			m_prevTimeShortSent = m_currTime;
-			logStatsDup(downlinkFormat);
-			return false;
-		}
-#endif
 
 		if ((downlinkFormat == 4) || (downlinkFormat == 0)) {
 			const auto alt_bits = ModeS::extractSquawkAlt_Short(frameShort);
@@ -127,7 +99,6 @@ public:
 				return false;
 			} else {
 				m_cache.markAsSeen(it);
-				//m_planeTable.upsertAlt(crc, alt);
 			}
 		}
 
@@ -136,20 +107,11 @@ public:
 			if (!m_cache.checkSquawk(it, sqwk))
 				return false;
 			m_cache.markAsSeen(it);
-			//m_planeTable.upsertSquawk(crc, sqwk);
 		}
-		
 
 		logStatsSent(downlinkFormat);
-
-#if defined(STREAM1090_PER_PLANE_DUP) && STREAM1090_PER_PLANE_DUP
 		e.last_time = m_currTime;
-#else 
-		m_prevFrameShortSent = frameShort;
-		m_prevTimeShortSent = m_currTime;
-#endif
-
-		m_messageHandler.handleShort(streamIndex, MLAT::sampleIndexToMlatTime<NumStreams>(m_currTime), frameShort);
+		m_messageHandler.handleShort(m_currTime, frameShort);
 		return true;
 	}
 
@@ -422,21 +384,11 @@ private:
 	
 	// while dealing with a single stream, this holds a copy of the frame
 	// from the previous stream  
-	Bits128 m_prevLongFrame;
-	uint64_t m_prevShortFrame;
-
-	// the last long message sent to the ouput. Used for duplicate removal
-	Bits128 m_prevFrameLongSent;
-	// the timestamp of the last long message sent. Required for duplicate removal
-	uint64_t m_prevTimeLongSent { 0 };
-
-	// the last short message sent to the ouput. Used for duplicate removal
-	uint64_t m_prevFrameShortSent;
-	// the timestamp of the last short message sent. Required for duplicate removal
-	uint64_t m_prevTimeShortSent { 0 };
+	Bits128 m_prevLongFrame; 
+	uint64_t m_prevShortFrame; 
 
 	// plane lookup table
-	ICAOTable m_cache;
+	ICAOTable m_cache; 
 	
 	// the current time measured in samples.
 	uint64_t m_currTime{ 0 };
@@ -444,6 +396,6 @@ private:
 	// the shift registers for the bits
 	ShiftRegisters<NumStreams> m_shiftRegisters;
 
+	// the message handler that deals with long and short frames
 	Handler& m_messageHandler;
-	//PlaneTable m_planeTable;
 };

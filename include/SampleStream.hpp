@@ -131,13 +131,13 @@ public:
     template<typename InputReaderType, MessageHandler Handler>
     void read(InputReaderType& inputReader, Handler& messageHandler);
 
-    uint8_t getRSSI(int) const {
+    uint8_t getRSSI() const {
         // we are 128 bits behind and are looking for the preamble pulse
         constexpr size_t bitDelay     = 128 - 8;
         // how much is that in samples?
         constexpr size_t samplesDelay = bitDelay * Sampler::NumStreams;
         // how far is the demodulator in the block?
-        const auto offsetInBlock = m_readPos - m_sampleRingBuffer.readPos();
+        const auto offsetInBlock = m_demodPos - m_sampleRingBuffer.readPos();
         // check the rssi of the surounding samples. This index is the first to
         // catch the message, usually with bad RSSI
         float rssi = 0.0f;
@@ -159,7 +159,7 @@ private:
     // and one for the upsampled magnitudes
     BlockRing<float, Sampler::SampleBufferSize, NumSampleBuffers, Sampler::SampleBufferOverlap> m_sampleRingBuffer;
     // not nice. Will change
-    const float* m_readPos = nullptr;
+    const float* m_demodPos = nullptr;
 };
 
 
@@ -184,7 +184,6 @@ inline void SampleStream<Sampler>::read(InputReaderType& inputReader, Handler& m
             m_sampleRingBuffer.advanceWritePos();
         } else {
             // tell the input reader to get us some data. Directly as magnitude.
-            //inputReader.readMagnitude(m_inputMagnitude.get() + Sampler::InputBufferOverlap);
             inputReader.readMagnitude(m_inputRingBuffer.writePos());
             m_inputRingBuffer.advanceWritePos();
             // now ask the Sampler to resample the input magnitude to the output samples
@@ -198,10 +197,9 @@ inline void SampleStream<Sampler>::read(InputReaderType& inputReader, Handler& m
         
 
         if (m_sampleRingBuffer.isReadable()) {
-            m_readPos = m_sampleRingBuffer.readPos();
+            m_demodPos = m_sampleRingBuffer.readPos();
             // extract phase shifted bits using manchester encoding
             for (size_t i = 0; i < Sampler::SampleBufferSize; i += Sampler::NumStreams) {
-            // numIterations++;
                 for (size_t j = 0; j < Sampler::NumStreams; j++) {
                     // Think of having a sample stream of 2Mhz (so what we get from the planes)
                     // stream 0 << compare 0 and 1 
@@ -211,13 +209,13 @@ inline void SampleStream<Sampler>::read(InputReaderType& inputReader, Handler& m
                     // stream 1 << compare 3 and 4
                     // ....
                     // because the message might be shifted by one symbol
-                    //m_newBits[j] = sampleReadPos[i + j] > sampleReadPos[i + j + Sampler::SampleBufferOverlap];  
-                    m_newBits[j] = m_readPos[j] > m_readPos[j + (Sampler::NumStreams >> 1)]; //m_sampleReadPos[i + j] > sampleReadPos[i + j + Sampler::SampleBufferOverlap];  
+                    m_newBits[j] = m_demodPos[j] > m_demodPos[j + (Sampler::NumStreams >> 1)]; 
+                    //m_sampleReadPos[i + j] > sampleReadPos[i + j + Sampler::SampleBufferOverlap];  
                 }
                 // and tell the demodulator to deal with the new bits
                 demodCore.shiftInNewBits(m_newBits);
                 // advance the readpos
-                m_readPos += Sampler::NumStreams;
+                m_demodPos += Sampler::NumStreams;
             }
             m_sampleRingBuffer.advanceReadPos();
         }
