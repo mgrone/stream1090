@@ -41,13 +41,13 @@ class alignas(16) ShiftRegistersBase {
     uint64_t m_low[NumStreams];    
     uint64_t m_high[NumStreams];
     
-    uint32_t m_df[NumStreams];
-
 	// And a checksum for the short messages (56 bit)
 	CRC::crc_t m_crc_56[NumStreams];
 
     // Each stream has a checksum for long messages (112 bit)
 	CRC::crc_t m_crc_112[NumStreams];
+
+    uint32_t m_df[NumStreams];
 };
 
 

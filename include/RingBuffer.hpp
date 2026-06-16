@@ -44,19 +44,19 @@ class RingBufferBase {
 
     // returns a pointer to the first element of block blockIndex
     // assumes that blockIndex < numBlocks
-    inline T* begin(size_t blockIndex) {
+    T* begin(size_t blockIndex) noexcept {
         return m_data + (blockIndex * BlockSize);
     }
 
     // returns a pointer to the first element of block blockIndex
     // assumes that blockIndex < numBlocks
-    inline const T* begin(size_t blockIndex) const {
+    const T* begin(size_t blockIndex) const noexcept {
         return m_data + (blockIndex * BlockSize);
     }
 
     // raw function to write into the ring buffer at element index startIndex < size().
     // Handles the wrap around
-    inline void write(size_t startIndex, const T* src, size_t n) {
+    void write(size_t startIndex, const T* src, size_t n) noexcept {
         // number of elements we can write before wrapping
         size_t first = std::min(n, size() - startIndex);
         
@@ -90,7 +90,7 @@ public:
 
     // signals that there are numNewBlocksWritten new full blocks of data available
     // returns the new number of full blocks
-    size_t commitBlocks(size_t numNewBlocksWritten) {
+    size_t commitBlocks(size_t numNewBlocksWritten) noexcept {
         size_t res = 0;
         {
             std::lock_guard<std::mutex> lock(m_mutex);
@@ -103,7 +103,7 @@ public:
 
     // signals that someone has read numBlocksRead many blocks which frees those for writing
     // returns the new number of full blocks
-    size_t consumeBlocks(size_t numBlocksRead) {
+    size_t consumeBlocks(size_t numBlocksRead) noexcept {
         size_t res = 0;
         {
             std::lock_guard<std::mutex> lock(m_mutex);
@@ -115,7 +115,7 @@ public:
     }
 
     // function to signal that no more data will be written (due to an error or some other reason)
-    void shutdown() {
+    void shutdown() noexcept {
         {
             std::lock_guard<std::mutex> lock(m_mutex);
             m_shutdown = true;
@@ -126,7 +126,7 @@ public:
     // This function blocks until at least one full block of data is ready (returns sth. > 0), 
     // or no blocks are remaining and it has been signaled via shutdown() 
     // that no more data will bee written later. Returns 0 in that case.
-    size_t waitForNewBlocks() {
+    size_t waitForNewBlocks() noexcept {
         std::unique_lock<std::mutex> lock(m_mutex);
         m_condVar.wait(lock, [&]{
             return m_shutdown || m_numFullBlocks > 0;
@@ -140,7 +140,7 @@ public:
         return m_numFullBlocks;
     }
 
-    size_t waitForSpace(size_t desiredBlocks) {
+    size_t waitForSpace(size_t desiredBlocks) noexcept {
         
         std::unique_lock<std::mutex> lock(m_mutex);
         m_condVar.wait(lock, [&]{
@@ -151,7 +151,7 @@ public:
     }
 
     // the number of full blocks containing unread data.
-    size_t getNumFullBlocks() const {
+    size_t getNumFullBlocks() const noexcept {
         std::lock_guard<std::mutex> lock(m_mutex);
         return m_numFullBlocks;
     }
@@ -193,7 +193,7 @@ class RingBufferAsyncReader {
     }
 
     template<typename ProcessingFunc>
-    void process(ProcessingFunc processingFunc) {
+    void process(ProcessingFunc processingFunc) noexcept {
         if (m_numFullBlocks > 0) {
             processingFunc(m_ring.begin(m_readBlockIndex));
             m_readBlockIndex = (m_readBlockIndex + 1) % NumBlocks;

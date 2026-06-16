@@ -29,14 +29,14 @@ namespace CRC {
 	constexpr crc_t polynomial = 0x1FFF409;
 	
 	// function to shift in a bit at the right 
-	constexpr void pushBack(crc_t& crc, bool bit) {
+	constexpr void pushBack(crc_t& crc, bool bit) noexcept {
 		crc = (crc << 1) | (crc_t)bit;
 		if (crc & (0x1 << 24))
 			crc ^= polynomial;
 	}
 
 	template<uint8_t numBits>
-	constexpr crc_t compute(const Bits128& bits) {
+	constexpr crc_t compute(const Bits128& bits) noexcept {
 		crc_t result = 0;
 		for (int i = numBits-1; i >= 0; i--) {
 			pushBack(result, bits[i]);
@@ -46,7 +46,7 @@ namespace CRC {
 
 	// the delta to zero out a 1 bit in the crc 
 	template<uint8_t bitIndex>
-	constexpr crc_t delta() {
+	constexpr crc_t delta() noexcept {
 		crc_t crc = 0x1;
 		for (uint8_t i = 0; i < bitIndex; i++) {
 			crc = (crc << 1);
@@ -58,30 +58,30 @@ namespace CRC {
 
 	// precomputed value for 112th bit
 	template<>
-	constexpr crc_t delta<111>() {
+	constexpr crc_t delta<111>() noexcept {
 		return 0x3935EA;
 	}
 
 	// precomputed value for 56th bit
 	template<>
-	constexpr crc_t delta<55>() {
+	constexpr crc_t delta<55>() noexcept {
 		return 0x18567;
 	}
 
 	// for compat with older code
-	constexpr fixop_t encodeFixOp(uint8_t pattern, uint8_t index) {
+	constexpr fixop_t encodeFixOp(uint8_t pattern, uint8_t index) noexcept {
 		return fixop_t({pattern, index});
 	}
 
 	// applies the operation op to bits by flipping the bits accordingly
-	constexpr void applyFixOp(fixop_t op, Bits128& bits, uint8_t offset = 0) {
+	constexpr void applyFixOp(fixop_t op, Bits128& bits, uint8_t offset = 0) noexcept {
 		Bits128 bitsToFlip((uint64_t)op.pattern);
 		bitsToFlip.shiftLeft(op.index + offset);
 		bits = bits ^ bitsToFlip;
 	}
 
 	// applies the operation op to bits by flipping the bits accordingly
-	constexpr void applyFixOp(fixop_t op, uint64_t& frameShort, uint8_t offset = 0) {
+	constexpr void applyFixOp(fixop_t op, uint64_t& frameShort, uint8_t offset = 0) noexcept {
 		uint64_t bitsToFlip = ((uint64_t)op.pattern) << (op.index + offset);
 		frameShort = frameShort ^ bitsToFlip;
 	}
@@ -89,7 +89,7 @@ namespace CRC {
 	// overloaded function to compute the crc of the pattern of an operation op.
 	// This works, because the unshifted pattern of op is less than 25 bits and
 	// we are only performing a left shift here
-	constexpr crc_t compute(fixop_t op) {
+	constexpr crc_t compute(fixop_t op) noexcept {
 		crc_t crc = op.pattern;
 		for (auto i = 0; i < op.index; i++) {
 			crc = (crc << 1);

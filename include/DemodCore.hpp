@@ -115,7 +115,7 @@ public:
 		return true;
 	}
 
-	bool phaseDupCheckShort(const uint64_t& frameShort) {
+	bool phaseDupCheckShort(const uint64_t& frameShort) noexcept {
 		if (frameShort == m_prevShortFrame)
 			return true;
 		
@@ -123,7 +123,7 @@ public:
 		return false;
 	}
 
-	bool phaseDupCheckLong(const Bits128& frameLong) {
+	bool phaseDupCheckLong(const Bits128& frameLong) noexcept {
 		if (frameLong == m_prevLongFrame)
 			return true;
 		
@@ -384,8 +384,8 @@ private:
 	
 	// while dealing with a single stream, this holds a copy of the frame
 	// from the previous stream  
-	Bits128 m_prevLongFrame; 
-	uint64_t m_prevShortFrame; 
+	alignas(16) Bits128 m_prevLongFrame; 
+	alignas(16) uint64_t m_prevShortFrame; 
 
 	// plane lookup table
 	ICAOTable m_cache; 

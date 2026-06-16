@@ -22,14 +22,16 @@
 #include <cstring>
 #include <algorithm>
 
-// will get is hpp anyways
 template<typename T, size_t BlockSize, size_t NumBlocks, size_t Delay = 0>
 class BlockRing {
 public:
     static constexpr size_t TotalSize = BlockSize * NumBlocks + Delay;
 
     BlockRing(const T& initValue)
-        : m_data(std::make_unique<T[]>(TotalSize)),
+        : m_data(
+            new (std::align_val_t(16)) T[TotalSize],   // aligned allocation
+            AlignedDeleter{}                           // matching deleter
+        ),
           m_readPos(0),
           m_writePos(Delay),
           m_fullBlocks(0)
@@ -37,44 +39,34 @@ public:
         std::fill(m_data.get(), m_data.get() + TotalSize, initValue);
     }
 
-    // Pointer where the writer writes the next block
-    T* writePos() {
+    T* writePos() noexcept {
         return m_data.get() + m_writePos;
     }
 
-    // Commit one written block and advance the writer
-    void advanceWritePos() {
+    void advanceWritePos() noexcept {
         m_writePos += BlockSize;
 
-        // Wrap condition: writing beyond the buffer end
         if (m_writePos + BlockSize > TotalSize) {
-
-            // Copy last Delay samples to the front
             if constexpr (Delay > 0) {
                 std::memcpy(
-                    m_data.get(),                          // destination
-                    m_data.get() + (TotalSize - Delay),    // source
+                    m_data.get(),
+                    m_data.get() + (TotalSize - Delay),
                     Delay * sizeof(T)
                 );
             }
-
-            // Reset writer to the Delay offset
             m_writePos = Delay;
         }
 
         m_fullBlocks++;
     }
 
-    // Pointer where the reader reads the next block
-    const T* readPos() const {
+    const T* readPos() const noexcept {
         return m_data.get() + m_readPos;
     }
 
-    // Commit one consumed block and advance the reader
-    void advanceReadPos() {
+    void advanceReadPos() noexcept {
         m_readPos += BlockSize;
 
-        // Reader wraps after NumBlocks blocks
         if (m_readPos >= BlockSize * NumBlocks) {
             m_readPos = 0;
         }
@@ -82,23 +74,19 @@ public:
         m_fullBlocks--;
     }
 
-    // Reader can check if a block is available
-    bool isReadable() const {
+    bool isReadable() const noexcept {
         return m_fullBlocks > 0;
     }
 
-    // Writer can check if space is available
-    bool isWritable() const {
+    bool isWritable() const noexcept {
         return m_fullBlocks < NumBlocks;
     }
 
-    const T& lookBack(size_t k, size_t offsetInBlock = 0) const {
-        // Convert read pointer + offset to absolute ring index
+    const T& lookBack(size_t k, size_t offsetInBlock = 0) const noexcept {
         size_t absoluteIndex = m_readPos + offsetInBlock;
         if (absoluteIndex >= TotalSize)
             absoluteIndex -= TotalSize;
 
-        // Now go back k samples
         size_t lookBackIndex = absoluteIndex + TotalSize - k;
         if (lookBackIndex >= TotalSize)
             lookBackIndex -= TotalSize;
@@ -107,12 +95,19 @@ public:
     }
 
 private:
-    std::unique_ptr<T[]> m_data;
+    struct AlignedDeleter {
+        void operator()(T* p) const noexcept {
+            ::operator delete[](p, std::align_val_t(16));
+        }
+    };
 
-    size_t m_readPos;      // next block to read
-    size_t m_writePos;     // next block to write
-    size_t m_fullBlocks;   // number of complete blocks available
+    std::unique_ptr<T[], AlignedDeleter> m_data;
+
+    size_t m_readPos;
+    size_t m_writePos;
+    size_t m_fullBlocks;
 };
+
 
 
 // the main stream class. This class manages reading from the input stream
@@ -131,7 +126,7 @@ public:
     template<typename InputReaderType, MessageHandler Handler>
     void read(InputReaderType& inputReader, Handler& messageHandler);
 
-    uint8_t getRSSI() const {
+    uint8_t getRSSI() const noexcept {
         // we are 128 bits behind and are looking for the preamble pulse
         constexpr size_t bitDelay     = 128 - 8;
         // how much is that in samples?

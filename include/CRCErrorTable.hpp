@@ -25,7 +25,7 @@ namespace CRC {
 			}
 		}
 		
-		constexpr fixop_t lookup(crc_t crc) const {
+		constexpr fixop_t lookup(crc_t crc) const noexcept {
 			int index = crc % size;
 			if (m_keys[index] == crc) {
 				return m_ops[index];
@@ -34,7 +34,7 @@ namespace CRC {
 		}
 
 	protected:
-		constexpr void insert(fixop_t op) {
+		constexpr void insert(fixop_t op) noexcept {
 			crc_t crc = compute(op);
 			int i = crc % size;
 			if (m_keys[i] == 0) {
@@ -128,10 +128,8 @@ namespace CRC {
 
 	// We declare global instances here, but they have to be inline
 	// to not show up every time as a separate copy
-	//inline constexpr DF17ErrorTable df17ErrorTable;
 	inline constexpr DF17ErrorTableExperimental df17ErrorTable;
 	
-	//inline constexpr DF11ErrorTable df11ErrorTable;
 	inline constexpr DF11ErrorTableExperimental df11ErrorTable;
 
 } // end of namespace

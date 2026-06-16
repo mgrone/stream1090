@@ -79,24 +79,24 @@ public:
 		std::fill(m_msgStatTable.get(), m_msgStatTable.get() + Size, MsgStatEntry{0});
 	}
 
-	Iterator insertWithCA(uint32_t icaoWithCA) {
+	Iterator insertWithCA(uint32_t icaoWithCA) noexcept  {
 		const auto key = icaoWithCA & HashMask; 
 		doResetEntry(key);
 		m_table[key].icao = icaoWithCA;
 		return Iterator(key);
 	}
 
-	Iterator findWithCA(uint32_t icaoWithCA) const {
+	Iterator findWithCA(uint32_t icaoWithCA) const noexcept {
 		const auto key = icaoWithCA & HashMask; 
 		return (m_table[key].icao == icaoWithCA) ? Iterator(key) : Iterator();
 	}
 
-	Iterator find(uint32_t icao) const {
+	Iterator find(uint32_t icao) const noexcept {
 		const auto key = icao & HashMask; 
 		return ((m_table[key].icao & 0xffffffu) == icao) ? Iterator(key) : Iterator();
 	}
 
-	void tick() {
+	void tick() noexcept {
 		// the counter will wrap around every second exactly once
 		m_time1Mhz = (m_time1Mhz + 1) % 1000000;
 		
@@ -109,24 +109,24 @@ public:
 		doTickForEntry(m_time1Mhz);
 	}
 
-	void markAsTrustedSeen(const Iterator& entry) {
+	void markAsTrustedSeen(const Iterator& entry) noexcept {
 		m_table[entry.key].ttl_trusted = TTL_trusted;
 		m_table[entry.key].ttl = TTL_not_trusted;
 	}
 
-	void markAsSeen(const Iterator& entry) {
+	void markAsSeen(const Iterator& entry) noexcept {
 		m_table[entry.key].ttl = TTL_not_trusted;
 	}
 
-	bool isTrusted(const Iterator& entry) const {
+	bool isTrusted(const Iterator& entry) const noexcept {
 		return isAlive(entry) && (m_table[entry.key].ttl_trusted > 0);
 	}
 
-	bool isAlive(const Iterator& entry) const {
+	bool isAlive(const Iterator& entry) const noexcept {
 		return m_table[entry.key].ttl > 0;
 	}
 
-	bool checkSquawk(const Iterator& entry, uint16_t newSquawk) {
+	bool checkSquawk(const Iterator& entry, uint16_t newSquawk) noexcept {
 		if (newSquawk == 0) {
 			return false;
 		}
@@ -144,7 +144,7 @@ public:
 		return false;
 	}
 
-	bool checkAltitude(const Iterator& entry, uint16_t newAlt) {
+	bool checkAltitude(const Iterator& entry, uint16_t newAlt) noexcept {
 		if (newAlt == 0) {
 			return false;
 		}
@@ -164,11 +164,11 @@ public:
 		return false;
 	}
 
-	MsgStatEntry& getMsgStatEntry(const Iterator& it) {
+	MsgStatEntry& getMsgStatEntry(const Iterator& it) noexcept {
 		return m_msgStatTable[it.key];
 	}
 private:
-	void doTickForEntry(uint16_t index) {
+	void doTickForEntry(uint16_t index) noexcept {
 		auto& entry = m_table[index];
 		if (entry.icao == 0x0)
 			return;
@@ -184,7 +184,7 @@ private:
 		}
 	}
 
-	void doResetEntry(uint16_t index) {
+	void doResetEntry(uint16_t index) noexcept {
 		auto& entry = m_table[index];
 		entry.icao = 0x0;
 		entry.ttl_trusted = 0;

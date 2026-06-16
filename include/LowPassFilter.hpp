@@ -36,7 +36,7 @@ public:
         return oss.str();
     }
 
-    inline void apply(float& value_I, float& value_Q) noexcept {
+    void apply(float& value_I, float& value_Q) noexcept {
         m_delay_I[m_new_index] = value_I;
         m_delay_Q[m_new_index] = value_Q;
 
@@ -58,7 +58,7 @@ public:
     }
 
 private:
-    inline void sum_not_sym(float& sum_I, float& sum_Q) const noexcept{
+    void sum_not_sym(float& sum_I, float& sum_Q) const noexcept{
         // index that wraps around the ring buffer
         int j = m_new_index;
         for (size_t k = 0; k < numTaps; k++) {
@@ -68,7 +68,7 @@ private:
         }
     }
 
-    inline void sum_sym(float& sum_I, float& sum_Q) const noexcept{
+    void sum_sym(float& sum_I, float& sum_Q) const noexcept{
         constexpr auto halfNumTaps = numTaps >> 1; 
     
         if constexpr(areTapsOdd) {
@@ -98,8 +98,8 @@ private:
     static constexpr bool areTapsOdd = LowPassTaps::areCustomTapsOdd<inputRate, outputRate>();
     static constexpr bool areTapsSymmetric = LowPassTaps::areCustomTapsSymmetric<inputRate, outputRate>(); 
     
-    float m_delay_I[bufferSize];
-    float m_delay_Q[bufferSize];
+    alignas(16) float m_delay_I[bufferSize];
+    alignas(16) float m_delay_Q[bufferSize];
     int m_new_index;
 };
 
@@ -159,7 +159,7 @@ public:
         }
     }
 
-    inline bool setTaps(const std::vector<float>& newTaps) {
+    bool setTaps(const std::vector<float>& newTaps) {
         if (newTaps.size() == 0)
             return false;
             
@@ -187,7 +187,7 @@ public:
         return false;
     }
 
-    inline bool loadFromFile(const std::string& filename) {
+    bool loadFromFile(const std::string& filename) {
         std::ifstream file(filename);
         if (!file.is_open()) {
             return false;
@@ -232,17 +232,17 @@ public:
 
     // returns the maximum number of taps. 
     // This is a compile time constant and is 64 by default.
-    inline size_t maxNumTaps() const {
+    size_t maxNumTaps() const noexcept {
         return MaxNumTaps;
     }
 
     // returns the actual number of taps that are in use.
-    inline size_t numTaps() const {
+    size_t numTaps() const noexcept {
         return m_numTaps;
     }
 
     // applies the FIR to the I and Q values.
-    inline void apply(float& value_I, float& value_Q) noexcept {
+    void apply(float& value_I, float& value_Q) noexcept {
         m_delay_I[m_new_index] = value_I;
         m_delay_Q[m_new_index] = value_Q;
 
@@ -264,7 +264,7 @@ public:
     }
 
 private:
-    inline void sum_not_sym(float& sum_I, float& sum_Q) const noexcept {
+    void sum_not_sym(float& sum_I, float& sum_Q) const noexcept {
         // index that wraps around the ring buffer
         int j = m_new_index;
         for (size_t k = 0; k < numTaps(); k++) {
@@ -274,7 +274,7 @@ private:
         }
     }
 
-    inline void sum_sym(float& sum_I, float& sum_Q) const noexcept {
+    void sum_sym(float& sum_I, float& sum_Q) const noexcept {
         // half the number of taps
         const auto halfNumTaps = numTaps() >> 1; 
     
@@ -299,7 +299,7 @@ private:
         }
     }  
 
-    size_t bufferSize() const {
+    size_t bufferSize() const noexcept {
         return m_bufferSize;
     }
     // the number of taps currently used
@@ -312,7 +312,6 @@ private:
     bool m_areTapsOdd;
 
     // size of the delay buffers is the smallest power of 2 with >= maxNumTaps 
-    //static constexpr auto bufferSize = std::bit_ceil(MaxNumTaps);
     size_t m_bufferSize = 1;
 
     // buffer for the taps
