@@ -251,7 +251,7 @@ inline void SamplerBase<Rate_6_0_Mhz, Rate_16_0_Mhz>::sample(const float* __rest
 } 
 
 // 6.0 Mhz to 12.0 Mhz (12 streams) upsampling function
-template<>
+/*template<>
 inline void SamplerBase<Rate_6_0_Mhz, Rate_12_0_Mhz>::sample(const float* __restrict in, float* __restrict out) noexcept {
     for (size_t i = 0; i < NumBlocks; i++) {
         out[0] = in[0];   
@@ -259,7 +259,7 @@ inline void SamplerBase<Rate_6_0_Mhz, Rate_12_0_Mhz>::sample(const float* __rest
         in += 1;
         out += 2;
     }
-} 
+} */
 
 // 6.0 Mhz to 24.0 Mhz (24 streams) upsampling function
 template<>
