@@ -33,7 +33,7 @@ situations, a higher overall message rate can be achieved compared to a preamble
 - [Advanced Usage](./README_ADV.md)
 - [Experimental Features](#experimental-features)
 
-This is a first draft of the new README. The old complicated one is [here](OLD_README.md)
+This is a first draft of the new README. The old complicated one is [here](./OLD_README.md?plain=1)
 
 ## Compiling Stream1090
 Regardless of your hardware, you will need
