@@ -148,6 +148,14 @@ install(FILES configs/rtlsdr.ini configs/airspy.ini
     DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/stream1090
 )
 
+install(DIRECTORY custom_filters/
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/stream1090/custom_filters
+)
+
+install(DIRECTORY filter_utils/
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/stream1090/filter_utils
+)
+
 # ------------------------------------------------------------
 # CPack / DEB packaging
 # ------------------------------------------------------------

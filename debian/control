@@ -17,6 +17,7 @@ Package: stream1090
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}
 Recommends: socat
+Suggests: python3, python3-scipy, python3-numpy, python3-matplotlib
 Description: Mode-S demodulator for ADS-B reception via SDR
  stream1090 is a CRC-based Mode-S demodulator that reads IQ samples
  from an Airspy or RTL-SDR dongle and outputs raw Mode-S message frames
