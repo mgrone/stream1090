@@ -17,11 +17,13 @@ option(END_STATS             "Compile with STATS_END_ONLY" OFF)
 option(ENABLE_CUSTOM_INPUT   "Compile with STREAM1090_CUSTOM_INPUT" OFF)
 option(ENABLE_RSSI           "Compile with STREAM1090_ENABLE_RSSI" ON)
 option(ENABLE_RTLSDR_BLOG    "Enable vendored RTL-SDR Blog fork" OFF)
+option(ENABLE_TOO_MUCH_CPU   "Unlocks the 40 and 48 Msps speeds" OFF)
 
 set(STATS_DEF        STATS_ENABLED=$<BOOL:${ENABLE_STATS}>)
 set(STATS_END_DEF    STATS_END_ONLY=$<BOOL:${END_STATS}>)
 set(CUSTOM_INPUT_DEF STREAM1090_CUSTOM_INPUT=$<BOOL:${ENABLE_CUSTOM_INPUT}>)
 set(RSSI_DEF         STREAM1090_RSSI=$<BOOL:${ENABLE_RSSI}>)
+set(TOO_MUCH_CPU_DEF STREAM1090_TOO_MUCH_CPU=$<BOOL:${ENABLE_TOO_MUCH_CPU}>)
 
 # ------------------------------------------------------------
 # Compiler settings
@@ -130,6 +132,7 @@ target_compile_definitions(stream1090 PRIVATE
     ${STATS_END_DEF}
     ${CUSTOM_INPUT_DEF}
     ${RSSI_DEF}
+    ${TOO_MUCH_CPU_DEF}
     ${DEVICE_DEFINITIONS}
 )
 
