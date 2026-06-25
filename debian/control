@@ -1,0 +1,28 @@
+Source: stream1090
+Section: hamradio
+Priority: optional
+Maintainer: Joseph Prochazka <joe@swiftbyte.com>
+Build-Depends:
+ debhelper-compat (= 13),
+ cmake (>= 3.10),
+ pkg-config,
+ g++,
+ libairspy-dev [linux-any],
+ librtlsdr-dev [linux-any]
+Standards-Version: 4.6.2
+Homepage: https://github.com/jprochazka/stream1090
+Rules-Requires-Root: no
+
+Package: stream1090
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Recommends: socat
+Description: Mode-S demodulator for ADS-B reception via SDR
+ stream1090 is a CRC-based Mode-S demodulator that reads IQ samples
+ from an Airspy or RTL-SDR dongle and outputs raw Mode-S message frames
+ to stdout. It is designed to feed a decoder such as readsb or dump1090-fa
+ via socat over TCP.
+ .
+ Unlike preamble-based approaches, stream1090 maintains a set of shift
+ registers and identifies messages purely by CRC sum, which avoids missing
+ messages due to a missed preamble and enables error correction.
