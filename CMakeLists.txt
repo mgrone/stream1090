@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(stream1090)
+project(stream1090 VERSION 1.0.0)
 
 # ------------------------------------------------------------
 # Build type
@@ -134,6 +134,47 @@ target_compile_definitions(stream1090 PRIVATE
 )
 
 target_link_libraries(stream1090 PRIVATE ${DEVICE_LIBS})
+
+# ------------------------------------------------------------
+# Install rules
+# ------------------------------------------------------------
+include(GNUInstallDirs)
+
+install(TARGETS stream1090
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+
+install(FILES configs/rtlsdr.ini configs/airspy.ini
+    DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/stream1090
+)
+
+install(DIRECTORY custom_filters/
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/stream1090/custom_filters
+)
+
+install(DIRECTORY filter_utils/
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/stream1090/filter_utils
+)
+
+# ------------------------------------------------------------
+# CPack / DEB packaging
+# ------------------------------------------------------------
+set(CPACK_PACKAGE_NAME "stream1090")
+set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
+set(CPACK_PACKAGE_CONTACT "Joseph Prochazka <joe@swiftbyte.com>")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY
+    "Mode-S demodulator for ADS-B reception via SDR")
+set(CPACK_PACKAGE_DESCRIPTION
+    "stream1090 reads IQ samples from an Airspy or RTL-SDR dongle and outputs\n"
+    "raw Mode-S message frames to stdout using CRC-based message framing.\n"
+    "It is designed to feed a decoder such as readsb or dump1090-fa via socat.")
+set(CPACK_GENERATOR "DEB")
+set(CPACK_DEBIAN_PACKAGE_SECTION "hamradio")
+set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
+set(CPACK_DEBIAN_PACKAGE_RECOMMENDS "socat")
+set(CPACK_DEBIAN_PACKAGE_HOMEPAGE "https://github.com/jprochazka/stream1090")
+
+include(CPack)
 
 # ------------------------------------------------------------
 # table_gen (excluded from all)
