@@ -292,7 +292,7 @@ public:
 			// that we are not resetting an existing entry with the same icao.
 			if (!repaired && !m_cache.find(icaoWithCA & 0xFFFFFF).isValid()) {
 				// insert and mark it as seen.
-				m_cache.markAsSeen(m_cache.insertWithCA(icaoWithCA));
+				m_cache.insertWithCA(icaoWithCA);
 			}
 			// we stop here and do not send the message
 			return false;
