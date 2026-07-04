@@ -114,8 +114,8 @@ public:
 		m_table[entry.key].ttl = TTL_not_trusted;
 	}
 
-	void markAsSeen(const Iterator& entry) noexcept {
-		m_table[entry.key].ttl = TTL_not_trusted;
+	void markAsSeen(const Iterator& entry, uint16_t ttl = TTL_not_trusted) noexcept {
+		m_table[entry.key].ttl = ttl;
 	}
 
 	bool isTrusted(const Iterator& entry) const noexcept {
