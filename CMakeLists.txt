@@ -144,6 +144,16 @@ if(BUILD_TESTING)
     target_include_directories(crc_error_table_test PRIVATE include)
     target_compile_options(crc_error_table_test PRIVATE ${DEFAULT_COMPILE_OPTIONS})
     add_test(NAME crc_error_table_test COMMAND crc_error_table_test)
+
+    find_package(Threads REQUIRED)
+    add_executable(async_magnitude_reader_test tests/AsyncMagnitudeReaderTest.cpp)
+    target_include_directories(async_magnitude_reader_test PRIVATE include)
+    target_compile_options(async_magnitude_reader_test PRIVATE ${DEFAULT_COMPILE_OPTIONS})
+    target_link_libraries(async_magnitude_reader_test PRIVATE Threads::Threads)
+    add_test(NAME async_magnitude_reader_test COMMAND async_magnitude_reader_test)
+
+    add_test(NAME cli_help_test COMMAND stream1090 --help)
+    set_tests_properties(cli_help_test PROPERTIES PASS_REGULAR_EXPRESSION "--multicore")
 endif()
 
 # ------------------------------------------------------------

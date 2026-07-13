@@ -12,6 +12,7 @@
 #include "SampleStream.hpp"
 #include "InputStreamReader.hpp"
 #include "InputBufferReader.hpp"
+#include "AsyncMagnitudeReader.hpp"
 #include "IQPipeline.hpp"
 #include "LowPassFilter.hpp"
 #include "devices/IniConfig.hpp"
@@ -43,6 +44,7 @@ struct RuntimeVars {
     IniConfig deviceConfig;
     IniConfig::Section deviceConfigSection;
     std::vector<float> filterTaps;
+    bool multicore = false;
     bool verbose = true;
 };
 
@@ -202,6 +204,11 @@ public:
         // DSP PIPELINE (blocking)
         // -------------------------------
         auto start_wct = std::chrono::steady_clock::now();
+        auto closeDevice = [this] {
+            log("[Stream1090] Shutting down device.");
+            m_device->close();
+            log("[Stream1090] Device closed down.");
+        };
 
         if (m_device->isRunning()) {
             log("[Stream1090] Device is running, starting stream.");
@@ -212,18 +219,27 @@ public:
                 decltype(iqPipeline)
             > inputReader(iqPipeline, ringBuffer);
 
-            SampleStream<SamplerType> sampleStream;
-            auto messageHandler = constructMessageHandler(sampleStream);
-            
-            sampleStream.read(inputReader, messageHandler);
-        }
+            auto readStream = [&](auto& reader) {
+                SampleStream<SamplerType> sampleStream;
+                auto messageHandler = constructMessageHandler(sampleStream);
+                sampleStream.read(reader, messageHandler);
+            };
 
-        // -------------------------------
-        // SHUTDOWN
-        // -------------------------------
-        log("[Stream1090] Shutting down device.");
-        m_device->close();
-        log("[Stream1090] Device closed down.");
+            if (m_runtimeVars.multicore) {
+                log("[Stream1090] Multicore preprocessing enabled.");
+                AsyncMagnitudeReader<
+                    decltype(inputReader),
+                    SamplerType::InputBufferSize
+                > asyncInputReader(inputReader);
+                readStream(asyncInputReader);
+                closeDevice();
+            } else {
+                readStream(inputReader);
+                closeDevice();
+            }
+        } else {
+            closeDevice();
+        }
 
         auto end_wct = std::chrono::steady_clock::now();
         auto dur_wct_secs = std::chrono::duration_cast<std::chrono::milliseconds>(end_wct - start_wct).count();

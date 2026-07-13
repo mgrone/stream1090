@@ -180,6 +180,10 @@ To enable filtering use
 ```
 Stream1090 comes with a single filter for each sample rate combination. These have been optimized for a set of pre-recorded sample data provided by people from around the world with different setups.
 
+For hardware devices, `--multicore` moves IQ conversion, optional filtering, and magnitude calculation to a preprocessing thread. A bounded ring buffer then passes magnitude blocks to the sampling and demodulation thread. This keeps the stateful FIR ordered while allowing the scheduler to run the two CPU-heavy stages on separate cores. The default path and standard input mode remain synchronous.
+
+For Airspy input, `-q` enables the `DCRemoval`, `FlipSigns`, and `IQLowPass` stages. For RTL-SDR input it enables `IQLowPass` only.
+
 
 ## Stack Integration
 In order to utilize the output of Stream1090, we will send it to a decoder like readsb or dump1090-fa via TCP. This has one big advantage: You do not have to modify anything in the remaining stack.

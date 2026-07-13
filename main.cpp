@@ -119,6 +119,7 @@ void print_help() {
     "                       See configs/airspy.ini or configs/rtlsdr.ini\n"                       
     "  -q                   Enables IQ FIR filter with built-in taps\n"
     "  -f <taps file>       Taps to load that are used for the IQ FIR filter\n"
+    "  --multicore          Run IQ preprocessing on a separate thread\n"
     "  -v                   Verbose output\n"
     "  -h, --help           Show this help message\n\n";
 
@@ -137,6 +138,7 @@ struct CliArgs {
     std::string deviceConfig = "";
     std::string tapsFile = "";
     bool iq_filter = false;
+    bool multicore = false;
     bool verbose = false;
 };
 
@@ -171,6 +173,11 @@ bool parse_cli(int argc, char** argv, CliArgs& out) {
 
         if (arg == "-q") {
             out.iq_filter = true;
+            continue;
+        }
+
+        if (arg == "--multicore") {
+            out.multicore = true;
             continue;
         }
 
@@ -268,7 +275,7 @@ int main(int argc, char** argv) {
 
     CliArgs args;
     if (!parse_cli(argc, argv, args)) {
-        std::cerr << "Usage: stream1090 -s <rate> -u <rate> [-d <device.ini>] [-f <taps file>] [-q] [-v] [-h]\n";
+        std::cerr << "Usage: stream1090 -s <rate> -u <rate> [-d <device.ini>] [-f <taps file>] [-q] [--multicore] [-v] [-h]\n";
         return 1;
     }
 
@@ -339,6 +346,7 @@ int main(int argc, char** argv) {
 
     // set the verbose flag
     r_vars.verbose = args.verbose;
+    r_vars.multicore = args.multicore;
 
     // ------------------------
     // Sample speed parsing
@@ -413,7 +421,6 @@ int main(int argc, char** argv) {
     }
     return 0;
 }
-
 
 
 
