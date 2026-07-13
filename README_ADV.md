@@ -76,6 +76,8 @@ For ```airspy_rx``` this works the same way. However, make sure that your sample
     cat ./samples.bin | ./build/stream1090 -s 10 -u 24 > /dev/null
     ```
 
+When changing the CRC correction patterns, build and run the `table_gen` target to confirm the declared pattern count. The advanced table uses open addressing to preserve colliding entries. Then run CTest: `crc_error_table_test` verifies that every declared DF17 and DF11 correction remains reachable from its CRC syndrome.
+
 Important: If you want to see the statistics for the whole file and not every 5 seconds. You can enable the a summary at the end by rebuilding stream with after the following cmake call in the build directory
 ```
 cmake ../ --fresh -DEND_STATS=ON -DENABLE_STATS=ON && make
