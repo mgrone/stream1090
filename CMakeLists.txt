@@ -138,6 +138,14 @@ target_compile_definitions(stream1090 PRIVATE
 
 target_link_libraries(stream1090 PRIVATE ${DEVICE_LIBS})
 
+include(CTest)
+if(BUILD_TESTING)
+    add_executable(crc_error_table_test tests/CRCErrorTableTest.cpp)
+    target_include_directories(crc_error_table_test PRIVATE include)
+    target_compile_options(crc_error_table_test PRIVATE ${DEFAULT_COMPILE_OPTIONS})
+    add_test(NAME crc_error_table_test COMMAND crc_error_table_test)
+endif()
+
 # ------------------------------------------------------------
 # table_gen (excluded from all)
 # ------------------------------------------------------------

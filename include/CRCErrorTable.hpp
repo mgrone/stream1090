@@ -70,7 +70,7 @@ namespace CRC {
 
 
 	// Error correction table used for extended squitter messages
-	class DF17ErrorTableExperimental : public BaseErrorTable<4859> {
+	class DF17ErrorTableExperimental : public BaseErrorTable<6790> {
 	public:
 		constexpr DF17ErrorTableExperimental() {
 			// one bit error correction excluding the DF part
