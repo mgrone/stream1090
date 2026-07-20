@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
- * Copyright 2025 Martin Gronemann
- *
+ * Copyright 2026 Martin Gronemann
+ *                Enrico Lorenzoni 
  * This file is part of stream1090 and is licensed under the GNU General
  * Public License v3.0. See the top-level LICENSE file for details.
  */
