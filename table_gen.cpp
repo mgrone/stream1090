@@ -53,6 +53,11 @@ void generateKeySetExtSquitterBurst(std::vector<crc_t>& keys) {
     for (int i = 0; i < 16; i++) {
         keys.push_back(compute(encodeFixOp(129,i)));
     }
+
+    // two bit errors with one correct bit in between (101)
+    for (int i = 0; i < 110-5; i++) {
+        keys.push_back(compute(encodeFixOp(0x5,i)));
+    }
 }
 
 void generateKeySetShort1Bit(std::vector<crc_t>& keys) {
@@ -83,7 +88,7 @@ int testTableSize(const std::vector<crc_t>& keys, int tableSize) {
 }
 
 int bruteforceMinTableSize(const std::vector<crc_t>& keys) {
-    for (int N = keys.size(); N < 6000; N++) {
+    for (int N = keys.size(); N < 10000; N++) {
         int res = testTableSize(keys, N);
         if (res == 1) {
             return N;
