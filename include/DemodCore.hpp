@@ -324,6 +324,16 @@ public:
 		if (crc == 0) {
 			logStats(Stats::DF11_ICAO_CA_FOUND_GOOD_CRC);
 			return handleDF11ShortMessageWithZeroCRC(streamIndex, frameShort, false);
+		} else if (crc < 80) {
+			// PI is parity overlaid with the interrogator code (II/SI). Require
+			// a second, separate sighting before adding a new address to the cache.
+			const auto icaoWithCA = ModeS::extractICAOWithCA_Short(frameShort);
+			if (!m_cache.findWithCA(icaoWithCA).isValid()
+					&& !m_cache.confirmDF11Candidate(icaoWithCA))
+				return false;
+
+			logStats(Stats::DF11_ICAO_CA_FOUND_GOOD_CRC);
+			return handleDF11ShortMessageWithZeroCRC(streamIndex, frameShort, false);
 		} else  {
 			// ask the 1 bit error correction table for short messages for help
 			const auto fix_op = CRC::df11ErrorTable.lookup(crc);
