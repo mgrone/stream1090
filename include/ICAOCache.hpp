@@ -7,12 +7,17 @@
 
 #pragma once
 
+#include <array>
 #include <memory>
 
 class ICAOTable {
 public:
 	static constexpr auto TTL_not_trusted { 10 };
 	static constexpr auto TTL_trusted { 30 };
+	// tick() runs at 1 MHz. A DF11 frame lasts 56 us, so 100 us excludes
+	// detections of the same transmission while two seconds keeps the pair local.
+	static constexpr uint32_t DF11CandidateMinTicks { 100 };
+	static constexpr uint32_t DF11CandidateMaxTicks { 2'000'000 };
 	//static constexpr auto ALT_delta_25ft { 80 };
 	static constexpr auto ALT_delta_ft { 2000 };
     // number if bits used for the look up table 
@@ -96,7 +101,25 @@ public:
 		return ((m_table[key].icao & 0xffffffu) == icao) ? Iterator(key) : Iterator();
 	}
 
+	bool confirmDF11Candidate(uint32_t icaoWithCA) noexcept {
+		auto& candidate = m_df11Candidates[df11CandidateIndex(icaoWithCA)];
+		const auto age = m_df11Clock - candidate.firstSeen;
+
+		if (candidate.icaoWithCA != 0 && candidate.icaoWithCA == icaoWithCA) {
+			if (age >= DF11CandidateMinTicks && age <= DF11CandidateMaxTicks) {
+				candidate = DF11Candidate{};
+				return true;
+			}
+			if (age < DF11CandidateMinTicks)
+				return false;
+		}
+
+		candidate = DF11Candidate{icaoWithCA, m_df11Clock};
+		return false;
+	}
+
 	void tick() noexcept {
+		m_df11Clock++;
 		// the counter will wrap around every second exactly once
 		m_time1Mhz = (m_time1Mhz + 1) % 1000000;
 		
@@ -168,6 +191,15 @@ public:
 		return m_msgStatTable[it.key];
 	}
 private:
+	struct DF11Candidate {
+		uint32_t icaoWithCA { 0 };
+		uint64_t firstSeen { 0 };
+	};
+
+	static constexpr size_t df11CandidateIndex(uint32_t icaoWithCA) noexcept {
+		return (icaoWithCA * 0x9e3779b1u) >> 24;
+	}
+
 	void doTickForEntry(uint16_t index) noexcept {
 		auto& entry = m_table[index];
 		if (entry.icao == 0x0)
@@ -196,6 +228,8 @@ private:
 	
 	// runs from 0 to 999 999
 	uint32_t m_time1Mhz { 0 };
+	uint64_t m_df11Clock { 0 };
+	std::array<DF11Candidate, 256> m_df11Candidates{};
 
     // the table with the icao addresses including transponder CA 
 	std::unique_ptr<Entry[]> m_table;

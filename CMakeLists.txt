@@ -144,6 +144,16 @@ if(BUILD_TESTING)
     target_include_directories(crc_error_table_test PRIVATE include)
     target_compile_options(crc_error_table_test PRIVATE ${DEFAULT_COMPILE_OPTIONS})
     add_test(NAME crc_error_table_test COMMAND crc_error_table_test)
+
+    add_executable(icao_cache_test tests/ICAOCacheTest.cpp)
+    target_include_directories(icao_cache_test PRIVATE include)
+    target_compile_options(icao_cache_test PRIVATE ${DEFAULT_COMPILE_OPTIONS})
+    add_test(NAME icao_cache_test COMMAND icao_cache_test)
+
+    add_executable(df11_interrogator_test tests/DF11InterrogatorTest.cpp)
+    target_include_directories(df11_interrogator_test PRIVATE include)
+    target_compile_options(df11_interrogator_test PRIVATE ${DEFAULT_COMPILE_OPTIONS})
+    add_test(NAME df11_interrogator_test COMMAND df11_interrogator_test)
 endif()
 
 # ------------------------------------------------------------
