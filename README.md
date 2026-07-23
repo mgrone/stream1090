@@ -264,7 +264,7 @@ With stream1090 you proceed as above in the readsb section.
 #### Disable stream1090 statistics
 If you want to run stream1090 as a service, it makes sense to disable the statistics. You can do so by setting the corresponding option for cmake and rebuild the project:
 ```
-cmake ../ --fresh -DENABLE_STATS=OFF && make
+cmake .. -DENABLE_STATS=OFF && cmake --build .
 ```
 
 ## Experimental Features
@@ -282,7 +282,7 @@ If you have an RTL-SDR device and still not happy, you can push things further. 
 
 If you want to use it, there is no need to download anything nor building and such. Stream1090's CMake project will take care of it. Go to the build folder and rebuild with
 ```
-cmake ../ --fresh -DENABLE_RTLSDR_BLOG=1 && make
+cmake .. -DENABLE_RTLSDR_BLOG=1 && cmake --build .
 ``` 
 Check if everything has worked out by running ```./stream1090 -h```. The native device support section should now list ```RTL-SDR Blog (advanced)```.
 
