@@ -18,7 +18,7 @@ situations, a higher overall message rate can be achieved compared to a preamble
 
 ## Requirements
 - RTL-SDR based dongle or Airspy with antenna etc.
-- Debian-based Linux (Ubuntu, Raspberry Pi OS, ...)
+- Debian-based Linux (Ubuntu, Raspberry Pi OS, ...) or macOS
 - Optional: RaspberryPi 5 or 4 should work for most settings. 
   This depends on your settings
 - Optional: For RTL-SDR (not airspy), a RaspberryPi 3B and Zero 2 W seems to work without cooling.
@@ -45,6 +45,10 @@ For both, you will need the dev version of the corresponding libraries.
 
 - For Airspy ```sudo apt install libairspy-dev``` 
 - For RTL-SDR ```sudo apt install librtlsdr-dev``` 
+
+On macOS, install the build tools and device libraries with Homebrew:
+
+```brew install cmake pkgconf airspy rtl-sdr```
 
 We are ready to compile. Switch to the stream1090 folder and do the usual cmake thing.
 
