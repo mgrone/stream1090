@@ -187,6 +187,31 @@ bool AirspyDevice::applySetting(const std::string& key, const std::string& value
     if (key == "lna_gain")         return setLnaGain(std::stoi(value));
     if (key == "mixer_gain")       return setMixerGain(std::stoi(value));
     if (key == "vga_gain")         return setVgaGain(std::stoi(value));
+    if (key == "packing") {
+        // The device can send its 12-bit samples packed instead of padded
+        // into 16-bit words, which is 25% less USB bandwidth. That matters
+        // when the bus cannot sustain the unpacked rate: at 6 MSPS unpacked
+        // needs 24 MB/s, and on a Raspberry Pi sharing the bus with the rest
+        // of a feeder stack this dropped about 8% of the transfers. It is
+        // lossless here, since the ADC is 12-bit and the upper bits are
+        // padding.
+        //
+        // libairspy leaves this off by default and older firmware may not
+        // support it, so a rejected request is reported rather than
+        // swallowed: the caller ignores the return value, and the reduced
+        // sample rate would otherwise pass unnoticed.
+        const bool enabled =
+            value == "1" || value == "true" || value == "on";
+        if (airspy_set_packing(m_dev, enabled ? 1 : 0) != AIRSPY_SUCCESS) {
+            std::cerr << "[AirspyDevice] packing not supported by this "
+                         "device or firmware; continuing unpacked"
+                      << std::endl;
+            return false;
+        }
+        std::cerr << "[AirspyDevice] packing: "
+                  << (enabled ? "on" : "off") << std::endl;
+        return true;
+    }
     if (key == "bias_tee") {
         bool enabled = (value == "1" || value == "true" || value == "on");
         return setBiasTee(enabled);
