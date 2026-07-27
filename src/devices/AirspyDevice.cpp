@@ -202,14 +202,29 @@ bool AirspyDevice::applySetting(const std::string& key, const std::string& value
         // sample rate would otherwise pass unnoticed.
         const bool enabled =
             value == "1" || value == "true" || value == "on";
-        if (airspy_set_packing(m_dev, enabled ? 1 : 0) != AIRSPY_SUCCESS) {
+        if (m_state.packing == enabled)
+            return true;
+
+        const int result = airspy_set_packing(m_dev, enabled ? 1 : 0);
+        if (result == AIRSPY_ERROR_BUSY) {
+            // libairspy reallocates the USB transfers when packing changes,
+            // so it refuses while streaming. A reload can therefore reach
+            // this, and it is not a firmware limitation.
+            std::cerr << "[AirspyDevice] packing can only be changed before "
+                         "the device starts streaming; restart to apply"
+                      << std::endl;
+            return false;
+        }
+        if (result != AIRSPY_SUCCESS) {
             std::cerr << "[AirspyDevice] packing not supported by this "
                          "device or firmware; continuing unpacked"
                       << std::endl;
             return false;
         }
         std::cerr << "[AirspyDevice] packing: "
+                  << (m_state.packing ? "on" : "off") << " -> "
                   << (enabled ? "on" : "off") << std::endl;
+        m_state.packing = enabled;
         return true;
     }
     if (key == "bias_tee") {
