@@ -50,5 +50,13 @@ private:
     };
 
     ShadowState m_state;
+
+    template<typename Gains>
+    void adoptStageGains(const Gains& gains) {
+        m_state.lna_gain = gains.lna;
+        m_state.mixer_gain = gains.mixer;
+        m_state.vga_gain = gains.vga;
+    }
+
     airspy_device* m_dev = nullptr;
 };

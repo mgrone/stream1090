@@ -7,6 +7,88 @@
 #include "devices/AirspyDevice.hpp"
 #include <iostream>
 
+namespace {
+
+// libairspy applies these stage values for the combined gain presets and
+// gives no way to read them back, so they are mirrored here to keep the
+// shadow state honest. They are the table documented in configs/airspy.ini,
+// which is also what airspy_rx uses.
+struct StageGains {
+    int lna;
+    int mixer;
+    int vga;
+};
+
+constexpr int clampPreset(int index) {
+    return index < 0 ? 0 : (index > 21 ? 21 : index);
+}
+
+constexpr StageGains linearityPreset(int index) {
+    constexpr StageGains table[22] = {
+        { 0,  0,  4},
+        { 0,  0,  5},
+        { 0,  1,  6},
+        { 0,  1,  7},
+        { 0,  1,  8},
+        { 0,  1,  9},
+        { 0,  2, 10},
+        { 1,  2, 10},
+        { 3,  0, 10},
+        { 5,  0, 10},
+        { 6,  1, 10},
+        { 8,  0, 10},
+        { 9,  0, 10},
+        { 8,  5, 10},
+        { 9,  6, 10},
+        { 9,  6, 11},
+        {10,  7, 11},
+        {12,  8, 11},
+        {13,  9, 11},
+        {14, 11, 11},
+        {14, 12, 12},
+        {14, 12, 13}
+    };
+    return table[clampPreset(index)];
+}
+
+constexpr StageGains sensitivityPreset(int index) {
+    constexpr StageGains table[22] = {
+        { 0,  0,  4},
+        { 1,  0,  4},
+        { 2,  0,  4},
+        { 3,  0,  4},
+        { 5,  1,  4},
+        { 6,  2,  4},
+        { 7,  2,  4},
+        { 8,  3,  4},
+        { 9,  4,  4},
+        { 9,  4,  5},
+        {12,  4,  5},
+        {12,  7,  5},
+        {13,  8,  5},
+        {14,  9,  5},
+        {14,  9,  6},
+        {14, 10,  7},
+        {14, 10,  8},
+        {14, 11,  9},
+        {14, 12, 10},
+        {14, 12, 11},
+        {14, 12, 12},
+        {14, 12, 13}
+    };
+    return table[clampPreset(index)];
+}
+
+// Guard against a transcription slip in the tables above.
+static_assert(linearityPreset(0).lna == 0 && linearityPreset(0).vga == 4);
+static_assert(linearityPreset(19).lna == 14 && linearityPreset(19).mixer == 11);
+static_assert(linearityPreset(20).lna == 14 && linearityPreset(20).mixer == 12
+              && linearityPreset(20).vga == 12);
+static_assert(sensitivityPreset(10).lna == 12 && sensitivityPreset(10).vga == 5);
+static_assert(sensitivityPreset(21).vga == 13);
+
+} // namespace
+
 int airspy_callback(airspy_transfer_t* transfer) {
     auto* self = reinterpret_cast<AirspyDevice*>(transfer->ctx);
 
@@ -102,6 +184,9 @@ bool AirspyDevice::setLinearityGain(int value) {
         std::cerr << "[AirspyDevice] linearity_gain: "
                   << m_state.linearity_gain << " -> " << value << std::endl;
         m_state.linearity_gain = value;
+        // The preset moved all three stages, so the shadow copy has to follow
+        // or every later per-stage call compares against a stale value.
+        adoptStageGains(linearityPreset(value));
         return true;
     }
     return false;
@@ -115,6 +200,9 @@ bool AirspyDevice::setSensitivityGain(int value) {
         std::cerr << "[AirspyDevice] sensitivity_gain: "
                   << m_state.sensitivity_gain << " -> " << value << std::endl;
         m_state.sensitivity_gain = value;
+        // The preset moved all three stages, so the shadow copy has to follow
+        // or every later per-stage call compares against a stale value.
+        adoptStageGains(sensitivityPreset(value));
         return true;
     }
     return false;
