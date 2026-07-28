@@ -18,6 +18,7 @@ option(ENABLE_CUSTOM_INPUT   "Compile with STREAM1090_CUSTOM_INPUT" OFF)
 option(ENABLE_RSSI           "Compile with STREAM1090_ENABLE_RSSI" ON)
 option(ENABLE_RTLSDR_BLOG    "Enable vendored RTL-SDR Blog fork" OFF)
 option(ENABLE_TOO_MUCH_CPU   "Unlocks the 40 and 48 Msps speeds" OFF)
+option(BUILD_TESTING         "Build tests" OFF)
 
 set(STATS_DEF        STATS_ENABLED=$<BOOL:${ENABLE_STATS}>)
 set(STATS_END_DEF    STATS_END_ONLY=$<BOOL:${END_STATS}>)
