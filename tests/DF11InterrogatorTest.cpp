@@ -64,5 +64,17 @@ int main() {
         return 1;
 
     feedFrame(demod, third);
-    return !(handler.shortCount == 1 && handler.lastShort == third);
+    if (handler.shortCount != 1)
+        return 1;
+
+    // The interrogator code is xored out of the parity before the frame is
+    // emitted, so a downstream decoder recomputing the CRC sees zero. Assert
+    // the property rather than the resulting word, so the test keeps stating
+    // the contract if the frame layout ever moves.
+    if (CRC::compute<56>(Bits128(handler.lastShort)) != 0)
+        return 1;
+
+    // Everything outside the parity field must be untouched.
+    constexpr uint64_t parityMask = (uint64_t(1) << 24) - 1;
+    return !((handler.lastShort & ~parityMask) == (third & ~parityMask));
 }
