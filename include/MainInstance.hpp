@@ -174,7 +174,12 @@ public:
                 // 1) Device health check. Is the device still alive?
                 if (m_device && m_device->lastSignOfLife() > 1000ms) {
                     log("[Stream1090] No samples for 1000ms. Device lost?");
-                    m_device->close();
+                    // Only wake the pipeline here, and leave the device to the
+                    // shutdown path below, which closes it in every case.
+                    // Closing from this thread as well means two threads run
+                    // close() concurrently: both reach rtlsdr_close/airspy_close
+                    // on the same handle and both join the same reader thread.
+                    m_device->shutdownWriter();
                     ProcessSignals::handle_sigint(0);
                     break;
                 }
