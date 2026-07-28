@@ -243,6 +243,8 @@ void AirspyDevice::applyReloadedConfig(const IniConfig::Section& cfg) {
 
         if (key == "serial")
             continue; // immutable
+        if (key == "packing")
+            continue; // immutable
 
         applySetting(key, value);
     }
