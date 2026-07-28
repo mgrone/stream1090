@@ -333,7 +333,7 @@ public:
 				return false;
 
 			logStats(Stats::DF11_ICAO_CA_FOUND_GOOD_CRC);
-			return handleDF11ShortMessageWithZeroCRC(streamIndex, frameShort, false);
+			return handleDF11ShortMessageWithZeroCRC(streamIndex, frameShort ^ crc, false);
 		} else  {
 			// ask the 1 bit error correction table for short messages for help
 			const auto fix_op = CRC::df11ErrorTable.lookup(crc);
