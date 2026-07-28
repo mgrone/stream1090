@@ -46,6 +46,7 @@ private:
         int mixer_gain = 5;
         int vga_gain = 5;
         bool bias_tee = false;
+        bool packing = false;
     };
 
     ShadowState m_state;
