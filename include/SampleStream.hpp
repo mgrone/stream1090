@@ -12,41 +12,44 @@
 #include <iostream>
 #include <memory>
 #include <cstring>
+#include <algorithm>
 
 #include "DemodCore.hpp"
 #include "Sampler.hpp"
 #include "MessageHandler.hpp"
 
-#pragma once
-#include <memory>
-#include <cstring>
-#include <algorithm>
-
-template<typename T, size_t BlockSize, size_t NumBlocks, size_t Delay = 0>
-class BlockRing {
+// ------------------------------------------------------------
+// SPSC BlockRing
+// ------------------------------------------------------------
+template<typename T, size_t BlockSize, size_t NumBlocks, size_t Delay = 0, size_t NumHistoryBlocks = 0>
+class BlockRingAsync {
 public:
     static constexpr size_t TotalSize = BlockSize * NumBlocks + Delay;
 
-    BlockRing(const T& initValue)
+    BlockRingAsync(const T& initValue)
         : m_data(
-            new (std::align_val_t(16)) T[TotalSize],   // aligned allocation
-            AlignedDeleter{}                           // matching deleter
+            new (std::align_val_t(16)) T[TotalSize],
+            AlignedDeleter{}
         ),
           m_readPos(0),
           m_writePos(Delay),
-          m_fullBlocks(0)
+          m_fullBlocks(0),
+          m_finished(false)
     {
         std::fill(m_data.get(), m_data.get() + TotalSize, initValue);
     }
 
+    // producer thread
     T* writePos() noexcept {
-        return m_data.get() + m_writePos;
+        return m_data.get() + m_writePos.load(std::memory_order_relaxed);
     }
 
+    // producer thread
     void advanceWritePos() noexcept {
-        m_writePos += BlockSize;
+        size_t wp = m_writePos.load(std::memory_order_relaxed);
+        wp += BlockSize;
 
-        if (m_writePos + BlockSize > TotalSize) {
+        if (wp + BlockSize > TotalSize) {
             if constexpr (Delay > 0) {
                 std::memcpy(
                     m_data.get(),
@@ -54,36 +57,45 @@ public:
                     Delay * sizeof(T)
                 );
             }
-            m_writePos = Delay;
+            wp = Delay;
         }
 
-        m_fullBlocks++;
+        m_writePos.store(wp, std::memory_order_release);
+        m_fullBlocks.fetch_add(1, std::memory_order_release);
     }
 
+    // consumer thread
     const T* readPos() const noexcept {
-        return m_data.get() + m_readPos;
+        return m_data.get() + m_readPos.load(std::memory_order_relaxed);
     }
 
+    // consumer thread
     void advanceReadPos() noexcept {
-        m_readPos += BlockSize;
+        size_t rp = m_readPos.load(std::memory_order_relaxed);
+        rp += BlockSize;
 
-        if (m_readPos >= BlockSize * NumBlocks) {
-            m_readPos = 0;
+        if (rp >= BlockSize * NumBlocks) {
+            rp = 0;
         }
 
-        m_fullBlocks--;
+        m_readPos.store(rp, std::memory_order_release);
+        m_fullBlocks.fetch_sub(1, std::memory_order_release);
     }
 
+    // consumer thread
     bool isReadable() const noexcept {
-        return m_fullBlocks > 0;
+        return m_fullBlocks.load(std::memory_order_acquire) > 0;
     }
 
+    // producer thread
     bool isWritable() const noexcept {
-        return m_fullBlocks < NumBlocks;
+        return m_fullBlocks.load(std::memory_order_acquire) < NumBlocks - 1;
     }
 
+    // consumer thread
     const T& lookBack(size_t k, size_t offsetInBlock = 0) const noexcept {
-        size_t absoluteIndex = m_readPos + offsetInBlock;
+        size_t rp = m_readPos.load(std::memory_order_relaxed);
+        size_t absoluteIndex = rp + offsetInBlock;
         if (absoluteIndex >= TotalSize)
             absoluteIndex -= TotalSize;
 
@@ -92,6 +104,17 @@ public:
             lookBackIndex -= TotalSize;
 
         return m_data[lookBackIndex];
+    }
+
+    // consumer thread
+    bool eof() const noexcept {
+        return m_finished.load(std::memory_order_acquire) &&
+               (m_fullBlocks.load(std::memory_order_acquire) == 0);
+    }
+
+    // producer thread
+    void finished() noexcept {
+        m_finished.store(true, std::memory_order_release);
     }
 
 private:
@@ -103,21 +126,20 @@ private:
 
     std::unique_ptr<T[], AlignedDeleter> m_data;
 
-    size_t m_readPos;
-    size_t m_writePos;
-    size_t m_fullBlocks;
+    std::atomic<size_t> m_readPos;
+    std::atomic<size_t> m_writePos;
+    std::atomic<size_t> m_fullBlocks;
+    std::atomic<bool>   m_finished;
 };
-
-
 
 // the main stream class. This class manages reading from the input stream
 // and also manages the buffers
 template<typename Sampler>
 class SampleStream {
 public:
-    static constexpr size_t NumInputBuffers = 2;
+    static constexpr size_t NumInputBuffers = 4;
     // for now we will keep one extra sample buffer as history
-    static constexpr size_t NumSampleBuffers = 2;
+    static constexpr size_t NumSampleBuffers = 5;
     static constexpr size_t TotalSampleBufferLength = NumSampleBuffers * Sampler::SampleBufferSize + Sampler::SampleBufferOverlap;
 
     SampleStream() : m_inputRingBuffer(0.0f), m_sampleRingBuffer(0.0f) { }
@@ -150,9 +172,9 @@ public:
 private:
     uint32_t m_newBits[Sampler::NumStreams];    
     // we have one ring buffer for the IQ pipeline
-    BlockRing<float, Sampler::InputBufferSize,  NumInputBuffers,  Sampler::InputBufferOverlap>  m_inputRingBuffer;
+    BlockRingAsync<float, Sampler::InputBufferSize,  NumInputBuffers,  Sampler::InputBufferOverlap>  m_inputRingBuffer;
     // and one for the upsampled magnitudes
-    BlockRing<float, Sampler::SampleBufferSize, NumSampleBuffers, Sampler::SampleBufferOverlap> m_sampleRingBuffer;
+    BlockRingAsync<float, Sampler::SampleBufferSize, NumSampleBuffers, Sampler::SampleBufferOverlap> m_sampleRingBuffer;
     // not nice. Will change
     const float* m_demodPos = nullptr;
 };
@@ -161,58 +183,64 @@ private:
 template<typename Sampler>
 template<typename InputReaderType, MessageHandler Handler>
 inline void SampleStream<Sampler>::read(InputReaderType& inputReader, Handler& messageHandler) {  
-    // the core logic for message recognition
     DemodCore<Sampler::NumStreams, Handler> demodCore(messageHandler);
 
-     // the main loop for reading the stream
-    while (!inputReader.eof()) {
-        // the read and write positions for the current sample buffer based its index.
-        // we start reading at 0 + i * size           
-        // however, new values will be written NumStream / 2 later which is the overlap. 
-        // check if actually we need the sampler to resample, or if this is a 1:1 sampling
-        if constexpr(Sampler::isPassthrough) {
-            // tell the input reader to get us some data. Directly as magnitude. Since this is a passthrough sampler
-            // we will directly read into the samples buffer. There is no need for using the sampler at all.
-            // This works because the amount the input reader is getting us in this particular case is exactly the ChunkSize
-            static_assert(Sampler::NumBlocks == Sampler::InputBufferSize);
-            inputReader.readMagnitude(m_sampleRingBuffer.writePos());
-            m_sampleRingBuffer.advanceWritePos();
-        } else {
-            // tell the input reader to get us some data. Directly as magnitude.
+    std::thread helperThreadA([&]{ 
+        while (!inputReader.eof()) {
+            // check writable
+            if (!m_inputRingBuffer.isWritable()) {
+                std::this_thread::yield();
+                std::this_thread::sleep_for(std::chrono::microseconds(10));
+                continue;
+            }
+
             inputReader.readMagnitude(m_inputRingBuffer.writePos());
             m_inputRingBuffer.advanceWritePos();
-            // now ask the Sampler to resample the input magnitude to the output samples
-            // similar to the input buffer, write after the overlap to keep some old values for the next iteration
-            if (m_inputRingBuffer.isReadable()) {
-                Sampler::sample(m_inputRingBuffer.readPos(), m_sampleRingBuffer.writePos());
-                m_inputRingBuffer.advanceReadPos();
-                m_sampleRingBuffer.advanceWritePos();
-            }
         }
-        
+        //std::cerr << "m_inputRingBuffer finished" << std::endl;
+        m_inputRingBuffer.finished();
+    });
 
-        if (m_sampleRingBuffer.isReadable()) {
-            m_demodPos = m_sampleRingBuffer.readPos();
-            // extract phase shifted bits using manchester encoding
-            for (size_t i = 0; i < Sampler::SampleBufferSize; i += Sampler::NumStreams) {
-                for (size_t j = 0; j < Sampler::NumStreams; j++) {
-                    // Think of having a sample stream of 2Mhz (so what we get from the planes)
-                    // stream 0 << compare 0 and 1 
-                    // stream 1 << compare 1 and 2
-                    // 
-                    // stream 0 << compare 2 and 3
-                    // stream 1 << compare 3 and 4
-                    // ....
-                    // because the message might be shifted by one symbol
-                    m_newBits[j] = m_demodPos[j] > m_demodPos[j + (Sampler::NumStreams >> 1)]; 
-                    //m_sampleReadPos[i + j] > sampleReadPos[i + j + Sampler::SampleBufferOverlap];  
-                }
-                // and tell the demodulator to deal with the new bits
-                demodCore.shiftInNewBits(m_newBits);
-                // advance the readpos
-                m_demodPos += Sampler::NumStreams;
+    std::thread helperThreadB([&]{ 
+        while (!m_inputRingBuffer.eof()) {
+            // check writable
+            if (!m_sampleRingBuffer.isWritable() || !m_inputRingBuffer.isReadable()) {
+                std::this_thread::yield();
+                std::this_thread::sleep_for(std::chrono::microseconds(10));
+                continue;
             }
-            m_sampleRingBuffer.advanceReadPos();
+
+            Sampler::sample(m_inputRingBuffer.readPos(),
+                            m_sampleRingBuffer.writePos());
+
+            m_inputRingBuffer.advanceReadPos();
+            m_sampleRingBuffer.advanceWritePos();
         }
+        //std::cerr << "m_sampleRingBuffer" << std::endl;
+        m_sampleRingBuffer.finished();
+    });
+        
+    while (!m_sampleRingBuffer.eof()) {
+
+        if (!m_sampleRingBuffer.isReadable()) {
+            std::this_thread::sleep_for(std::chrono::microseconds(50));
+            std::this_thread::yield();
+            continue;
+        }
+
+        m_demodPos = m_sampleRingBuffer.readPos();
+
+        for (size_t i = 0; i < Sampler::SampleBufferSize; i += Sampler::NumStreams) {
+            for (size_t j = 0; j < Sampler::NumStreams; j++) {
+                m_newBits[j] = m_demodPos[j] > m_demodPos[j + (Sampler::NumStreams >> 1)];
+            }
+            demodCore.shiftInNewBits(m_newBits);
+            m_demodPos += Sampler::NumStreams;
+        }
+
+        m_sampleRingBuffer.advanceReadPos();
     }
+
+    helperThreadA.join();
+    helperThreadB.join();
 }
