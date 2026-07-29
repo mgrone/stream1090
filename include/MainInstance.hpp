@@ -162,6 +162,7 @@ public:
         // In other words, the driver is still initializing, but takes so long that
         // the watchdog thinks it is dead and tries to kill it.
         m_device->markAsAlive();
+        Log::info("Stream1090", "Devices has been marked as alive.");
 
         // -------------------------------
         // WATCHDOG THREAD
@@ -183,7 +184,12 @@ public:
                     break;
                 }
 
-                // 2) Reload request (SIGHUP)
+                // 2) Device health check. Issue a warning if the device falls behind.
+                if (m_device && m_device->lastSignOfLife() > 200ms) {
+                    Log::warn("Watchdog", "No samples for more than 200ms. The device is falling behind.");
+                }
+
+                // 3) Reload request (SIGHUP)
                 if (ProcessSignals::reloadRequested()) {
                     ProcessSignals::clearReload();
                     Log::info("Stream1090", "Re-reading config file.");
