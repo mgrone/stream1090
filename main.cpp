@@ -277,6 +277,7 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    Log::Logger::instance().setVerbose(args.verbose);
     // ------------------------
     // Device config loading
     // ------------------------
