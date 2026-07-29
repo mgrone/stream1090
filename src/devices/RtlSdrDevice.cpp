@@ -5,6 +5,7 @@
  * Public License v3.0. See the top-level LICENSE file for details.
  */
 #include "devices/RtlSdrDevice.hpp"
+#include "Logger.hpp"
 #include <iostream>
 
 static void rtlsdr_callback(unsigned char* buf, uint32_t len, void* ctx) {
@@ -134,6 +135,10 @@ bool RtlSdrDevice::open_with_serial(uint64_t serial) {
             rtlsdr_reset_buffer(m_dev)))
         return false;
     return true;
+}
+
+bool RtlSdrDevice::open() {
+    return open_with_serial(m_serialString);
 }
 
 // ----------------------
@@ -402,10 +407,18 @@ bool RtlSdrDevice::applySetting(const std::string& key, const std::string& value
 }
 
 
+void RtlSdrDevice::applyConfigPreOpen(const IniConfig::Section& cfg) {
+    for (auto& [key, value] : cfg) {
+
+        if (key == "serial")
+            m_serialString = value;
+    }
+}
+
 // ----------------------
 // Reload logic
 // ----------------------
-void RtlSdrDevice::applyReloadedConfig(const IniConfig::Section& cfg) {
+void RtlSdrDevice::applyConfigPostOpen(const IniConfig::Section& cfg) {
     for (auto& [key, value] : cfg) {
 
         if (key == "serial")

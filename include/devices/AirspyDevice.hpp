@@ -17,8 +17,7 @@ public:
     AirspyDevice(SampleRate sampleRate, IAsyncWriter<uint16_t>& bufferWriter)
         : InputDeviceBase<uint16_t>(sampleRate, bufferWriter) {}
 
-    bool open_with_serial(uint64_t serial = 0) override;
-    bool open() override { return open_with_serial(); }
+    bool open() override { return open_with_serial(m_serial); }
     bool start() override;
     void stop() override;
     void close() override;
@@ -32,12 +31,17 @@ public:
     bool setVgaGain(int value);
     bool setBiasTee(bool enabled);
 
-    bool applySetting(const std::string& key, const std::string& value) override;
+    // Called before opening the device to parse the serial
+    void applyConfigPreOpen(const IniConfig::Section& cfg) override;
 
     // Reload hook
-    void applyReloadedConfig(const IniConfig::Section& cfg) override;
+    void applyConfigPostOpen(const IniConfig::Section& cfg) override;
 
 private:
+    bool open_with_serial(uint64_t serial);
+    bool tryEnablingPacking();
+    bool applySetting(const std::string& key, const std::string& value);
+
     struct ShadowState {
         uint32_t frequency = 1090000000;
         int linearity_gain = 5;
@@ -46,9 +50,11 @@ private:
         int mixer_gain = 5;
         int vga_gain = 5;
         bool bias_tee = false;
-        bool packing = false;
+        //bool packing = true;
     };
 
     ShadowState m_state;
+    uint64_t m_serial = 0;
+    bool m_packingEnabled = true;
     airspy_device* m_dev = nullptr;
 };

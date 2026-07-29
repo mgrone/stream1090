@@ -101,26 +101,23 @@ public:
     bool setup_device() {
         const auto& cfg = m_runtimeVars.deviceConfigSection;
         
-        // before we open, we check the serial
-        std::string serial;
-        if (cfg.contains("serial")) {
-            serial = cfg.at("serial");
-        }
+        // tell the device to read all properties required to open it
+        Log::info("Stream1090","Reading initial properties from the ini file");
+        m_device->applyConfigPreOpen(cfg);
 
+        
         // let us try to open the device
-        if (!m_device->open_with_serial(serial)) {
+        Log::info("Stream1090","Trying to open the device.");
+        if (!m_device->open()) {
             Log::error("Stream1090","Opening device failed.");
             // this is not good at all
             return false;
         };
 
         // device is ready, apply all the other properties
-        for (auto& [key, value] : cfg) {
-            if (key == "serial")
-                continue;
-            m_device->applySetting(key, value);
-        }
-
+        Log::info("Stream1090","Device is open. Reading the ini file.");
+        m_device->applyConfigPostOpen(cfg);
+        
         // we do not care if any of the properties did not work
         return true;
    }
@@ -193,7 +190,7 @@ public:
 
                     if (reloadDeviceConfig()) {
                         Log::info("Stream1090", "Applying new configuration.");
-                        m_device->applyReloadedConfig(m_runtimeVars.deviceConfigSection);
+                        m_device->applyConfigPostOpen(m_runtimeVars.deviceConfigSection);
                     } else {
                         Log::warn("Stream1090", "Reload failed. Keeping old settings.");
                     }
@@ -201,7 +198,7 @@ public:
 
                 std::this_thread::sleep_for(200ms);
             }
-            Log::info("Stream1090", "Watchdog is done.");
+            Log::info("Watchdog", "Watchdog is done.");
         });
 
 

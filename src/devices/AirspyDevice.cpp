@@ -5,6 +5,7 @@
  * Public License v3.0. See the top-level LICENSE file for details.
  */
 #include "devices/AirspyDevice.hpp"
+#include "Logger.hpp"
 #include <iostream>
 
 int airspy_callback(airspy_transfer_t* transfer) {
@@ -44,12 +45,13 @@ bool AirspyDevice::open_with_serial(uint64_t serial) {
     if (airspy_set_freq(m_dev, m_state.frequency) != AIRSPY_SUCCESS)
         return false;
 
-    // Apply initial shadow state
-    /*setFrequency(m_state.frequency);
-    setLnaGain(m_state.lna_gain);
-    setMixerGain(m_state.mixer_gain);
-    setVgaGain(m_state.vga_gain);
-    setBiasTee(m_state.bias_tee);*/
+    if (m_packingEnabled) {
+        if (!tryEnablingPacking()) {
+            Log::error("AirspyDevice", "Packing has been requested, but is not supported");    
+            return false;
+        }
+        Log::info("AirspyDevice", "Packing is enabled");
+    }
 
     return true;
 }
@@ -174,6 +176,37 @@ bool AirspyDevice::setBiasTee(bool enabled) {
 }
 
 
+bool AirspyDevice::tryEnablingPacking() {
+    // The device can send its 12-bit samples packed instead of padded
+    // into 16-bit words, which is 25% less USB bandwidth. That matters
+    // when the bus cannot sustain the unpacked rate: at 6 MSPS unpacked
+    // needs 24 MB/s, and on a Raspberry Pi sharing the bus with the rest
+    // of a feeder stack this dropped about 8% of the transfers. It is
+    // lossless here, since the ADC is 12-bit and the upper bits are
+    // padding.
+    //
+    // libairspy leaves this off by default and older firmware may not
+    // support it. We will just report it since this is on by default.
+    const int result = airspy_set_packing(m_dev, 1);
+    if (result == AIRSPY_ERROR_BUSY) {
+        // libairspy reallocates the USB transfers when packing changes,
+        // so it refuses while streaming. A reload can therefore reach
+        // this, and it is not a firmware limitation.
+        std::cerr << "[AirspyDevice] packing can only be changed before "
+                        "the device starts streaming; restart to apply"
+                    << std::endl;
+        return false;
+    }
+    if (result != AIRSPY_SUCCESS) {
+        std::cerr << "[AirspyDevice] packing not supported by this "
+                        "device or firmware; continuing unpacked"
+                    << std::endl;
+        return false;
+    }
+
+    return true;
+}
+
 // ----------------------
 // applySetting()
 // ----------------------
@@ -187,46 +220,6 @@ bool AirspyDevice::applySetting(const std::string& key, const std::string& value
     if (key == "lna_gain")         return setLnaGain(std::stoi(value));
     if (key == "mixer_gain")       return setMixerGain(std::stoi(value));
     if (key == "vga_gain")         return setVgaGain(std::stoi(value));
-    if (key == "packing") {
-        // The device can send its 12-bit samples packed instead of padded
-        // into 16-bit words, which is 25% less USB bandwidth. That matters
-        // when the bus cannot sustain the unpacked rate: at 6 MSPS unpacked
-        // needs 24 MB/s, and on a Raspberry Pi sharing the bus with the rest
-        // of a feeder stack this dropped about 8% of the transfers. It is
-        // lossless here, since the ADC is 12-bit and the upper bits are
-        // padding.
-        //
-        // libairspy leaves this off by default and older firmware may not
-        // support it, so a rejected request is reported rather than
-        // swallowed: the caller ignores the return value, and the reduced
-        // sample rate would otherwise pass unnoticed.
-        const bool enabled =
-            value == "1" || value == "true" || value == "on";
-        if (m_state.packing == enabled)
-            return true;
-
-        const int result = airspy_set_packing(m_dev, enabled ? 1 : 0);
-        if (result == AIRSPY_ERROR_BUSY) {
-            // libairspy reallocates the USB transfers when packing changes,
-            // so it refuses while streaming. A reload can therefore reach
-            // this, and it is not a firmware limitation.
-            std::cerr << "[AirspyDevice] packing can only be changed before "
-                         "the device starts streaming; restart to apply"
-                      << std::endl;
-            return false;
-        }
-        if (result != AIRSPY_SUCCESS) {
-            std::cerr << "[AirspyDevice] packing not supported by this "
-                         "device or firmware; continuing unpacked"
-                      << std::endl;
-            return false;
-        }
-        std::cerr << "[AirspyDevice] packing: "
-                  << (m_state.packing ? "on" : "off") << " -> "
-                  << (enabled ? "on" : "off") << std::endl;
-        m_state.packing = enabled;
-        return true;
-    }
     if (key == "bias_tee") {
         bool enabled = (value == "1" || value == "true" || value == "on");
         return setBiasTee(enabled);
@@ -235,10 +228,34 @@ bool AirspyDevice::applySetting(const std::string& key, const std::string& value
     return false;
 }
 
+
+void AirspyDevice::applyConfigPreOpen(const IniConfig::Section& cfg) {
+    for (auto& [key, value] : cfg) {
+
+        if (key == "serial") {
+            try {
+                std::size_t pos = 0;
+                uint64_t serial = std::stoull(value, &pos, 0);
+                if (pos != value.size()) {
+                    m_serial = 0;
+                }
+                m_serial = serial;
+            } catch (...) {
+                m_serial = 0;
+            }   
+        }
+
+        if (key == "packing") {
+            m_packingEnabled = (value == "1" || value == "true" || value == "on");
+        }
+    }
+}
+
+
 // ----------------------
 // Reload logic
 // ----------------------
-void AirspyDevice::applyReloadedConfig(const IniConfig::Section& cfg) {
+void AirspyDevice::applyConfigPostOpen(const IniConfig::Section& cfg) {
     for (auto& [key, value] : cfg) {
 
         if (key == "serial")

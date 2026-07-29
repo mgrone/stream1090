@@ -16,10 +16,7 @@ public:
     RtlSdrDevice(SampleRate sampleRate, IAsyncWriter<uint8_t>& bufferWriter)
         : InputDeviceBase<uint8_t>(sampleRate, bufferWriter) {}
 
-    bool open_with_serial(uint64_t serial = 0) override;
-    bool open_with_serial(const std::string& serial) override;
-    bool open() override { return open_with_serial(); }
-
+    bool open() override;
     bool start() override;
     void stop() override;
     void close() override;
@@ -36,12 +33,17 @@ public:
     bool setMixerGain(int value);
     bool setVgaGain(int value);
     
-    bool applySetting(const std::string& key, const std::string& value) override;
+    // Called before opening the device to parse the serial
+    void applyConfigPreOpen(const IniConfig::Section& cfg) override;
 
     // Reload hook
-    void applyReloadedConfig(const IniConfig::Section& cfg) override;
+    void applyConfigPostOpen(const IniConfig::Section& cfg) override;
     
 private:
+    bool open_with_serial(uint64_t serial = 0);
+    bool open_with_serial(const std::string& serial);
+    bool applySetting(const std::string& key, const std::string& value);
+
     int nearestGain(int requested);
 
     struct ShadowState {
@@ -62,5 +64,6 @@ private:
     rtlsdr_dev_t* m_dev = nullptr;
     std::thread   m_thread;
     uint64_t m_actualSerial = 0;
+    std::string m_serialString = "";
 };
 
