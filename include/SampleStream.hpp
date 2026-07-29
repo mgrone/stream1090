@@ -187,26 +187,24 @@ inline void SampleStream<Sampler>::read(InputReaderType& inputReader, Handler& m
 
     std::thread helperThreadA([&]{ 
         while (!inputReader.eof()) {
-            // check writable
+            // check if we can write to the input buffer
             if (!m_inputRingBuffer.isWritable()) {
-                std::this_thread::yield();
-                std::this_thread::sleep_for(std::chrono::microseconds(10));
+                //std::this_thread::yield();
+                std::this_thread::sleep_for(std::chrono::microseconds(200));
                 continue;
             }
 
             inputReader.readMagnitude(m_inputRingBuffer.writePos());
             m_inputRingBuffer.advanceWritePos();
         }
-        //std::cerr << "m_inputRingBuffer finished" << std::endl;
         m_inputRingBuffer.finished();
     });
 
     std::thread helperThreadB([&]{ 
         while (!m_inputRingBuffer.eof()) {
-            // check writable
+            // check if we can write to the samplebuffer and read from inputbuffer
             if (!m_sampleRingBuffer.isWritable() || !m_inputRingBuffer.isReadable()) {
-                std::this_thread::yield();
-                std::this_thread::sleep_for(std::chrono::microseconds(10));
+                std::this_thread::sleep_for(std::chrono::microseconds(200));
                 continue;
             }
 
@@ -216,15 +214,14 @@ inline void SampleStream<Sampler>::read(InputReaderType& inputReader, Handler& m
             m_inputRingBuffer.advanceReadPos();
             m_sampleRingBuffer.advanceWritePos();
         }
-        //std::cerr << "m_sampleRingBuffer" << std::endl;
         m_sampleRingBuffer.finished();
     });
         
+    // main thread
     while (!m_sampleRingBuffer.eof()) {
-
+        // check if we can read from the sample buffer
         if (!m_sampleRingBuffer.isReadable()) {
-            std::this_thread::sleep_for(std::chrono::microseconds(50));
-            std::this_thread::yield();
+            std::this_thread::sleep_for(std::chrono::microseconds(200));
             continue;
         }
 
