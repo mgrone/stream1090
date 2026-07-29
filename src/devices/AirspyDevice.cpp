@@ -114,7 +114,7 @@ bool AirspyDevice::open_with_serial(uint64_t serial) {
         : airspy_open_sn(&m_dev, serial);
 
     if (rc != AIRSPY_SUCCESS) {
-        std::cerr << "[AirspyDevice] airspy_open failed.\n";
+        Log::error("AirspyDevice", "airspy_open failed");
         return false;
     }
 
@@ -132,7 +132,7 @@ bool AirspyDevice::open_with_serial(uint64_t serial) {
             Log::error("AirspyDevice", "Packing has been requested, but is not supported");    
             return false;
         }
-        Log::info("AirspyDevice", "Packing is enabled");
+        //Log::info("AirspyDevice", "Packing is enabled");
     }
 
     return true;
@@ -170,8 +170,8 @@ bool AirspyDevice::setFrequency(uint32_t hz) {
         return true;
 
     if (airspy_set_freq(m_dev, hz) == AIRSPY_SUCCESS) {
-        std::cerr << "[AirspyDevice] frequency: "
-                  << m_state.frequency << " -> " << hz << std::endl;
+        Log::info("AirspyDevice") << "frequency: "
+                  << m_state.frequency << " -> " << hz;
         m_state.frequency = hz;
         return true;
     }
@@ -183,8 +183,8 @@ bool AirspyDevice::setLinearityGain(int value) {
         return true;
 
     if (airspy_set_linearity_gain(m_dev, value) == AIRSPY_SUCCESS) {
-        std::cerr << "[AirspyDevice] linearity_gain: "
-                  << m_state.linearity_gain << " -> " << value << std::endl;
+        Log::info("AirspyDevice") << "linearity_gain: "
+                  << m_state.linearity_gain << " -> " << value;
         m_state.linearity_gain = value;
         // The preset moved all three stages, so the shadow copy has to follow
         // or every later per-stage call compares against a stale value.
@@ -199,8 +199,8 @@ bool AirspyDevice::setSensitivityGain(int value) {
         return true;
 
     if (airspy_set_sensitivity_gain(m_dev, value) == AIRSPY_SUCCESS) {
-        std::cerr << "[AirspyDevice] sensitivity_gain: "
-                  << m_state.sensitivity_gain << " -> " << value << std::endl;
+        Log::info("AirspyDevice") << "sensitivity_gain: "
+                  << m_state.sensitivity_gain << " -> " << value;
         m_state.sensitivity_gain = value;
         // The preset moved all three stages, so the shadow copy has to follow
         // or every later per-stage call compares against a stale value.
@@ -215,8 +215,8 @@ bool AirspyDevice::setLnaGain(int value) {
         return true;
 
     if (airspy_set_lna_gain(m_dev, value) == AIRSPY_SUCCESS) {
-        std::cerr << "[AirspyDevice] lna_gain: "
-                  << m_state.lna_gain << " -> " << value << std::endl;
+        Log::info("AirspyDevice") << "lna_gain: "
+                  << m_state.lna_gain << " -> " << value;
         m_state.lna_gain = value;
         return true;
     }
@@ -228,8 +228,8 @@ bool AirspyDevice::setMixerGain(int value) {
         return true;
 
     if (airspy_set_mixer_gain(m_dev, value) == AIRSPY_SUCCESS) {
-        std::cerr << "[AirspyDevice] mixer_gain: "
-                  << m_state.mixer_gain << " -> " << value << std::endl;
+        Log::info("AirspyDevice") << "mixer_gain: "
+                  << m_state.mixer_gain << " -> " << value;
         m_state.mixer_gain = value;
         return true;
     }
@@ -241,8 +241,8 @@ bool AirspyDevice::setVgaGain(int value) {
         return true;
 
     if (airspy_set_vga_gain(m_dev, value) == AIRSPY_SUCCESS) {
-        std::cerr << "[AirspyDevice] vga_gain: "
-                  << m_state.vga_gain << " -> " << value << std::endl;
+        Log::info("AirspyDevice") << "vga_gain: "
+                  << m_state.vga_gain << " -> " << value;
         m_state.vga_gain = value;
         return true;
     }
@@ -254,9 +254,9 @@ bool AirspyDevice::setBiasTee(bool enabled) {
         return true;
 
     if (airspy_set_rf_bias(m_dev, enabled ? 1 : 0) == AIRSPY_SUCCESS) {
-        std::cerr << "[AirspyDevice] bias_tee: "
+        Log::info("AirspyDevice") << "bias_tee: "
                   << (m_state.bias_tee ? "on" : "off")
-                  << " -> " << (enabled ? "on" : "off") << std::endl;
+                  << " -> " << (enabled ? "on" : "off");
         m_state.bias_tee = enabled;
         return true;
     }
@@ -280,15 +280,13 @@ bool AirspyDevice::tryEnablingPacking() {
         // libairspy reallocates the USB transfers when packing changes,
         // so it refuses while streaming. A reload can therefore reach
         // this, and it is not a firmware limitation.
-        std::cerr << "[AirspyDevice] packing can only be changed before "
-                        "the device starts streaming; restart to apply"
-                    << std::endl;
+        Log::error("AirspyDevice") << "Packing can only be changed before "
+                        "the device starts streaming; restart to apply";
         return false;
     }
     if (result != AIRSPY_SUCCESS) {
-        std::cerr << "[AirspyDevice] packing not supported by this "
-                        "device or firmware; continuing unpacked"
-                    << std::endl;
+        Log::error("AirspyDevice") << "Packing not supported by this "
+                        "device or firmware; continuing unpacked";
         return false;
     }
 

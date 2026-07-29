@@ -38,8 +38,8 @@ bool RtlSdrDevice::open_with_serial(const std::string& serial) {
 
     int index = rtlsdr_get_index_by_serial(serial.c_str());
     if (index < 0) {
-        std::cerr << "[RtlSdrDevice] No RTL-SDR device found with serial '"
-                  << serial << "'" << std::endl;
+        Log::error("RtlSdrDevice") << "No RTL-SDR device found with serial '"
+                  << serial << "'";
         return false;
     }
 
@@ -52,8 +52,8 @@ bool RtlSdrDevice::open_with_serial(const std::string& serial) {
 
     auto check = [&](const char* name, int rc) {
         if (rc != 0) {
-            std::cerr << "[RtlSdrDevice] ERROR: " << name
-                    << " failed with code " << rc << std::endl;
+            Log::error("RtlSdrDevice") << "ERROR: " << name
+                    << " failed with code " << rc;
             return false;
         }
         return true;
@@ -112,8 +112,8 @@ bool RtlSdrDevice::open_with_serial(uint64_t serial) {
     
     auto check = [&](const char* name, int rc) {
         if (rc != 0) {
-            std::cerr << "[RtlSdrDevice] ERROR: " << name
-                    << " failed with code " << rc << std::endl;
+            Log::error("RtlSdrDevice") << "ERROR: " << name
+                    << " failed with code " << rc;
             return false;
         }
         return true;
@@ -160,7 +160,7 @@ bool RtlSdrDevice::start() {
         );
 
         if (rc != 0)
-            std::cerr << "rtlsdr_read_async failed: " << rc << std::endl;
+            Log::error("RtlSdrDevice") << "rtlsdr_read_async failed: " << rc;
 
         m_running.store(false, std::memory_order_relaxed);
     });
@@ -221,8 +221,8 @@ bool RtlSdrDevice::setFrequency(uint32_t hz) {
         return true;
 
     if (rtlsdr_set_center_freq(m_dev, hz) == 0) {
-        std::cerr << "[RtlSdrDevice] frequency: "
-                  << m_state.frequency << " -> " << hz << std::endl;
+        Log::info("RtlSdrDevice") << "frequency: "
+                  << m_state.frequency << " -> " << hz;
         m_state.frequency = hz;
         return true;
     }
@@ -239,10 +239,9 @@ bool RtlSdrDevice::setGain(float gainDb) {
     int nearest = nearestGain(gainTenths);
 
     if (rtlsdr_set_tuner_gain(m_dev, nearest) == 0) {
-        std::cerr << "[RtlSdrDevice] gain: "
+        Log::info("RtlSdrDevice") << "gain: "
                   << m_state.gain_db << " dB -> " << gainDb << " dB"
-                  << " (nearest step = " << nearest/10.0f << " dB)"
-                  << std::endl;
+                  << " (nearest step = " << nearest/10.0f << " dB)";
         m_state.gain_db = gainDb;
         return true;
     }
@@ -254,9 +253,9 @@ bool RtlSdrDevice::setAgc(bool enabled) {
         return true;
 
     if (rtlsdr_set_agc_mode(m_dev, enabled ? 1 : 0) == 0) {
-        std::cerr << "[RtlSdrDevice] agc: "
+        Log::info("RtlSdrDevice") << "agc: "
                   << (m_state.agc ? "on" : "off")
-                  << " -> " << (enabled ? "on" : "off") << std::endl;
+                  << " -> " << (enabled ? "on" : "off");
         m_state.agc = enabled;
         return true;
     }
@@ -268,9 +267,9 @@ bool RtlSdrDevice::setBiasTee(bool enabled) {
         return true;
 
     if (rtlsdr_set_bias_tee(m_dev, enabled ? 1 : 0) == 0) {
-        std::cerr << "[RtlSdrDevice] bias_tee: "
+        Log::info("RtlSdrDevice") << "bias_tee: "
                   << (m_state.bias_tee ? "on" : "off")
-                  << " -> " << (enabled ? "on" : "off") << std::endl;
+                  << " -> " << (enabled ? "on" : "off");
         m_state.bias_tee = enabled;
         return true;
     }
@@ -282,8 +281,8 @@ bool RtlSdrDevice::setPpm(int ppm) {
         return true;
 
     if (rtlsdr_set_freq_correction(m_dev, ppm) == 0) {
-        std::cerr << "[RtlSdrDevice] ppm: "
-                  << m_state.ppm << " -> " << ppm << std::endl;
+        Log::info("RtlSdrDevice") << "ppm: "
+                  << m_state.ppm << " -> " << ppm;
         m_state.ppm = ppm;
         return true;
     }
@@ -295,9 +294,9 @@ bool RtlSdrDevice::setOffsetTuning(bool enabled) {
         return true;
 
     if (rtlsdr_set_offset_tuning(m_dev, enabled ? 1 : 0) == 0) {
-        std::cerr << "[RtlSdrDevice] offset_tuning: "
+        Log::info("RtlSdrDevice") << "offset_tuning: "
                   << (m_state.offset_tuning ? "on" : "off")
-                  << " -> " << (enabled ? "on" : "off") << std::endl;
+                  << " -> " << (enabled ? "on" : "off");
         m_state.offset_tuning = enabled;
         return true;
     }
@@ -309,8 +308,8 @@ bool RtlSdrDevice::setTunerBandwidth(uint32_t bw) {
         return true;
 
     if (rtlsdr_set_tuner_bandwidth(m_dev, bw) == 0) {
-        std::cerr << "[RtlSdrDevice] tuner_bandwidth: "
-                  << m_state.tuner_bandwidth << " -> " << bw << std::endl;
+        Log::info("RtlSdrDevice") << "tuner_bandwidth: "
+                  << m_state.tuner_bandwidth << " -> " << bw;
         m_state.tuner_bandwidth = bw;
         return true;
     }
@@ -329,8 +328,8 @@ bool RtlSdrDevice::setLnaGain(int gain) {
     if (rtlsdr_r82xx_set_lna_gain(m_dev, gain) != 0)
         return false;
 
-    std::cerr << "[RtlSdrDevice] LNA gain: "
-              << m_state.lna_gain << " -> " << gain << std::endl;
+    Log::info("RtlSdrDevice") << "LNA gain: "
+              << m_state.lna_gain << " -> " << gain;
 
     m_state.lna_gain = gain;
     return true;
@@ -347,8 +346,8 @@ bool RtlSdrDevice::setMixerGain(int gain) {
     if (rtlsdr_r82xx_set_mixer_gain(m_dev, gain) != 0)
         return false;
 
-    std::cerr << "[RtlSdrDevice] Mixer gain: "
-              << m_state.mixer_gain << " -> " << gain << std::endl;
+    Log::info("RtlSdrDevice") << "Mixer gain: "
+              << m_state.mixer_gain << " -> " << gain;
 
     m_state.mixer_gain = gain;
     return true;
@@ -365,8 +364,8 @@ bool RtlSdrDevice::setVgaGain(int gain) {
     if (rtlsdr_r82xx_set_vga_gain(m_dev, gain) != 0)
         return false;
 
-    std::cerr << "[RtlSdrDevice] VGA gain: "
-              << m_state.vga_gain << " -> " << gain << std::endl;
+    Log::info("RtlSdrDevice") << "VGA gain: "
+              << m_state.vga_gain << " -> " << gain;
 
     m_state.vga_gain = gain;
     return true;
