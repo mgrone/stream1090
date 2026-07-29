@@ -50,8 +50,14 @@ private:
         int mixer_gain = 5;
         int vga_gain = 5;
         bool bias_tee = false;
-        //bool packing = true;
     };
+
+    template<typename Gains>
+    void adoptStageGains(const Gains& gains) {
+        m_state.lna_gain = gains.lna;
+        m_state.mixer_gain = gains.mixer;
+        m_state.vga_gain = gains.vga;
+    }
 
     ShadowState m_state;
     uint64_t m_serial = 0;
