@@ -408,11 +408,12 @@ int main(int argc, char** argv) {
     // ------------------------
     // Let's go
     // ------------------------
-    if (!runInstanceFromPresets(c_vars, r_vars)) {
+    const auto outcome = runInstanceFromPresets(c_vars, r_vars);
+    if (!outcome) {
         std::cerr << "[Stream1090] Configuration is not supported: "<< c_vars.inputRate << " -> " << c_vars.outputRate << std::endl;
-        return -1;
+        return 1;
     }
-    return 0;
+    return *outcome ? 0 : 1;
 }
 
 

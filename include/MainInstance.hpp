@@ -18,6 +18,7 @@
 #include "devices/IniConfig.hpp"
 #include "devices/DeviceFactory.hpp"
 #include <chrono>
+#include <optional>
 #include <sstream>
 
 
@@ -130,26 +131,26 @@ public:
         }
     }
 
-    void run_async_device(auto& iqPipeline) {
+    bool run_async_device(auto& iqPipeline) {
         RingBuffer ringBuffer;
         Writer writer(ringBuffer);
 
         m_device = DeviceFactory<RawType>::create(m_runtimeVars.deviceType, inputRate, writer);
         if (!m_device) {
             Log::error("Stream1090", "Device instantiation failed.");
-            return;
+            return false;
         }
         Log::info("Stream1090", "Device created.");
 
         if (!setup_device()) {
             Log::error("Stream1090", "Device configuration failed.");
-            return;
+            return false;
         }
         Log::info("Stream1090", "Device successfully configured.");
 
         if (!m_device->start()) {
             Log::error("Stream1090", "Device refuses to start. Aborting.");
-            return;
+            return false;
         }
         Log::info("Stream1090", "Device is running. ");
 
@@ -244,11 +245,11 @@ public:
         }
         Log::info("Stream1090", "Shutdown completed.");
         Log::msg("Stream1090") << "Finished. (" << dur_wct_secs/1000.0 << "s)";
-        std::exit(0);
+        return true;
     }
 
 
-    void run_sync_stdin(auto& iqPipeline) {
+    bool run_sync_stdin(auto& iqPipeline) {
         Log::info("Stream1090", "Reading from stdin");
         auto start_wct = std::chrono::steady_clock::now();
 
@@ -266,20 +267,20 @@ public:
         auto end_wct = std::chrono::steady_clock::now();
         auto dur_wct_secs = std::chrono::duration_cast<std::chrono::milliseconds>(end_wct - start_wct).count();
         Log::msg("Stream1090") << "Finished. (" << dur_wct_secs/1000.0 << "s)";
-        std::exit(0);
+        return true;
     }
 
-    void run() {
+    bool run() {
         // setup pipeline
         auto iqPipeline = IQPipelineSelector<inputRate, outputRate, pipelineOption>().make(m_runtimeVars.filterTaps);
         Log::info("",iqPipeline.toString());
         // for sync read from std in we take a short cut
         if (m_runtimeVars.deviceType == InputDeviceType::STREAM) {
             Log::info("Stream1090", "Sync Stdin Mode");
-            run_sync_stdin(iqPipeline);
+            return run_sync_stdin(iqPipeline);
         } else {
             Log::info("Stream1090", "Async Device Mode");
-            run_async_device(iqPipeline);
+            return run_async_device(iqPipeline);
         }
     }
 
@@ -298,8 +299,12 @@ constexpr bool for_each_in_tuple(const Tuple& t, F&& f) {
     return done;
 }
 
-bool runInstanceFromPresets(const CompileTimeVars& compileTimeVars, const RuntimeVars& runtimeVars) {
-    return for_each_in_tuple(presets, [&](auto const& p) {
+// Returns nothing when no preset matches the requested configuration, and
+// otherwise the outcome of the run: true when the instance ran and shut down
+// normally, false when it gave up (for example because the device never came up).
+std::optional<bool> runInstanceFromPresets(const CompileTimeVars& compileTimeVars, const RuntimeVars& runtimeVars) {
+    std::optional<bool> outcome;
+    for_each_in_tuple(presets, [&](auto const& p) {
         using P = std::decay_t<decltype(p)>;
 
         if (P::RawFormatType::id  == compileTimeVars.rawFormat &&
@@ -307,9 +312,10 @@ bool runInstanceFromPresets(const CompileTimeVars& compileTimeVars, const Runtim
             P::outputRate         == compileTimeVars.outputRate &&
             P::pipelineOption     == compileTimeVars.pipelineOption) 
         {
-            MainInstance<P>(runtimeVars).run();
+            outcome = MainInstance<P>(runtimeVars).run();
             return true;
         }
         return false;
     });
+    return outcome;
 }
