@@ -9,6 +9,7 @@
 
 #include "Bits128.hpp"
 #include "CRC.hpp"
+#include "ErasureRepair.hpp"
 #include "CRCErrorTable.hpp"
 #include "ModeS.hpp"
 #include "ICAOCache.hpp"
@@ -36,6 +37,15 @@ public:
 	// This is the main entry function called by the SampleStream. 
 	// NumStreams many new bits are shifted in. The crc's are updated
 	// and the streams are being checked for new messages
+	using ConfidenceFn = float(*)(const void*, uint8_t, size_t);
+
+	/// Installed by SampleStream so a repair can ask for the demodulator's
+	/// per-bit confidence without the demodulation loop having to store it.
+	void setConfidenceSource(const void* ctx, ConfidenceFn fn) noexcept {
+		m_confidenceCtx = ctx;
+		m_confidenceFn = fn;
+	}
+
 	void shiftInNewBits(uint32_t* cmp) {
 		m_shiftRegisters.shiftInNewBits(cmp); 
 		// the streams and crc's are ready
@@ -217,9 +227,85 @@ public:
 					return sendFrameLongAligned(streamIndex, downlinkFormat, crc, toRepair, e);
 				};				
 			}
+			// The address must belong to a trusted aircraft for a repair to be
+			// accepted at all, so test that first. maybeTrusted() is a single
+			// L1-resident load; this runs at every DF17 header position, where a
+			// full cache probe would be a memory stall.
+			const auto icaoBefore = ModeS::extractICAOWithCA_Long(frame);
+			if (m_cache.maybeTrusted(icaoBefore)
+					&& tryErasureRepairLong(streamIndex, downlinkFormat, frame, crc, icaoBefore))
+				return true;
 			logStats(Stats::DF17_REPAIR_FAILED);
 		}
 		return false;
+	}
+
+	/// @brief Repair a damaged extended squitter by solving for which of the
+	/// least confident bits were flipped. Acceptance is the same as the error
+	/// table path: the recovered address must be a trusted aircraft.
+	/// @return returns true if a message has been send to the output
+	bool tryErasureRepairLong(int streamIndex, const uint8_t& downlinkFormat,
+							  const Bits128& frame, CRC::crc_t crc, uint32_t icaoBefore) {
+		if (m_confidenceFn == nullptr)
+			return false;
+
+		// maybeTrusted() can report a stale slot, so confirm against the table
+		const auto before = m_cache.findWithCA(icaoBefore);
+		if (!before.isValid() || !m_cache.isTrusted(before))
+			return false;
+
+		// collect the least confident bits, excluding the DF field
+		constexpr uint8_t SearchLimit = 112 - 5;
+		constexpr int k = ErasureRepair::Candidates;
+		uint8_t candidates[k];
+		float confidences[k];
+		int count = 0;
+
+		for (uint8_t bit = 0; bit < SearchLimit; ++bit) {
+			const float c = m_confidenceFn(m_confidenceCtx, bit, size_t(streamIndex));
+			if (count == k && c >= confidences[k - 1])
+				continue;
+			int j = (count < k) ? count++ : k - 1;
+			for (; j > 0 && confidences[j - 1] > c; --j) {
+				confidences[j] = confidences[j - 1];
+				candidates[j] = candidates[j - 1];
+			}
+			confidences[j] = c;
+			candidates[j] = bit;
+		}
+
+		const auto solution = ErasureRepair::solve(crc, candidates, size_t(count));
+		if (!solution.solved)
+			return false;
+
+		// Real damage is a few bits; a spurious solve over this many
+		// candidates flips about half of them. The weight cap is what pays
+		// for the width of the candidate window.
+		if (__builtin_popcount(solution.mask) > ErasureRepair::MaxWeight)
+			return false;
+
+		Bits128 repaired{ frame };
+		for (int i = 0; i < count; ++i) {
+			if (!((solution.mask >> i) & 1))
+				continue;
+			Bits128 flip(uint64_t(1));
+			flip.shiftLeft(candidates[i]);
+			repaired = repaired ^ flip;
+		}
+
+		// the solve is only as good as the candidate set, so verify
+		if (CRC::compute<112>(repaired) != 0)
+			return false;
+
+		// repairing may have moved the address; it must still be trusted
+		const auto icaoWithCA = ModeS::extractICAOWithCA_Long(repaired);
+		const auto e = m_cache.findWithCA(icaoWithCA);
+		if (!e.isValid() || !m_cache.isTrusted(e))
+			return false;
+
+		logStats(Stats::DF17_REPAIR_SUCCESS);
+		m_cache.markAsTrustedSeen(e);
+		return sendFrameLongAligned(streamIndex, downlinkFormat, crc, repaired, e);
 	}
 
 	/// @brief Handler for long ACAS and Comm-B messages
@@ -365,6 +451,9 @@ public:
 
 
 private:
+	const void* m_confidenceCtx = nullptr;
+	ConfidenceFn m_confidenceFn = nullptr;
+
 
 #if defined(STATS_ENABLED) && STATS_ENABLED
 	Stats::StatsLog m_statsLog;

@@ -12,6 +12,7 @@
 #include <iostream>
 #include <memory>
 #include <cstring>
+#include <cmath>
 
 #include "DemodCore.hpp"
 #include "Sampler.hpp"
@@ -126,6 +127,22 @@ public:
     template<typename InputReaderType, MessageHandler Handler>
     void read(InputReaderType& inputReader, Handler& messageHandler);
 
+    /// Recompute the demodulator's confidence in a single frame bit, straight
+    /// from the retained sample ring. The demodulation loop deliberately stores
+    /// nothing: this is only ever called for a frame that already matched a
+    /// trusted address, a few dozen times a second, so recomputing is far
+    /// cheaper than keeping a per-bit history for every stream.
+    float confidenceAt(uint8_t frameBit, size_t stream) const noexcept {
+        // frame bit f was shifted in (16 + f) bit periods ago; see
+        // ShiftRegisters::extractAlignedFrameLong for the 16 bit alignment
+        const size_t delay = (size_t(16) + frameBit) * Sampler::NumStreams;
+        const auto offsetInBlock = size_t(m_demodPos - m_sampleRingBuffer.readPos());
+        const float first  = m_sampleRingBuffer.lookBack(delay - stream, offsetInBlock);
+        const float second = m_sampleRingBuffer.lookBack(delay - stream - (Sampler::NumStreams >> 1),
+                                                        offsetInBlock);
+        return std::fabs(first - second);
+    }
+
     uint8_t getRSSI() const noexcept {
         // we are 128 bits behind and are looking for the preamble pulse
         constexpr size_t bitDelay     = 128 - 8;
@@ -163,6 +180,9 @@ template<typename InputReaderType, MessageHandler Handler>
 inline void SampleStream<Sampler>::read(InputReaderType& inputReader, Handler& messageHandler) {  
     // the core logic for message recognition
     DemodCore<Sampler::NumStreams, Handler> demodCore(messageHandler);
+    demodCore.setConfidenceSource(this, [](const void* ctx, uint8_t bit, size_t stream) -> float {
+        return static_cast<const SampleStream<Sampler>*>(ctx)->confidenceAt(bit, stream);
+    });
 
      // the main loop for reading the stream
     while (!inputReader.eof()) {

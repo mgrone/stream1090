@@ -132,9 +132,24 @@ public:
 		doTickForEntry(m_time1Mhz);
 	}
 
+	/// Membership test against an 8 KB bitmap mirroring "this slot currently
+	/// holds a trusted entry". The table itself is 65536 entries of 8 bytes, so
+	/// a probe is an L2/DRAM access; callers that test addresses at demodulation
+	/// rate need a filter that stays in L1.
+	///
+	/// Conservative by construction: markAsTrustedSeen() sets the bit
+	/// immediately, so it is never clear for a trusted entry. A stale set bit is
+	/// harmless because callers still confirm with findWithCA(), and the tick
+	/// sweep clears it within one pass over the table.
+	bool maybeTrusted(uint32_t icaoWithCA) const noexcept {
+		const auto key = icaoWithCA & HashMask;
+		return (m_trustedBits[key >> 6] >> (key & 63)) & 0x1;
+	}
+
 	void markAsTrustedSeen(const Iterator& entry) noexcept {
 		m_table[entry.key].ttl_trusted = TTL_trusted;
 		m_table[entry.key].ttl = TTL_not_trusted;
+		setTrustedBit(entry.key);
 	}
 
 	void markAsSeen(const Iterator& entry, uint16_t ttl = TTL_not_trusted) noexcept {
@@ -200,6 +215,16 @@ private:
 		return (icaoWithCA * 0x9e3779b1u) >> 24;
 	}
 
+	void setTrustedBit(uint32_t key) noexcept {
+		m_trustedBits[key >> 6] |= (uint64_t(1) << (key & 63));
+	}
+
+	void clearTrustedBit(uint32_t key) noexcept {
+		m_trustedBits[key >> 6] &= ~(uint64_t(1) << (key & 63));
+	}
+
+	std::array<uint64_t, Size / 64> m_trustedBits{};
+
 	void doTickForEntry(uint16_t index) noexcept {
 		auto& entry = m_table[index];
 		if (entry.icao == 0x0)
@@ -214,6 +239,12 @@ private:
 		} else {
 			doResetEntry(index);	
 		}
+
+		// keep the trusted-membership filter in step with the entry
+		if (m_table[index].ttl > 0 && m_table[index].ttl_trusted > 0)
+			setTrustedBit(index);
+		else
+			clearTrustedBit(index);
 	}
 
 	void doResetEntry(uint16_t index) noexcept {
