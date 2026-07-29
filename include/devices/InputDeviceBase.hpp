@@ -9,6 +9,7 @@
 #include "Sampler.hpp"
 #include "RingBuffer.hpp"
 #include "IniConfig.hpp"
+#include <string>
 #include <atomic>
 
 template<typename T>
@@ -24,20 +25,19 @@ public:
     }
 
     virtual ~InputDeviceBase() = default;
-
-    virtual bool open_with_serial(uint64_t = 0) { return open(); }
+    
     virtual bool open() = 0;
     virtual bool start() = 0;
     virtual void stop() = 0;
     virtual void close() = 0;
 
-    // Live‑mutable settings (gain, bias‑tee, etc.)
-    virtual bool applySetting(const std::string&, const std::string&) {
-        return false;
-    }
+    // Called before open() is called to parse things like serial, packing etc.
+    virtual void applyConfigPreOpen(const IniConfig::Section&) {
+        // we do not do anything as default        
+    };
 
     // Called by the watchdog after SIGHUP
-    virtual void applyReloadedConfig(const IniConfig::Section&) {
+    virtual void applyConfigPostOpen(const IniConfig::Section&) {
         // we do not do anything as default        
     };
 

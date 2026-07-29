@@ -5,6 +5,7 @@
  * Public License v3.0. See the top-level LICENSE file for details.
  */
 #include "devices/RtlSdrDevice.hpp"
+#include "Logger.hpp"
 #include <iostream>
 
 static void rtlsdr_callback(unsigned char* buf, uint32_t len, void* ctx) {
@@ -20,6 +21,62 @@ static void rtlsdr_callback(unsigned char* buf, uint32_t len, void* ctx) {
 // ----------------------
 // Open
 // ----------------------
+bool RtlSdrDevice::open_with_serial(const std::string& serial) {
+    if (serial.empty()) {
+        return open_with_serial(static_cast<uint64_t>(0));
+    }
+
+    std::size_t pos = 0;
+    try {
+        uint64_t numericSerial = std::stoull(serial, &pos, 0);
+        if (pos == serial.size()) {
+            return open_with_serial(numericSerial);
+        }
+    } catch (...) {
+        // Not numeric, attempt string-based lookup below.
+    }
+
+    int index = rtlsdr_get_index_by_serial(serial.c_str());
+    if (index < 0) {
+        std::cerr << "[RtlSdrDevice] No RTL-SDR device found with serial '"
+                  << serial << "'" << std::endl;
+        return false;
+    }
+
+    if (rtlsdr_open(&m_dev, index) != 0)
+        return false;
+
+    char buf[256];
+    rtlsdr_get_device_usb_strings(index, nullptr, nullptr, buf);
+    m_actualSerial = std::strtoull(buf, nullptr, 0);
+
+    auto check = [&](const char* name, int rc) {
+        if (rc != 0) {
+            std::cerr << "[RtlSdrDevice] ERROR: " << name
+                    << " failed with code " << rc << std::endl;
+            return false;
+        }
+        return true;
+    };
+
+    if (!check("rtlsdr_set_direct_sampling(0)",
+            rtlsdr_set_direct_sampling(m_dev, 0)))
+        return false;
+
+    if (!check("rtlsdr_set_sample_rate",
+            rtlsdr_set_sample_rate(m_dev, getSampleRate())))
+        return false;
+
+    if (!check("rtlsdr_set_center_freq",
+            rtlsdr_set_center_freq(m_dev, 1090000000)))
+        return false;
+
+    if (!check("rtlsdr_reset_buffer",
+            rtlsdr_reset_buffer(m_dev)))
+        return false;
+    return true;
+}
+
 bool RtlSdrDevice::open_with_serial(uint64_t serial) {
     int deviceCount = rtlsdr_get_device_count();
     if (deviceCount <= 0)
@@ -28,6 +85,7 @@ bool RtlSdrDevice::open_with_serial(uint64_t serial) {
     int index = 0;
 
     if (serial != 0) {
+        bool found = false;
         for (int i = 0; i < deviceCount; i++) {
             char buf[256];
             rtlsdr_get_device_usb_strings(i, nullptr, nullptr, buf);
@@ -35,9 +93,13 @@ bool RtlSdrDevice::open_with_serial(uint64_t serial) {
 
             if (devSerial == serial) {
                 index = i;
+                found = true;
                 break;
             }
         }
+
+        if (!found)
+            return false;
     }
 
     if (rtlsdr_open(&m_dev, index) != 0)
@@ -73,6 +135,10 @@ bool RtlSdrDevice::open_with_serial(uint64_t serial) {
             rtlsdr_reset_buffer(m_dev)))
         return false;
     return true;
+}
+
+bool RtlSdrDevice::open() {
+    return open_with_serial(m_serialString);
 }
 
 // ----------------------
@@ -341,10 +407,18 @@ bool RtlSdrDevice::applySetting(const std::string& key, const std::string& value
 }
 
 
+void RtlSdrDevice::applyConfigPreOpen(const IniConfig::Section& cfg) {
+    for (auto& [key, value] : cfg) {
+
+        if (key == "serial")
+            m_serialString = value;
+    }
+}
+
 // ----------------------
 // Reload logic
 // ----------------------
-void RtlSdrDevice::applyReloadedConfig(const IniConfig::Section& cfg) {
+void RtlSdrDevice::applyConfigPostOpen(const IniConfig::Section& cfg) {
     for (auto& [key, value] : cfg) {
 
         if (key == "serial")

@@ -13,7 +13,7 @@
 #include <chrono>
 #include <optional>
 
-#define STREAM1090_VERSION "260728"
+#define STREAM1090_VERSION "260729"
 
 #include "MainInstance.hpp"
 
@@ -277,6 +277,7 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    Log::Logger::instance().setVerbose(args.verbose);
     // ------------------------
     // Device config loading
     // ------------------------
