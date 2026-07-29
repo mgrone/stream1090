@@ -102,9 +102,9 @@ public:
         const auto& cfg = m_runtimeVars.deviceConfigSection;
         
         // before we open, we check the serial
-        uint64_t serial = 0;
+        std::string serial;
         if (cfg.contains("serial")) {
-            serial = std::stoull(cfg.at("serial"), nullptr, 0);
+            serial = cfg.at("serial");
         }
 
         // let us try to open the device

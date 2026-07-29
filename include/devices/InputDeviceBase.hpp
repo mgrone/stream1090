@@ -9,6 +9,7 @@
 #include "Sampler.hpp"
 #include "RingBuffer.hpp"
 #include "IniConfig.hpp"
+#include <string>
 #include <atomic>
 
 template<typename T>
@@ -26,6 +27,22 @@ public:
     virtual ~InputDeviceBase() = default;
 
     virtual bool open_with_serial(uint64_t = 0) { return open(); }
+    virtual bool open_with_serial(const std::string& serial) {
+        if (serial.empty()) {
+            return open_with_serial(static_cast<uint64_t>(0));
+        }
+
+        try {
+            std::size_t pos = 0;
+            uint64_t value = std::stoull(serial, &pos, 0);
+            if (pos != serial.size()) {
+                return false;
+            }
+            return open_with_serial(value);
+        } catch (...) {
+            return false;
+        }
+    }
     virtual bool open() = 0;
     virtual bool start() = 0;
     virtual void stop() = 0;

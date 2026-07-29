@@ -17,6 +17,7 @@ public:
         : InputDeviceBase<uint8_t>(sampleRate, bufferWriter) {}
 
     bool open_with_serial(uint64_t serial = 0) override;
+    bool open_with_serial(const std::string& serial) override;
     bool open() override { return open_with_serial(); }
 
     bool start() override;
