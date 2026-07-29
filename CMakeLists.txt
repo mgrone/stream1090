@@ -155,6 +155,11 @@ if(BUILD_TESTING)
     target_include_directories(df11_interrogator_test PRIVATE include)
     target_compile_options(df11_interrogator_test PRIVATE ${DEFAULT_COMPILE_OPTIONS})
     add_test(NAME df11_interrogator_test COMMAND df11_interrogator_test)
+
+    add_executable(ring_buffer_test tests/RingBufferTest.cpp)
+    target_include_directories(ring_buffer_test PRIVATE include)
+    target_compile_options(ring_buffer_test PRIVATE ${DEFAULT_COMPILE_OPTIONS})
+    add_test(NAME ring_buffer_test COMMAND ring_buffer_test)
 endif()
 
 # ------------------------------------------------------------

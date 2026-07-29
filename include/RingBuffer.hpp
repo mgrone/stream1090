@@ -145,7 +145,7 @@ public:
         std::unique_lock<std::mutex> lock(m_mutex);
         m_condVar.wait(lock, [&]{
             //std::cerr << "Waiting for desired Blocks " << desiredBlocks << " full "<< m_numFullBlocks << std::endl;
-            return m_shutdown || (NumBlocks - m_numFullBlocks) > desiredBlocks;
+            return m_shutdown || (NumBlocks - m_numFullBlocks) >= desiredBlocks;
         });
         return m_numFullBlocks;
     }
