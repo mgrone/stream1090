@@ -184,6 +184,19 @@ To enable filtering use
 ```
 Stream1090 comes with a single filter for each sample rate combination. These have been optimized for a set of pre-recorded sample data provided by people from around the world with different setups.
 
+### Valid-message recovery
+
+CRC-clean extended squitters are emitted on their first sighting instead of
+being used only to seed the ICAO cache. The cache keeps two aircraft per hash
+set, preventing an active aircraft from being displaced immediately by another
+ICAO address with the same low 16 bits.
+
+Offline replay of two Airspy 6 Msps captures, demodulated at 24 MHz with the
+built-in FIR, increased emitted frames from 31,852 to 31,928 over 59.8 seconds
+(+0.24%) and from 75,892 to 76,061 over 145.9 seconds (+0.22%). These counts
+measure frames accepted by Stream1090's existing CRC and trusted-aircraft gates;
+they are not independently labelled RF ground truth.
+
 
 ## Stack Integration
 In order to utilize the output of Stream1090, we will send it to a decoder like readsb or dump1090-fa via TCP. This has one big advantage: You do not have to modify anything in the remaining stack.

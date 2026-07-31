@@ -20,11 +20,11 @@ public:
 	static constexpr uint32_t DF11CandidateMaxTicks { 2'000'000 };
 	//static constexpr auto ALT_delta_25ft { 80 };
 	static constexpr auto ALT_delta_ft { 2000 };
-    // number if bits used for the look up table 
+	// Number of bits used for the lookup set and entries kept per set.
 	static constexpr auto NumBits { 16 };
-
-    // Length of the table
-	static constexpr auto Size{ 0x1 << NumBits };
+	static constexpr auto NumWays { 2 };
+	static constexpr auto NumSets { 0x1 << NumBits };
+	static constexpr auto Size { NumSets * NumWays };
 
     // lookup mask
     static constexpr uint32_t HashMask{(0x1 << NumBits) - 1};
@@ -85,20 +85,43 @@ public:
 	}
 
 	Iterator insertWithCA(uint32_t icaoWithCA) noexcept  {
-		const auto key = icaoWithCA & HashMask; 
+		const auto base = (icaoWithCA & HashMask) * NumWays;
+		uint32_t key = base;
+		for (uint32_t way = 0; way < NumWays; ++way) {
+			const auto candidate = base + way;
+			if (m_table[candidate].icao == 0) {
+				key = candidate;
+				break;
+			}
+			if (m_table[candidate].ttl_trusted < m_table[key].ttl_trusted
+					|| (m_table[candidate].ttl_trusted == m_table[key].ttl_trusted
+						&& m_table[candidate].ttl < m_table[key].ttl)) {
+				key = candidate;
+			}
+		}
 		doResetEntry(key);
 		m_table[key].icao = icaoWithCA;
 		return Iterator(key);
 	}
 
 	Iterator findWithCA(uint32_t icaoWithCA) const noexcept {
-		const auto key = icaoWithCA & HashMask; 
-		return (m_table[key].icao == icaoWithCA) ? Iterator(key) : Iterator();
+		const auto base = (icaoWithCA & HashMask) * NumWays;
+		for (uint32_t way = 0; way < NumWays; ++way) {
+			const auto key = base + way;
+			if (m_table[key].icao == icaoWithCA)
+				return Iterator(key);
+		}
+		return Iterator();
 	}
 
 	Iterator find(uint32_t icao) const noexcept {
-		const auto key = icao & HashMask; 
-		return ((m_table[key].icao & 0xffffffu) == icao) ? Iterator(key) : Iterator();
+		const auto base = (icao & HashMask) * NumWays;
+		for (uint32_t way = 0; way < NumWays; ++way) {
+			const auto key = base + way;
+			if ((m_table[key].icao & 0xffffffu) == icao)
+				return Iterator(key);
+		}
+		return Iterator();
 	}
 
 	bool confirmDF11Candidate(uint32_t icaoWithCA) noexcept {
@@ -129,15 +152,17 @@ public:
 
 		// if the counter has a value greater than number of entries,
 		// we are done here.
-		if (m_time1Mhz >= (0x1 << NumBits))
+		if (m_time1Mhz >= NumSets)
 			return;
 
-		// do a tick for the next entry otherwise
-		doTickForEntry(m_time1Mhz);
+		// Tick every way in the selected set so each entry ages once per second.
+		const auto base = m_time1Mhz * NumWays;
+		for (uint32_t way = 0; way < NumWays; ++way)
+			doTickForEntry(base + way);
 	}
 
-	/// Membership test against an 8 KB bitmap mirroring "this slot currently
-	/// holds a trusted entry". The table itself is 65536 entries of 8 bytes, so
+	/// Membership test against a 16 KB bitmap mirroring "this slot currently
+	/// holds a trusted entry". The table itself is 131072 entries of 8 bytes, so
 	/// a probe is an L2/DRAM access; callers that test addresses at demodulation
 	/// rate need a filter that stays in L1.
 	///
@@ -146,8 +171,13 @@ public:
 	/// harmless because callers still confirm with findWithCA(), and the tick
 	/// sweep clears it within one pass over the table.
 	bool maybeTrusted(uint32_t icaoWithCA) const noexcept {
-		const auto key = icaoWithCA & HashMask;
-		return (m_trustedBits[key >> 6] >> (key & 63)) & 0x1;
+		const auto base = (icaoWithCA & HashMask) * NumWays;
+		for (uint32_t way = 0; way < NumWays; ++way) {
+			const auto key = base + way;
+			if ((m_trustedBits[key >> 6] >> (key & 63)) & 0x1)
+				return true;
+		}
+		return false;
 	}
 
 	void markAsTrustedSeen(const Iterator& entry) noexcept {
@@ -229,7 +259,7 @@ private:
 
 	std::array<uint64_t, Size / 64> m_trustedBits{};
 
-	void doTickForEntry(uint16_t index) noexcept {
+	void doTickForEntry(uint32_t index) noexcept {
 		auto& entry = m_table[index];
 		if (entry.icao == 0x0)
 			return;
@@ -251,7 +281,7 @@ private:
 			clearTrustedBit(index);
 	}
 
-	void doResetEntry(uint16_t index) noexcept {
+	void doResetEntry(uint32_t index) noexcept {
 		auto& entry = m_table[index];
 		entry.icao = 0x0;
 		entry.ttl_trusted = 0;

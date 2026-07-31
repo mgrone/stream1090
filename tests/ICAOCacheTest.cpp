@@ -51,10 +51,27 @@ bool hashCollisionsCannotConfirmAnotherAddress() {
     return !table.confirmDF11Candidate(first);
 }
 
+bool lookupCollisionsCanCoexist() {
+    ICAOTable table;
+    constexpr uint32_t first = 0x1abcde;
+    constexpr uint32_t second = 0x2abcde;
+
+    const auto firstEntry = table.insertWithCA(first);
+    table.markAsTrustedSeen(firstEntry);
+    const auto secondEntry = table.insertWithCA(second);
+    table.markAsTrustedSeen(secondEntry);
+
+    return table.find(first).isValid()
+        && table.find(second).isValid()
+        && table.maybeTrusted(first)
+        && table.maybeTrusted(second);
+}
+
 } // namespace
 
 int main() {
     return !(confirmsOnlySeparateSightings()
         && expiresOldSightings()
-        && hashCollisionsCannotConfirmAnotherAddress());
+        && hashCollisionsCannotConfirmAnotherAddress()
+        && lookupCollisionsCanCoexist());
 }

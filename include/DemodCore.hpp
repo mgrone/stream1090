@@ -206,8 +206,11 @@ public:
 				// and send the 112 bit message to the output
 				return sendFrameLongAligned(streamIndex, downlinkFormat, crc, frame, e);
 			} else {
-				m_cache.markAsTrustedSeen(m_cache.insertWithCA(icaoWithCA));
-			} 
+				const auto inserted = m_cache.insertWithCA(icaoWithCA);
+				m_cache.markAsTrustedSeen(inserted);
+				return sendFrameLongAligned(
+					streamIndex, downlinkFormat, crc, frame, inserted);
+			}
 		} else {
 			// the crc is not zero, so we might have a broken message
 			logStats(Stats::DF17_BAD_MESSAGE);

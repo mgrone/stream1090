@@ -156,6 +156,11 @@ if(BUILD_TESTING)
     target_compile_options(df11_interrogator_test PRIVATE ${DEFAULT_COMPILE_OPTIONS})
     add_test(NAME df11_interrogator_test COMMAND df11_interrogator_test)
 
+    add_executable(df17_first_frame_test tests/DF17FirstFrameTest.cpp)
+    target_include_directories(df17_first_frame_test PRIVATE include)
+    target_compile_options(df17_first_frame_test PRIVATE ${DEFAULT_COMPILE_OPTIONS})
+    add_test(NAME df17_first_frame_test COMMAND df17_first_frame_test)
+
     add_executable(ring_buffer_test tests/RingBufferTest.cpp)
     target_include_directories(ring_buffer_test PRIVATE include)
     target_compile_options(ring_buffer_test PRIVATE ${DEFAULT_COMPILE_OPTIONS})
