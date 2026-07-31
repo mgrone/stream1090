@@ -160,6 +160,11 @@ if(BUILD_TESTING)
     target_include_directories(ring_buffer_test PRIVATE include)
     target_compile_options(ring_buffer_test PRIVATE ${DEFAULT_COMPILE_OPTIONS})
     add_test(NAME ring_buffer_test COMMAND ring_buffer_test)
+
+    add_executable(erasure_repair_test tests/ErasureRepairTest.cpp)
+    target_include_directories(erasure_repair_test PRIVATE include)
+    target_compile_options(erasure_repair_test PRIVATE ${DEFAULT_COMPILE_OPTIONS})
+    add_test(NAME erasure_repair_test COMMAND erasure_repair_test)
 endif()
 
 # ------------------------------------------------------------
