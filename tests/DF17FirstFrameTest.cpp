@@ -2,6 +2,7 @@
 
 #include "DemodCore.hpp"
 
+#include <array>
 #include <cstdint>
 
 namespace {
@@ -9,23 +10,35 @@ namespace {
 struct CapturingHandler {
     void handleShort(uint64_t, uint64_t) {}
 
-    void handleLong(uint64_t, const Bits128& frame) {
-        longCount++;
-        lastLong = frame;
+    void handleLong(uint64_t sampleTime, const Bits128& frame) {
+        if (longCount < frames.size()) {
+            sampleTimes[longCount] = sampleTime;
+            frames[longCount] = frame;
+        }
+        ++longCount;
     }
 
     uint32_t longCount { 0 };
-    Bits128 lastLong;
+    std::array<uint64_t, 2> sampleTimes{};
+    std::array<Bits128, 2> frames { Bits128(), Bits128() };
 };
 
-Bits128 makeDF17(uint32_t icao) {
+Bits128 makeDF17(uint32_t icao, uint8_t typeCode) {
     constexpr uint8_t capability = 5;
     const uint64_t high = (uint64_t(17) << 43)
         | (uint64_t(capability) << 40)
-        | (uint64_t(icao) << 16);
+        | (uint64_t(icao) << 16)
+        | (uint64_t(typeCode) << 11);
     Bits128 frame(high, 0);
     frame.low() = CRC::compute<112>(frame);
     return frame;
+}
+
+void feedSilence(DemodCore<1, CapturingHandler>& demod, uint32_t bits) {
+    for (uint32_t bit = 0; bit < bits; ++bit) {
+        uint32_t value[] = { 0 };
+        demod.shiftInNewBits(value);
+    }
 }
 
 void feedFrame(DemodCore<1, CapturingHandler>& demod, const Bits128& frame) {
@@ -43,13 +56,38 @@ void feedFrame(DemodCore<1, CapturingHandler>& demod, const Bits128& frame) {
 } // namespace
 
 int main() {
-    const auto frame = makeDF17(0xabcdef);
-    if (CRC::compute<112>(frame) != 0)
+    const auto first = makeDF17(0xabcdef, 1);
+    const auto second = makeDF17(0xabcdef, 2);
+    const auto unrelated = makeDF17(0x123456, 1);
+    auto repairCandidate = makeDF17(0xabcdef, 3);
+    repairCandidate.flip(30);
+    if (CRC::compute<112>(first) != 0
+            || CRC::compute<112>(second) != 0
+            || CRC::compute<112>(unrelated) != 0
+            || CRC::compute<112>(repairCandidate) == 0)
         return 1;
 
     CapturingHandler handler;
     DemodCore<1, CapturingHandler> demod(handler);
-    feedFrame(demod, frame);
+    feedFrame(demod, first);
+    if (handler.longCount != 0)
+        return 1;
 
-    return !(handler.longCount == 1 && handler.lastLong == frame);
+    feedSilence(demod, 128);
+    feedFrame(demod, unrelated);
+    if (handler.longCount != 0)
+        return 1;
+
+    feedSilence(demod, 128);
+    feedFrame(demod, repairCandidate);
+    if (handler.longCount != 0)
+        return 1;
+
+    feedSilence(demod, 128);
+    feedFrame(demod, second);
+
+    return !(handler.longCount == 2
+        && handler.frames[0] == first
+        && handler.frames[1] == second
+        && handler.sampleTimes[0] < handler.sampleTimes[1]);
 }

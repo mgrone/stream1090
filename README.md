@@ -186,16 +186,15 @@ Stream1090 comes with a single filter for each sample rate combination. These ha
 
 ### Valid-message recovery
 
-CRC-clean extended squitters are emitted on their first sighting instead of
-being used only to seed the ICAO cache. The cache keeps two aircraft per hash
-set, preventing an active aircraft from being displaced immediately by another
-ICAO address with the same low 16 bits.
+A first CRC-clean extended squitter from a new ICAO address is held as an
+untrusted candidate. A second CRC-clean sighting at least 100 microseconds later
+confirms the address and releases both frames with their original timestamps.
+An isolated CRC collision therefore cannot create output or authorize repaired
+and address-parity messages.
 
-Offline replay of two Airspy 6 Msps captures, demodulated at 24 MHz with the
-built-in FIR, increased emitted frames from 31,852 to 31,928 over 59.8 seconds
-(+0.24%) and from 75,892 to 76,061 over 145.9 seconds (+0.22%). These counts
-measure frames accepted by Stream1090's existing CRC and trusted-aircraft gates;
-they are not independently labelled RF ground truth.
+The ICAO cache also keeps two aircraft per hash set, preventing an active
+aircraft from being displaced immediately by another ICAO address with the same
+low 16 bits.
 
 
 ## Stack Integration

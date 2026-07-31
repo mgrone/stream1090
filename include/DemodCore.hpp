@@ -14,6 +14,7 @@
 #include "ModeS.hpp"
 #include "ICAOCache.hpp"
 #include "Stats.hpp"
+#include <array>
 #include <bit>
 #include <cmath>
 #include "ShiftRegisters.hpp"
@@ -198,19 +199,32 @@ public:
 			logStats(Stats::DF17_GOOD_MESSAGE);
 			// get the address including the CA field
 			const auto icaoWithCA = ModeS::extractICAOWithCA_Long(frame);
-			const auto e = m_cache.findWithCA(icaoWithCA);
-			
-			// if we know this plane
-			if (e.isValid()) {
-				m_cache.markAsTrustedSeen(e);
-				// and send the 112 bit message to the output
-				return sendFrameLongAligned(streamIndex, downlinkFormat, crc, frame, e);
-			} else {
-				const auto inserted = m_cache.insertWithCA(icaoWithCA);
-				m_cache.markAsTrustedSeen(inserted);
-				return sendFrameLongAligned(
-					streamIndex, downlinkFormat, crc, frame, inserted);
+			auto e = m_cache.findWithCA(icaoWithCA);
+			auto& pending = pendingFirstFrame(icaoWithCA);
+			const bool hasPending = pending.valid && pending.icaoWithCA == icaoWithCA;
+
+			if (hasPending
+					&& (m_currTime - pending.sampleTime) < FirstFrameConfirmationTicks)
+				return false;
+
+			if (!e.isValid()) {
+				if (hasPending) {
+					e = m_cache.insertWithCA(icaoWithCA);
+				} else {
+				pendingFirstFrame(icaoWithCA) = PendingFirstFrame{
+					icaoWithCA, downlinkFormat, true, m_currTime, frame};
+				return false;
+				}
 			}
+
+			if (hasPending) {
+				logStatsSent(pending.downlinkFormat);
+				m_messageHandler.handleLong(pending.sampleTime, pending.frame);
+				pending = PendingFirstFrame{};
+			}
+
+			m_cache.markAsTrustedSeen(e);
+			return sendFrameLongAligned(streamIndex, downlinkFormat, crc, frame, e);
 		} else {
 			// the crc is not zero, so we might have a broken message
 			logStats(Stats::DF17_BAD_MESSAGE);
@@ -465,6 +479,22 @@ public:
 
 
 private:
+	struct PendingFirstFrame {
+		uint32_t icaoWithCA { 0 };
+		uint8_t downlinkFormat { 0 };
+		bool valid { false };
+		uint64_t sampleTime { 0 };
+		Bits128 frame { uint64_t(0) };
+	};
+
+	static constexpr size_t PendingFirstFrameCount { 1024 };
+	static constexpr uint64_t FirstFrameConfirmationTicks { 100 * NumStreams };
+
+	PendingFirstFrame& pendingFirstFrame(uint32_t icaoWithCA) noexcept {
+		const auto index = (icaoWithCA * 0x9e3779b1u) >> 22;
+		return m_pendingFirstFrames[index];
+	}
+
 	const void* m_confidenceCtx = nullptr;
 	ConfidenceFn m_confidenceFn = nullptr;
 
@@ -505,7 +535,8 @@ private:
 	alignas(16) uint64_t m_prevShortFrame; 
 
 	// plane lookup table
-	ICAOTable m_cache; 
+	ICAOTable m_cache;
+	std::array<PendingFirstFrame, PendingFirstFrameCount> m_pendingFirstFrames{};
 	
 	// the current time measured in samples.
 	uint64_t m_currTime{ 0 };
