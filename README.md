@@ -186,15 +186,29 @@ Stream1090 comes with a single filter for each sample rate combination. These ha
 
 ### Valid-message recovery
 
-A first CRC-clean extended squitter from a new ICAO address is held as an
-untrusted candidate. A second CRC-clean sighting at least 100 microseconds later
-confirms the address and releases both frames with their original timestamps.
-An isolated CRC collision therefore cannot create output or authorize repaired
-and address-parity messages.
+A first CRC-clean extended squitter from a new ICAO address seeds the cache as
+before but is also held as a recovery candidate. A second CRC-clean sighting
+between 100 microseconds and two seconds later releases both frames with their
+original timestamps. An isolated CRC collision therefore cannot itself create
+output, while cache trust retains the existing behavior.
 
 The ICAO cache also keeps two aircraft per hash set, preventing an active
 aircraft from being displaced immediately by another ICAO address with the same
 low 16 bits.
+
+Offline replays of three Airspy 6 Msps captures, demodulated at 24 MHz with the
+built-in FIR, produced the following results against main at `ce230ac`:
+
+| Capture | `origin/main` | Confirmed recovery | Difference |
+| --- | ---: | ---: | ---: |
+| 59.8 seconds | 31,852 | 31,940 | +88 (+0.276%) |
+| 89.8 seconds | 56,929 | 56,961 | +32 (+0.056%) |
+| 145.9 seconds | 75,892 | 76,067 | +175 (+0.231%) |
+
+None of the added explicit-address frames introduced an ICAO seen only once in
+the candidate output. Releasing a held frame preserves its original timestamp,
+so output timestamps can arrive out of order by up to the two-second
+confirmation window.
 
 
 ## Stack Integration

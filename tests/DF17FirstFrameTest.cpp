@@ -59,12 +59,9 @@ int main() {
     const auto first = makeDF17(0xabcdef, 1);
     const auto second = makeDF17(0xabcdef, 2);
     const auto unrelated = makeDF17(0x123456, 1);
-    auto repairCandidate = makeDF17(0xabcdef, 3);
-    repairCandidate.flip(30);
     if (CRC::compute<112>(first) != 0
             || CRC::compute<112>(second) != 0
-            || CRC::compute<112>(unrelated) != 0
-            || CRC::compute<112>(repairCandidate) == 0)
+            || CRC::compute<112>(unrelated) != 0)
         return 1;
 
     CapturingHandler handler;
@@ -79,15 +76,20 @@ int main() {
         return 1;
 
     feedSilence(demod, 128);
-    feedFrame(demod, repairCandidate);
-    if (handler.longCount != 0)
-        return 1;
-
-    feedSilence(demod, 128);
     feedFrame(demod, second);
 
-    return !(handler.longCount == 2
+    if (!(handler.longCount == 2
         && handler.frames[0] == first
         && handler.frames[1] == second
-        && handler.sampleTimes[0] < handler.sampleTimes[1]);
+        && handler.sampleTimes[0] < handler.sampleTimes[1]))
+        return 1;
+
+    CapturingHandler expiredHandler;
+    DemodCore<1, CapturingHandler> expiredDemod(expiredHandler);
+    feedFrame(expiredDemod, first);
+    feedSilence(expiredDemod, 2'000'001);
+    feedFrame(expiredDemod, second);
+
+    return !(expiredHandler.longCount == 1
+        && expiredHandler.frames[0] == second);
 }

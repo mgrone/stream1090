@@ -203,23 +203,22 @@ public:
 			auto& pending = pendingFirstFrame(icaoWithCA);
 			const bool hasPending = pending.valid && pending.icaoWithCA == icaoWithCA;
 
-			if (hasPending
-					&& (m_currTime - pending.sampleTime) < FirstFrameConfirmationTicks)
-				return false;
-
 			if (!e.isValid()) {
-				if (hasPending) {
-					e = m_cache.insertWithCA(icaoWithCA);
-				} else {
+				e = m_cache.insertWithCA(icaoWithCA);
+				m_cache.markAsTrustedSeen(e);
 				pendingFirstFrame(icaoWithCA) = PendingFirstFrame{
 					icaoWithCA, downlinkFormat, true, m_currTime, frame};
 				return false;
-				}
 			}
 
 			if (hasPending) {
-				logStatsSent(pending.downlinkFormat);
-				m_messageHandler.handleLong(pending.sampleTime, pending.frame);
+				const auto age = m_currTime - pending.sampleTime;
+				if (age < FirstFrameConfirmationMinTicks)
+					return false;
+				if (age <= FirstFrameConfirmationMaxTicks) {
+					logStatsSent(pending.downlinkFormat);
+					m_messageHandler.handleLong(pending.sampleTime, pending.frame);
+				}
 				pending = PendingFirstFrame{};
 			}
 
@@ -488,7 +487,8 @@ private:
 	};
 
 	static constexpr size_t PendingFirstFrameCount { 1024 };
-	static constexpr uint64_t FirstFrameConfirmationTicks { 100 * NumStreams };
+	static constexpr uint64_t FirstFrameConfirmationMinTicks { 100 * NumStreams };
+	static constexpr uint64_t FirstFrameConfirmationMaxTicks { 2'000'000 * NumStreams };
 
 	PendingFirstFrame& pendingFirstFrame(uint32_t icaoWithCA) noexcept {
 		const auto index = (icaoWithCA * 0x9e3779b1u) >> 22;
