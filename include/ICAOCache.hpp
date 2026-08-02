@@ -120,9 +120,13 @@ public:
 
 	void tick() noexcept {
 		m_df11Clock++;
-		// the counter will wrap around every second exactly once
-		m_time1Mhz = (m_time1Mhz + 1) % 1000000;
 		
+		// the counter will wrap around every second exactly once.
+		// A compare beats the modulo here: this runs once per microsecond and
+		// the branch is taken once per second.
+		if (++m_time1Mhz == 1000000)
+			m_time1Mhz = 0;
+
 		// if the counter has a value greater than number of entries,
 		// we are done here.
 		if (m_time1Mhz >= (0x1 << NumBits))

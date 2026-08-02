@@ -14,6 +14,7 @@
 #include "ModeS.hpp"
 #include "ICAOCache.hpp"
 #include "Stats.hpp"
+#include <bit>
 #include <cmath>
 #include "ShiftRegisters.hpp"
 #include "MessageHandler.hpp"
@@ -47,13 +48,23 @@ public:
 	}
 
 	void shiftInNewBits(uint32_t* cmp) {
-		m_shiftRegisters.shiftInNewBits(cmp); 
+		// the shift registers tell us which streams ended up on a downlink
+		// format we handle. That is a rare event, so most calls leave here
+		// without touching the dispatcher at all.
+		uint64_t handledStreams = m_shiftRegisters.shiftInNewBits(cmp);
 		// the streams and crc's are ready
 		m_cache.tick();
-		for (auto i = 0; i < NumStreams; i++) {
-			handleStream(i);			
-			m_currTime++;
+
+		const uint64_t baseTime = m_currTime;
+		while (handledStreams) {
+			const auto i = std::countr_zero(handledStreams);
+			// handleStream() looks at m_currTime, so keep it in step
+			m_currTime = baseTime + i;
+			handleStream(i);
+			handledStreams &= handledStreams - 1;
 		}
+		m_currTime = baseTime + NumStreams;
+
 		logStats(Stats::NUM_ITERATIONS);
 	}
 
