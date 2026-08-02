@@ -9,6 +9,7 @@
 #include <numeric>
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <algorithm>
 #include <bit>
 #include "Sampler.hpp"
@@ -47,45 +48,55 @@ namespace FirDetail {
         return (n + 3u) & ~size_t(3u);
     }
 
+    // taps live in Q15, samples in Q14, so a product is Q29 and a whole
+    // tap sum still fits an int32 as long as the taps sum to about one
+    inline constexpr int TapFracBits = 15;
+
+    constexpr int16_t toQ15(float t) noexcept {
+        const float x = t * float(1 << TapFracBits);
+        return int16_t(x >= 0.0f ? x + 0.5f : x - 0.5f);
+    }
+
     /// Filters one contiguous block. w* hold history followed by the new
     /// samples, so w*[i + k] is the k-th tap partner of output i.
     /// numTaps has to be a multiple of four, the padding taps being zero.
-    inline void firBlock(const float* __restrict taps, size_t numTaps,
-                         const float* __restrict wI, const float* __restrict wQ,
-                         float* __restrict outI, float* __restrict outQ,
+    inline void firBlock(const int16_t* __restrict taps, size_t numTaps,
+                         const int16_t* __restrict wI, const int16_t* __restrict wQ,
+                         int16_t* __restrict outI, int16_t* __restrict outQ,
                          size_t n) noexcept {
         size_t i = 0;
 
-        // Same shape in plain C++. The inner loop of four is what the
-        // vectorizer turns into a single vector FMA.
+        // The inner group of four is what the vectorizer turns into a widening
+        // multiply accumulate. Four int32 accumulators to a vector, the same
+        // count float had, but the operands are half the width.
         for (; i + 4 <= n; i += 4) {
-            float accI[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
-            float accQ[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+            int32_t accI[4] = { 0, 0, 0, 0 };
+            int32_t accQ[4] = { 0, 0, 0, 0 };
 
             for (size_t k = 0; k < numTaps; k++) {
-                const float t = taps[k];
+                const int32_t t = taps[k];
                 for (size_t l = 0; l < 4; l++) {
-                    accI[l] += t * wI[i + k + l];
-                    accQ[l] += t * wQ[i + k + l];
+                    accI[l] += t * int32_t(wI[i + k + l]);
+                    accQ[l] += t * int32_t(wQ[i + k + l]);
                 }
             }
 
             for (size_t l = 0; l < 4; l++) {
-                outI[i + l] = accI[l];
-                outQ[i + l] = accQ[l];
+                outI[i + l] = int16_t((accI[l] + (1 << (TapFracBits - 1))) >> TapFracBits);
+                outQ[i + l] = int16_t((accQ[l] + (1 << (TapFracBits - 1))) >> TapFracBits);
             }
         }
 
         // whatever does not fill a vector
         for (; i < n; i++) {
-            float sumI = 0.0f;
-            float sumQ = 0.0f;
+            int32_t sumI = 0;
+            int32_t sumQ = 0;
             for (size_t k = 0; k < numTaps; k++) {
-                sumI += taps[k] * wI[i + k];
-                sumQ += taps[k] * wQ[i + k];
+                sumI += int32_t(taps[k]) * int32_t(wI[i + k]);
+                sumQ += int32_t(taps[k]) * int32_t(wQ[i + k]);
             }
-            outI[i] = sumI;
-            outQ[i] = sumQ;
+            outI[i] = int16_t((sumI + (1 << (TapFracBits - 1))) >> TapFracBits);
+            outQ[i] = int16_t((sumQ + (1 << (TapFracBits - 1))) >> TapFracBits);
         }
     }
 
@@ -99,8 +110,8 @@ template<SampleRate inputRate, SampleRate outputRate>
 class IQLowPass {
 public:
     IQLowPass() {
-        std::fill(std::begin(m_historyI), std::end(m_historyI), 0.0f);
-        std::fill(std::begin(m_historyQ), std::end(m_historyQ), 0.0f);
+        std::fill(std::begin(m_historyI), std::end(m_historyI), int16_t(0));
+        std::fill(std::begin(m_historyQ), std::end(m_historyQ), int16_t(0));
     }
 
     std::string toString() const {
@@ -118,9 +129,9 @@ public:
     }
 
     /// Filters a whole block in place. This is the path the input reader takes.
-    void applyBlock(float* __restrict I, float* __restrict Q, size_t n) noexcept {
-        alignas(32) float workI[WorkSize];
-        alignas(32) float workQ[WorkSize];
+    void applyBlock(int16_t* __restrict I, int16_t* __restrict Q, size_t n) noexcept {
+        alignas(32) int16_t workI[WorkSize];
+        alignas(32) int16_t workQ[WorkSize];
 
         for (size_t base = 0; base < n; base += FirDetail::ChunkSize) {
             const size_t m = std::min(FirDetail::ChunkSize, n - base);
@@ -132,8 +143,8 @@ public:
             std::copy(Q + base, Q + base + m, workQ + HistorySize);
             // the zero taps of the last vector may reach past the samples, so
             // make sure they land on zeros and not on stack garbage
-            std::fill(workI + HistorySize + m, workI + HistorySize + m + numPaddedTaps, 0.0f);
-            std::fill(workQ + HistorySize + m, workQ + HistorySize + m + numPaddedTaps, 0.0f);
+            std::fill(workI + HistorySize + m, workI + HistorySize + m + numPaddedTaps, int16_t(0));
+            std::fill(workQ + HistorySize + m, workQ + HistorySize + m + numPaddedTaps, int16_t(0));
 
             FirDetail::firBlock(paddedTaps.data(), numPaddedTaps,
                                 workI, workQ, I + base, Q + base, m);
@@ -145,7 +156,7 @@ public:
     }
 
     // single sample entry point, kept for pipelines that are driven per sample
-    void apply(float& value_I, float& value_Q) noexcept {
+    void apply(int16_t& value_I, int16_t& value_Q) noexcept {
         applyBlock(&value_I, &value_Q, 1);
     }
 
@@ -161,19 +172,19 @@ private:
     // the window of an output reaches B-1 samples back
     static constexpr size_t HistorySize = bufferSize - 1;
 
-    // taps zero padded to a whole number of vectors
+    // taps converted to Q15 and zero padded to a whole number of vectors
     static constexpr auto paddedTaps = [] {
-        std::array<float, numPaddedTaps> p{};
+        std::array<int16_t, numPaddedTaps> p{};
         for (size_t i = 0; i < numTaps; i++)
-            p[i] = taps[i];
+            p[i] = FirDetail::toQ15(taps[i]);
         return p;
     }();
 
     // room for the history, a chunk of samples, and the zero padded tap tail
     static constexpr size_t WorkSize = FirDetail::ChunkSize + HistorySize + numPaddedTaps;
 
-    alignas(32) float m_historyI[HistorySize > 0 ? HistorySize : 1];
-    alignas(32) float m_historyQ[HistorySize > 0 ? HistorySize : 1];
+    alignas(32) int16_t m_historyI[HistorySize > 0 ? HistorySize : 1];
+    alignas(32) int16_t m_historyQ[HistorySize > 0 ? HistorySize : 1];
 };
 
 
@@ -186,11 +197,11 @@ public:
             m_areTapsOdd(true)
     {
         // set all arrays to 0.0f
-        std::fill(m_taps.begin(), m_taps.end(), 0.0f);
-        std::fill(m_historyI.begin(), m_historyI.end(), 0.0f);
-        std::fill(m_historyQ.begin(), m_historyQ.end(), 0.0f);
+        std::fill(m_taps.begin(), m_taps.end(), int16_t(0));
+        std::fill(m_historyI.begin(), m_historyI.end(), int16_t(0));
+        std::fill(m_historyQ.begin(), m_historyQ.end(), int16_t(0));
         // default is instant response pass through, i.e., 1 tap being 1.0f
-        m_taps[0] = 1.0f;
+        m_taps[0] = FirDetail::toQ15(1.0f);
     }
 
     IQLowPassDynamic(const std::vector<float>& taps)
@@ -227,9 +238,10 @@ public:
             return false;
 
         if (newTaps.size() <= maxNumTaps()) {
-            // copy the new values and clear whatever the previous taps left behind
-            std::fill(m_taps.begin(), m_taps.end(), 0.0f);
-            std::copy(newTaps.begin(), newTaps.end(), m_taps.begin());
+            // copy the new values, in Q15, and clear whatever the previous taps left behind
+            std::fill(m_taps.begin(), m_taps.end(), int16_t(0));
+            for (size_t i = 0; i < newTaps.size(); i++)
+                m_taps[i] = FirDetail::toQ15(newTaps[i]);
             // get the new number of tabs
             m_numTaps = newTaps.size();
             m_bufferSize = std::bit_ceil(m_numTaps);
@@ -249,8 +261,8 @@ public:
                 }
             }
             // the old history was lined up for a different window length
-            std::fill(m_historyI.begin(), m_historyI.end(), 0.0f);
-            std::fill(m_historyQ.begin(), m_historyQ.end(), 0.0f);
+            std::fill(m_historyI.begin(), m_historyI.end(), int16_t(0));
+            std::fill(m_historyQ.begin(), m_historyQ.end(), int16_t(0));
             //printTabs();
             return true;
         }
@@ -312,9 +324,9 @@ public:
     }
 
     /// Filters a whole block in place.
-    void applyBlock(float* __restrict I, float* __restrict Q, size_t n) noexcept {
-        alignas(32) float workI[WorkSize];
-        alignas(32) float workQ[WorkSize];
+    void applyBlock(int16_t* __restrict I, int16_t* __restrict Q, size_t n) noexcept {
+        alignas(32) int16_t workI[WorkSize];
+        alignas(32) int16_t workQ[WorkSize];
 
         for (size_t base = 0; base < n; base += FirDetail::ChunkSize) {
             const size_t m = std::min(FirDetail::ChunkSize, n - base);
@@ -324,8 +336,8 @@ public:
             std::copy(I + base, I + base + m, workI + m_historySize);
             std::copy(Q + base, Q + base + m, workQ + m_historySize);
             // keep the zero taps of the last vector on zeros, not on stack garbage
-            std::fill(workI + m_historySize + m, workI + m_historySize + m + m_numPaddedTaps, 0.0f);
-            std::fill(workQ + m_historySize + m, workQ + m_historySize + m + m_numPaddedTaps, 0.0f);
+            std::fill(workI + m_historySize + m, workI + m_historySize + m + m_numPaddedTaps, int16_t(0));
+            std::fill(workQ + m_historySize + m, workQ + m_historySize + m + m_numPaddedTaps, int16_t(0));
 
             FirDetail::firBlock(m_taps.data(), m_numPaddedTaps,
                                 workI, workQ, I + base, Q + base, m);
@@ -336,7 +348,7 @@ public:
     }
 
     // applies the FIR to a single I and Q pair.
-    void apply(float& value_I, float& value_Q) noexcept {
+    void apply(int16_t& value_I, int16_t& value_Q) noexcept {
         applyBlock(&value_I, &value_Q, 1);
     }
 
@@ -366,9 +378,9 @@ private:
     size_t m_historySize = 0;
 
     // buffer for the taps, zero padded to a whole vector
-    alignas(32) std::array<float, TapCapacity> m_taps;
+    alignas(32) std::array<int16_t, TapCapacity> m_taps;
 
     // the samples that the next block still needs
-    alignas(32) std::array<float, MaxHistorySize> m_historyI;
-    alignas(32) std::array<float, MaxHistorySize> m_historyQ;
+    alignas(32) std::array<int16_t, MaxHistorySize> m_historyI;
+    alignas(32) std::array<int16_t, MaxHistorySize> m_historyQ;
 };

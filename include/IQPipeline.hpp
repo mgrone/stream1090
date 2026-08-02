@@ -9,58 +9,81 @@
 
 #include <tuple>
 #include <cmath>
+#include <cstdint>
 #include <utility>
+#include "RawInputFormat.hpp"
 
 
+/*
+ * Leaky integrator, in fixed point. The accumulator carries the running mean
+ * shifted up by m_shift, so the update is an add and the mean is a shift back
+ * down, which makes the smoothing factor exactly a negative power of two.
+ * setAlpha() therefore snaps to the nearest such factor: the default 0.005
+ * becomes 1/256.
+ */
 struct DCRemoval {
     explicit DCRemoval(float alpha = 0.005f)
-        : m_alpha(alpha), m_avg_I(0.0f), m_avg_Q(0.0f)
+        : m_shift(shiftForAlpha(alpha)), m_acc_I(0), m_acc_Q(0)
     {}
 
-    void apply(float& I, float& Q) noexcept {
-        float dI = I - m_avg_I;
-        float dQ = Q - m_avg_Q;
+    void apply(int16_t& I, int16_t& Q) noexcept {
+        const int32_t dI = int32_t(I) - (m_acc_I >> m_shift);
+        const int32_t dQ = int32_t(Q) - (m_acc_Q >> m_shift);
 
-        m_avg_I += dI * m_alpha;
-        m_avg_Q += dQ * m_alpha;
+        m_acc_I += dI;
+        m_acc_Q += dQ;
 
-        I = dI;
-        Q = dQ;
+        I = int16_t(dI);
+        Q = int16_t(dQ);
+    }
+
+    void applyBlock(int16_t* __restrict I, int16_t* __restrict Q, size_t n) noexcept {
+        for (size_t i = 0; i < n; i++)
+            apply(I[i], Q[i]);
     }
 
     void setAlpha(float alpha) noexcept {
-        m_alpha = alpha;
+        m_shift = shiftForAlpha(alpha);
     }
 
-    std::string toString() const { 
-        std::ostringstream oss; 
-        oss << "[DCRemoval] alpha: " << m_alpha; 
-        return oss.str(); 
+    std::string toString() const {
+        std::ostringstream oss;
+        oss << "[DCRemoval] alpha: 1/" << (1 << m_shift);
+        return oss.str();
     }
 private:
-    float m_alpha;
-    float m_avg_I;
-    float m_avg_Q;
+    // nearest shift k with 2^-k closest to alpha in the log domain
+    static int shiftForAlpha(float alpha) noexcept {
+        if (!(alpha > 0.0f)) return 8;
+        int k = int(std::lround(std::log2(1.0f / alpha)));
+        if (k < 1)  k = 1;
+        if (k > 20) k = 20;
+        return k;
+    }
+
+    int m_shift;
+    int32_t m_acc_I;
+    int32_t m_acc_Q;
 };
 
 
 struct FlipSigns {
     FlipSigns() = default;
 
-    void apply(float& I, float& Q) noexcept {
+    void apply(int16_t& I, int16_t& Q) noexcept {
         if (m_flip) {
-            I = -I;
-            Q = -Q;
+            I = int16_t(-I);
+            Q = int16_t(-Q);
         }
         m_flip = !m_flip;
     }
 
     // Every second sample gets negated, so over a block that is a plain stride
     // two walk instead of a branch per sample.
-    void applyBlock(float* __restrict I, float* __restrict Q, size_t n) noexcept {
+    void applyBlock(int16_t* __restrict I, int16_t* __restrict Q, size_t n) noexcept {
         for (size_t i = m_flip ? 0 : 1; i < n; i += 2) {
-            I[i] = -I[i];
-            Q[i] = -Q[i];
+            I[i] = int16_t(-I[i]);
+            Q[i] = int16_t(-Q[i]);
         }
         m_flip ^= (n & 1) != 0;
     }
@@ -80,17 +103,17 @@ public:
         : m_stages(std::move(stages)...)
     {}
 
-    float process(float I, float Q) noexcept {
+    int32_t process(int16_t I, int16_t Q) noexcept {
         // run IQ through the stages
         applyStages(I, Q, std::index_sequence_for<Stages...>{});
-        // and compute the magnitude
-        return std::sqrt(I * I + Q * Q);
+        // and compute the squared magnitude
+        return int32_t(I) * int32_t(I) + int32_t(Q) * int32_t(Q);
     }
 
     // Runs the stages without taking the magnitude. The caller can then do the
     // magnitude for a whole block at once, which vectorizes, while the stages
     // themselves carry state from sample to sample and cannot.
-    void applyStages(float& I, float& Q) noexcept {
+    void applyStages(int16_t& I, int16_t& Q) noexcept {
         applyStages(I, Q, std::index_sequence_for<Stages...>{});
     }
 
@@ -99,7 +122,7 @@ public:
     // completion before starting the next gives the same numbers as running the
     // whole chain per sample. Stages that offer applyBlock() get to filter the
     // block their own way, which is where the FIR wins.
-    void applyStagesBlock(float* __restrict I, float* __restrict Q, size_t n) noexcept {
+    void applyStagesBlock(int16_t* __restrict I, int16_t* __restrict Q, size_t n) noexcept {
         applyStagesBlock(I, Q, n, std::index_sequence_for<Stages...>{});
     }
 
@@ -117,13 +140,13 @@ private:
 
     // runs the stages above on a single pair
     template<std::size_t... Is>
-    void applyStages(float& I, float& Q, std::index_sequence<Is...>) noexcept {
+    void applyStages(int16_t& I, int16_t& Q, std::index_sequence<Is...>) noexcept {
         // C++ fun: apply(I, Q) on each stage in order
         (std::get<Is>(m_stages).apply(I, Q), ...);
     }
 
     template<typename Stage>
-    static void runStageOnBlock(Stage& stage, float* I, float* Q, size_t n) noexcept {
+    static void runStageOnBlock(Stage& stage, int16_t* I, int16_t* Q, size_t n) noexcept {
         if constexpr (requires { stage.applyBlock(I, Q, n); }) {
             stage.applyBlock(I, Q, n);
         } else {
@@ -133,7 +156,7 @@ private:
     }
 
     template<std::size_t... Is>
-    void applyStagesBlock(float* I, float* Q, size_t n, std::index_sequence<Is...>) noexcept {
+    void applyStagesBlock(int16_t* I, int16_t* Q, size_t n, std::index_sequence<Is...>) noexcept {
         (runStageOnBlock(std::get<Is>(m_stages), I, Q, n), ...);
     }
 
