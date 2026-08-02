@@ -17,24 +17,10 @@ struct DCRemoval {
         : m_alpha(alpha), m_avg_I(0.0f), m_avg_Q(0.0f), m_enabled(enabled)
     {}
 
-    /// Whole blocks are handed over at a time, so an disabled stage costs one
-    /// test per block rather than anything per sample.
-    void applyBlock(float* __restrict I, float* __restrict Q, size_t n) noexcept {
-        if (!m_enabled)
-            return;
-        for (size_t i = 0; i < n; i++)
-            applyOne(I[i], Q[i]);
-    }
-
     void apply(float& I, float& Q) noexcept {
         if (!m_enabled)
             return;
-        applyOne(I, Q);
-    }
 
-    void setEnabled(bool enabled) noexcept { m_enabled = enabled; }
-
-    void applyOne(float& I, float& Q) noexcept {
         float dI = I - m_avg_I;
         float dQ = Q - m_avg_Q;
 
@@ -124,4 +110,3 @@ template<typename... Stages>
 auto make_pipeline(Stages&&... stages) {
     return IQPipeline<std::decay_t<Stages>...>(std::forward<Stages>(stages)...);
 }
-

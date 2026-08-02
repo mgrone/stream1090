@@ -118,9 +118,8 @@ void print_help() {
     "  -d <file.ini>        Device configuration INI file for native devices\n"
     "                       See configs/airspy.ini or configs/rtlsdr.ini\n"                       
     "  -q                   Enables IQ FIR filter with built-in taps\n"
-    "  --dc-removal         Removes the receiver's DC offset, without the FIR.\n"
-    "                       Implied by -q and -f. Cheaper than the filter and\n"
-    "                       worth a few percent of messages on its own.\n"
+    "  --dc-removal         Removes the receiver's DC offset without the FIR.\n"
+    "                       Airspy -q and -f pipelines already include it.\n"
     "  -f <taps file>       Taps to load that are used for the IQ FIR filter\n"
     "  -v                   Verbose output\n"
     "  -h, --help           Show this help message\n\n";
@@ -426,7 +425,6 @@ int main(int argc, char** argv) {
     }
     return *outcome ? 0 : 1;
 }
-
 
 
 
