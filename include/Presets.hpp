@@ -125,15 +125,14 @@ struct IQPipelineSelector<In, Out, IQPipelineOptions::IQ_FIR_FILE> {
 
 template<SampleRate In, SampleRate Out>
 struct IQPipelineSelector<In, Out, IQPipelineOptions::IQ_FIR_RTL_SDR> {
-    static auto make(const std::vector<float>&, bool = false) {
-        return make_pipeline(IQLowPass<In, Out>());
+    static auto make(const std::vector<float>&, bool dcRemoval = false) {
+        return make_pipeline(DCRemoval(0.005f, dcRemoval), IQLowPass<In, Out>());
     }
 };
 
 template<SampleRate In, SampleRate Out>
 struct IQPipelineSelector<In, Out, IQPipelineOptions::IQ_FIR_RTL_SDR_FILE> {
-    static auto make(const std::vector<float>& taps, bool = false) {
-        return make_pipeline(IQLowPassDynamic(taps));
+    static auto make(const std::vector<float>& taps, bool dcRemoval = false) {
+        return make_pipeline(DCRemoval(0.005f, dcRemoval), IQLowPassDynamic(taps));
     }
 };
-
