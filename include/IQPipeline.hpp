@@ -13,11 +13,28 @@
 
 
 struct DCRemoval {
-    explicit DCRemoval(float alpha = 0.005f)
-        : m_alpha(alpha), m_avg_I(0.0f), m_avg_Q(0.0f)
+    explicit DCRemoval(float alpha = 0.005f, bool enabled = true)
+        : m_alpha(alpha), m_avg_I(0.0f), m_avg_Q(0.0f), m_enabled(enabled)
     {}
 
+    /// Whole blocks are handed over at a time, so an disabled stage costs one
+    /// test per block rather than anything per sample.
+    void applyBlock(float* __restrict I, float* __restrict Q, size_t n) noexcept {
+        if (!m_enabled)
+            return;
+        for (size_t i = 0; i < n; i++)
+            applyOne(I[i], Q[i]);
+    }
+
     void apply(float& I, float& Q) noexcept {
+        if (!m_enabled)
+            return;
+        applyOne(I, Q);
+    }
+
+    void setEnabled(bool enabled) noexcept { m_enabled = enabled; }
+
+    void applyOne(float& I, float& Q) noexcept {
         float dI = I - m_avg_I;
         float dQ = Q - m_avg_Q;
 
@@ -32,15 +49,16 @@ struct DCRemoval {
         m_alpha = alpha;
     }
 
-    std::string toString() const { 
-        std::ostringstream oss; 
-        oss << "[DCRemoval] alpha: " << m_alpha; 
-        return oss.str(); 
+    std::string toString() const {
+        std::ostringstream oss;
+        oss << "[DCRemoval] alpha: " << m_alpha << (m_enabled ? "" : " (disabled)");
+        return oss.str();
     }
 private:
     float m_alpha;
     float m_avg_I;
     float m_avg_Q;
+    bool m_enabled;
 };
 
 
