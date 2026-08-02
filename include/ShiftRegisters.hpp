@@ -31,7 +31,6 @@ class alignas(16) ShiftRegistersBase {
             m_crc_112[i] = 0;
             m_high[i] = 0;
             m_low[i] = 0;
-            m_df[i] = 0;
         };
     }
 
@@ -43,8 +42,12 @@ class alignas(16) ShiftRegistersBase {
         return (CRC::crc_t)m_crc_112[i];
     }
 
+    /// The downlink format is the top five bits of the register, so keeping a
+    /// separate array for it meant storing NumStreams words every sample to
+    /// serve a read that only happens on a handled format. Derived here
+    /// instead, from the value the update has already written.
     constexpr uint32_t getDF(auto i) const noexcept{
-        return (uint32_t)m_df[i];
+        return (uint32_t)(m_high[i] >> 59);
     }
 
     protected:
@@ -58,8 +61,6 @@ class alignas(16) ShiftRegistersBase {
 
     // Each stream has a checksum for long messages (112 bit)
 	uint64_t m_crc_112[NumStreams];
-
-    uint64_t m_df[NumStreams];
 };
 
 
@@ -106,7 +107,6 @@ class alignas(16) ShiftRegisters : public ShiftRegistersBase<NumStreams> {
                 this->m_crc_112[i] = crc112;
                 this->m_high[i]    = newHigh;
                 this->m_low[i]     = newLow;
-                this->m_df[i]      = df;
 
                 handledMask |= uint64_t((handledDownlinkFormats >> df) & 0x1) << i;
             }
