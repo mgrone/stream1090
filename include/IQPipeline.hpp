@@ -55,6 +55,16 @@ struct FlipSigns {
         m_flip = !m_flip;
     }
 
+    // Every second sample gets negated, so over a block that is a plain stride
+    // two walk instead of a branch per sample.
+    void applyBlock(float* __restrict I, float* __restrict Q, size_t n) noexcept {
+        for (size_t i = m_flip ? 0 : 1; i < n; i += 2) {
+            I[i] = -I[i];
+            Q[i] = -Q[i];
+        }
+        m_flip ^= (n & 1) != 0;
+    }
+
     std::string toString() const { 
         return "[FlipSigns] enabled"; 
     }
@@ -77,6 +87,25 @@ public:
         return std::sqrt(I * I + Q * Q);
     }
 
+    // Runs the stages without taking the magnitude. The caller can then do the
+    // magnitude for a whole block at once, which vectorizes, while the stages
+    // themselves carry state from sample to sample and cannot.
+    void applyStages(float& I, float& Q) noexcept {
+        applyStages(I, Q, std::index_sequence_for<Stages...>{});
+    }
+
+    // Same, but stage by stage over a whole block. Every stage walks the block
+    // in order and only its own state carries over, so running one stage to
+    // completion before starting the next gives the same numbers as running the
+    // whole chain per sample. Stages that offer applyBlock() get to filter the
+    // block their own way, which is where the FIR wins.
+    void applyStagesBlock(float* __restrict I, float* __restrict Q, size_t n) noexcept {
+        applyStagesBlock(I, Q, n, std::index_sequence_for<Stages...>{});
+    }
+
+    // true when there is nothing to run at all, so callers can skip a pass
+    static constexpr bool isEmpty = (sizeof...(Stages) == 0);
+
     std::string toString() const {
         return toStringImpl(std::index_sequence_for<Stages...>{});
     }
@@ -91,6 +120,21 @@ private:
     void applyStages(float& I, float& Q, std::index_sequence<Is...>) noexcept {
         // C++ fun: apply(I, Q) on each stage in order
         (std::get<Is>(m_stages).apply(I, Q), ...);
+    }
+
+    template<typename Stage>
+    static void runStageOnBlock(Stage& stage, float* I, float* Q, size_t n) noexcept {
+        if constexpr (requires { stage.applyBlock(I, Q, n); }) {
+            stage.applyBlock(I, Q, n);
+        } else {
+            for (size_t i = 0; i < n; i++)
+                stage.apply(I[i], Q[i]);
+        }
+    }
+
+    template<std::size_t... Is>
+    void applyStagesBlock(float* I, float* Q, size_t n, std::index_sequence<Is...>) noexcept {
+        (runStageOnBlock(std::get<Is>(m_stages), I, Q, n), ...);
     }
 
     template<std::size_t... Is>
