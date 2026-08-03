@@ -84,7 +84,7 @@ public:
 		if ((downlinkFormat == 20) || (downlinkFormat == 16)) {
 			const auto alt_bits = ModeS::extractSquawkAlt_Long(frame);
 			const auto alt = ModeS::decodeAltitude(alt_bits);
-			if (!m_cache.checkAltitude(it, alt)) {	
+			if (!alt || !m_cache.checkAltitude(it, *alt, alt_bits & 0x0010)) {
 				return false;
 			} else {
 				m_cache.markAsSeen(it);
@@ -116,7 +116,7 @@ public:
 		if ((downlinkFormat == 4) || (downlinkFormat == 0)) {
 			const auto alt_bits = ModeS::extractSquawkAlt_Short(frameShort);
 			const auto alt = ModeS::decodeAltitude(alt_bits);
-			if (!m_cache.checkAltitude(it, alt)) {
+			if (!alt || !m_cache.checkAltitude(it, *alt, alt_bits & 0x0010)) {
 				return false;
 			} else {
 				m_cache.markAsSeen(it);

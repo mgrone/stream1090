@@ -8,6 +8,7 @@
 #pragma once
 
 #include <array>
+#include <cstdlib>
 #include <memory>
 
 class ICAOTable {
@@ -53,7 +54,7 @@ public:
 
 		// the last altitude in feet received
 		uint8_t altitude_cnt;
-		uint16_t altitude;
+		int16_t altitude_25ft;
 	};
 
     // simple struct keeping an index
@@ -208,22 +209,27 @@ public:
 		return false;
 	}
 
-	bool checkAltitude(const Iterator& entry, uint16_t newAlt) noexcept {
-		if (newAlt == 0) {
+	bool checkAltitude(const Iterator& entry, int32_t newAlt, bool updateState = true) noexcept {
+		auto& state = m_squawkAlt[entry.key];
+		if (!updateState && state.altitude_cnt == 0)
 			return false;
-		}
 
-		const auto delta = abs((int)m_squawkAlt[entry.key].altitude - (int)newAlt);
+		const auto delta = std::abs((int32_t)state.altitude_25ft * 25 - newAlt);
 		if ((delta <= ALT_delta_ft)) {
-			m_squawkAlt[entry.key].altitude = newAlt;
-			m_squawkAlt[entry.key].altitude_cnt = 1;
+			if (updateState) {
+				state.altitude_25ft = newAlt / 25;
+				state.altitude_cnt = 1;
+			}
 			return true;
 		};
 
-		if (m_squawkAlt[entry.key].altitude_cnt == 0) {
-			m_squawkAlt[entry.key].altitude = newAlt;
+		if (!updateState)
+			return false;
+
+		if (state.altitude_cnt == 0) {
+			state.altitude_25ft = newAlt / 25;
 		} else {
-			m_squawkAlt[entry.key].altitude_cnt = 0;
+			state.altitude_cnt = 0;
 		}
 		return false;
 	}

@@ -11,6 +11,7 @@
 #include <iostream>
 #include <iomanip>
 #include <chrono>
+#include <optional>
 
 namespace ModeS {
 
@@ -44,32 +45,67 @@ namespace ModeS {
 		return a * 1000 + b * 100 + c * 10 + d;
 	}
 
-	constexpr inline uint16_t decodeAltitudeBitsFeet(uint16_t bits) {
+	constexpr inline int32_t decodeAltitudeBitsFeet(uint16_t bits) {
 		const uint16_t a = (bits & 0xf); // lower 4 bits
 		const uint16_t b = (bits >> 5) & 0x1; // 6th bit
 		const uint16_t c = (bits >> 7) & 0x3f; // higher 6 bits
 		return (a | (b << 4) | (c << 5)) * 25 - 1000;
 	}
 
-	constexpr inline uint16_t decodeAltitudeBitsMeter(uint16_t bits) {
-		const uint16_t a = (bits & 0x3f); // lower 6 bits
-		const uint16_t b = (bits >> 7) & 0x3f; // higher 6 bits
-		return uint16_t(float(a | (b << 6))*3.28084f);
+	constexpr inline uint16_t decodeGillhamID13(uint16_t bits) {
+		uint16_t modeA = 0;
+		if (bits & 0x1000) modeA |= 0x0010; // C1
+		if (bits & 0x0800) modeA |= 0x1000; // A1
+		if (bits & 0x0400) modeA |= 0x0020; // C2
+		if (bits & 0x0200) modeA |= 0x2000; // A2
+		if (bits & 0x0100) modeA |= 0x0040; // C4
+		if (bits & 0x0080) modeA |= 0x4000; // A4
+		if (bits & 0x0020) modeA |= 0x0100; // B1
+		if (bits & 0x0010) modeA |= 0x0001; // D1 / Q
+		if (bits & 0x0008) modeA |= 0x0200; // B2
+		if (bits & 0x0004) modeA |= 0x0002; // D2
+		if (bits & 0x0002) modeA |= 0x0400; // B4
+		if (bits & 0x0001) modeA |= 0x0004; // D4
+		return modeA;
 	}
 
-	constexpr inline uint16_t decodeAltitude(uint16_t bits) {
-		// TODO: test this 
-		//check if the M bit is set and we have to deal with meters
-		/*if (bits & (0x1 << 6)) {
-			return decodeAltitudeBitsMeter(bits);
-		} else if (bits & (0x1 << 4)) {
-			return decodeAltitudeBitsFeet(bits);
-		}*/
+	constexpr inline std::optional<int32_t> decodeGillhamAltitude(uint16_t bits) {
+		const uint16_t modeA = decodeGillhamID13(bits);
+		if ((modeA & 0x8889) != 0 || (modeA & 0x00f0) == 0)
+			return std::nullopt;
 
-		if (!(bits & (0x1 << 6)) && (bits & (0x1 << 4)))
+		uint16_t oneHundreds = 0;
+		uint16_t fiveHundreds = 0;
+		if (modeA & 0x0010) oneHundreds ^= 0x007;
+		if (modeA & 0x0020) oneHundreds ^= 0x003;
+		if (modeA & 0x0040) oneHundreds ^= 0x001;
+		if ((oneHundreds & 5) == 5) oneHundreds ^= 2;
+		if (oneHundreds > 5)
+			return std::nullopt;
+
+		if (modeA & 0x0002) fiveHundreds ^= 0x0ff;
+		if (modeA & 0x0004) fiveHundreds ^= 0x07f;
+		if (modeA & 0x1000) fiveHundreds ^= 0x03f;
+		if (modeA & 0x2000) fiveHundreds ^= 0x01f;
+		if (modeA & 0x4000) fiveHundreds ^= 0x00f;
+		if (modeA & 0x0100) fiveHundreds ^= 0x007;
+		if (modeA & 0x0200) fiveHundreds ^= 0x003;
+		if (modeA & 0x0400) fiveHundreds ^= 0x001;
+		if (fiveHundreds & 1) oneHundreds = 6 - oneHundreds;
+
+		const int32_t hundreds = fiveHundreds * 5 + oneHundreds - 13;
+		if (hundreds < -12)
+			return std::nullopt;
+		return hundreds * 100;
+	}
+
+	constexpr inline std::optional<int32_t> decodeAltitude(uint16_t bits) {
+		if (bits & 0x0040) // M=1: metric encoding is not implemented.
+			return std::nullopt;
+
+		if (bits & 0x0010)
 			return decodeAltitudeBitsFeet(bits);
-		
-		return 0;
+		return decodeGillhamAltitude(bits);
 	}
 	
 	inline uint64_t currentTimestamp() {

@@ -170,6 +170,11 @@ if(BUILD_TESTING)
     target_include_directories(sampler_test PRIVATE include)
     target_compile_options(sampler_test PRIVATE ${DEFAULT_COMPILE_OPTIONS})
     add_test(NAME sampler_test COMMAND sampler_test)
+
+    add_executable(mode_s_altitude_test tests/ModeSAltitudeTest.cpp)
+    target_include_directories(mode_s_altitude_test PRIVATE include)
+    target_compile_options(mode_s_altitude_test PRIVATE ${DEFAULT_COMPILE_OPTIONS})
+    add_test(NAME mode_s_altitude_test COMMAND mode_s_altitude_test)
 endif()
 
 # ------------------------------------------------------------
