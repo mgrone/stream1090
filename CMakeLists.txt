@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.10)
 project(stream1090)
 
+find_package(Threads REQUIRED)
+
 # ------------------------------------------------------------
 # Build type
 # ------------------------------------------------------------
@@ -137,7 +139,7 @@ target_compile_definitions(stream1090 PRIVATE
     ${DEVICE_DEFINITIONS}
 )
 
-target_link_libraries(stream1090 PRIVATE ${DEVICE_LIBS})
+target_link_libraries(stream1090 PRIVATE ${DEVICE_LIBS} Threads::Threads)
 
 include(CTest)
 if(BUILD_TESTING)
@@ -160,6 +162,12 @@ if(BUILD_TESTING)
     target_include_directories(ring_buffer_test PRIVATE include)
     target_compile_options(ring_buffer_test PRIVATE ${DEFAULT_COMPILE_OPTIONS})
     add_test(NAME ring_buffer_test COMMAND ring_buffer_test)
+
+    add_executable(block_ring_async_test tests/BlockRingAsyncTest.cpp)
+    target_include_directories(block_ring_async_test PRIVATE include)
+    target_compile_options(block_ring_async_test PRIVATE ${DEFAULT_COMPILE_OPTIONS})
+    target_link_libraries(block_ring_async_test PRIVATE Threads::Threads)
+    add_test(NAME block_ring_async_test COMMAND block_ring_async_test)
 endif()
 
 # ------------------------------------------------------------

@@ -27,9 +27,7 @@ namespace hex_detail {
 
 class AVRWriter {
 public:
-    AVRWriter(std::ostream& out) : m_out(out) {
-        std::ios::sync_with_stdio(false);
-    }
+    explicit AVRWriter(std::ostream& out) : m_out(out) {}
 
     // Writes an AVR short frame with MLAT timestamp (no RSSI)
     void write_short_MLAT(uint64_t ts, uint64_t frameShort) {
@@ -117,6 +115,5 @@ private:
     // the stream to write ot
     std::ostream& m_out;
 };
-
 
 
