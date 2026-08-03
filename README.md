@@ -14,6 +14,7 @@ situations, a higher overall message rate can be achieved compared to a preamble
 - Support for Airspy and RTL-SDR dongles.
 - Support for 6 or 10 Msps for Airspy and 2.4 or 2.56 Msps for RTL-SDR devices.
 - IQ Low-pass filtering including customization and optimization (optional).
+- Multicore pipeline overlapping input, upsampling, and demodulation.
 - Seamless integration into readsb/dump1090-fa based stacks.
 
 ## Requirements
