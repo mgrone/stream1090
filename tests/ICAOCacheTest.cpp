@@ -51,10 +51,54 @@ bool hashCollisionsCannotConfirmAnotherAddress() {
     return !table.confirmDF11Candidate(first);
 }
 
+bool emptySlotsRejectUnknownAddresses() {
+    ICAOTable table;
+    constexpr uint32_t unknownWithCA = 0x5abcde1;
+
+    return !table.findWithCA(unknownWithCA).isValid()
+        && !table.find(unknownWithCA & 0xffffffu).isValid()
+        && table.findWithCA(0).isValid()
+        && table.find(0).isValid();
+}
+
+bool insertedAndReplacementEntriesAreFound() {
+    ICAOTable table;
+    constexpr uint32_t first = 0x1abcde;
+    constexpr uint32_t replacement = 0x2abcde;
+
+    table.insertWithCA(first);
+    if (!table.findWithCA(first).isValid() || !table.find(first).isValid())
+        return false;
+
+    table.insertWithCA(replacement);
+    return !table.findWithCA(first).isValid()
+        && !table.find(first).isValid()
+        && table.findWithCA(replacement).isValid()
+        && table.find(replacement).isValid();
+}
+
+bool expiredEntriesDisappear() {
+    ICAOTable table;
+    constexpr uint32_t icaoWithCA = 0x5000001;
+
+    const auto entry = table.insertWithCA(icaoWithCA);
+    table.markAsSeen(entry, 1);
+    tick(table, 1);
+    if (!table.findWithCA(icaoWithCA).isValid())
+        return false;
+
+    tick(table, 1'000'000);
+    return !table.findWithCA(icaoWithCA).isValid()
+        && !table.find(icaoWithCA & 0xffffffu).isValid();
+}
+
 } // namespace
 
 int main() {
     return !(confirmsOnlySeparateSightings()
         && expiresOldSightings()
-        && hashCollisionsCannotConfirmAnotherAddress());
+        && hashCollisionsCannotConfirmAnotherAddress()
+        && emptySlotsRejectUnknownAddresses()
+        && insertedAndReplacementEntriesAreFound()
+        && expiredEntriesDisappear());
 }

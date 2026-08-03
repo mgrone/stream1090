@@ -85,19 +85,41 @@ public:
 	}
 
 	Iterator insertWithCA(uint32_t icaoWithCA) noexcept  {
-		const auto key = icaoWithCA & HashMask; 
+		const auto key = icaoWithCA & HashMask;
 		doResetEntry(key);
 		m_table[key].icao = icaoWithCA;
+		if (icaoWithCA != 0x0)
+			setOccupiedBit(key);
 		return Iterator(key);
 	}
 
+	/*
+	 * Both lookups below are on the demodulation hot path: every DF 0, 4, 5,
+	 * 16, 20 and 21 candidate reaches one of them, and on those the address is
+	 * recovered from the parity, so on noise the probe is a random index into
+	 * 65536 entries of 8 bytes. That table plus its two siblings is about
+	 * 1.4 MB against 1 MB of L2, so the probe usually goes to DRAM, and with a
+	 * few hundred live aircraft in 65536 slots it almost always says "no".
+	 *
+	 * m_occupiedBits mirrors "this slot holds an entry" in 8 KB, which stays in
+	 * L1. An empty slot has icao == 0, so a clear bit already settles the
+	 * comparison: it matches only a zero query. That makes this an exact
+	 * short circuit rather than a heuristic, and the table is never touched on
+	 * the rejecting path.
+	 */
 	Iterator findWithCA(uint32_t icaoWithCA) const noexcept {
-		const auto key = icaoWithCA & HashMask; 
+		const auto key = icaoWithCA & HashMask;
+		if (!isOccupied(key))
+			return (icaoWithCA == 0x0) ? Iterator(key) : Iterator();
+
 		return (m_table[key].icao == icaoWithCA) ? Iterator(key) : Iterator();
 	}
 
 	Iterator find(uint32_t icao) const noexcept {
-		const auto key = icao & HashMask; 
+		const auto key = icao & HashMask;
+		if (!isOccupied(key))
+			return (icao == 0x0) ? Iterator(key) : Iterator();
+
 		return ((m_table[key].icao & 0xffffffu) == icao) ? Iterator(key) : Iterator();
 	}
 
@@ -229,6 +251,22 @@ private:
 
 	std::array<uint64_t, Size / 64> m_trustedBits{};
 
+	// mirrors m_table[key].icao != 0, kept in step by insertWithCA and
+	// doResetEntry, the only two places that write the field
+	bool isOccupied(uint32_t key) const noexcept {
+		return (m_occupiedBits[key >> 6] >> (key & 63)) & 0x1;
+	}
+
+	void setOccupiedBit(uint32_t key) noexcept {
+		m_occupiedBits[key >> 6] |= (uint64_t(1) << (key & 63));
+	}
+
+	void clearOccupiedBit(uint32_t key) noexcept {
+		m_occupiedBits[key >> 6] &= ~(uint64_t(1) << (key & 63));
+	}
+
+	std::array<uint64_t, Size / 64> m_occupiedBits{};
+
 	void doTickForEntry(uint16_t index) noexcept {
 		auto& entry = m_table[index];
 		if (entry.icao == 0x0)
@@ -256,6 +294,7 @@ private:
 		entry.icao = 0x0;
 		entry.ttl_trusted = 0;
 		entry.ttl = 0;
+		clearOccupiedBit(index);
 		m_msgStatTable[index].last_time = 0;
 		m_squawkAlt[index] = SquawkAlt{0, 0, 0, 0};
 	}
