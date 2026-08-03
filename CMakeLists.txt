@@ -165,6 +165,11 @@ if(BUILD_TESTING)
     target_include_directories(erasure_repair_test PRIVATE include)
     target_compile_options(erasure_repair_test PRIVATE ${DEFAULT_COMPILE_OPTIONS})
     add_test(NAME erasure_repair_test COMMAND erasure_repair_test)
+
+    add_executable(sampler_test tests/SamplerTest.cpp)
+    target_include_directories(sampler_test PRIVATE include)
+    target_compile_options(sampler_test PRIVATE ${DEFAULT_COMPILE_OPTIONS})
+    add_test(NAME sampler_test COMMAND sampler_test)
 endif()
 
 # ------------------------------------------------------------

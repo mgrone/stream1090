@@ -222,12 +222,12 @@ inline void SamplerBase<Rate_2_56_Mhz, Rate_8_0_Mhz>::sample(const float* __rest
             for (int j = 0; j < 25; j++) {
                 const auto offset = 8 * j;
                 const auto k = offset / 25;
-                const auto l = 24 - (offset % 25);
-                const auto r = 24 - l;
-                out[j] = ((float)l * in[k] + (float)r * in[k+1]) * (1.0f / 24.0f);
+                const auto l = 25 - (offset % 25);
+                const auto r = 25 - l;
+                out[j] = ((float)l * in[k] + (float)r * in[k+1]) * (1.0f / 25.0f);
             }
-            in += 8;//5;
-            out += 25;//12;
+            in += 8;
+            out += 25;
         }
 }
 
