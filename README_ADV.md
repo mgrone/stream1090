@@ -78,6 +78,12 @@ For ```airspy_rx``` this works the same way. However, make sure that your sample
 
 When changing the CRC correction patterns, build and run the `table_gen` target to confirm the declared pattern count. The advanced table uses open addressing to preserve colliding entries. Then run CTest: `crc_error_table_test` verifies that every declared DF17 and DF11 correction remains reachable from its CRC syndrome.
 
+Altitude replies support both Q=1 binary encoding in 25-foot increments and
+Q=0 Gillham/Mode C encoding in 100-foot increments. Metric M=1 altitude
+encoding is currently treated as unavailable. Gillham values are checked
+against an altitude already established by Q=1 replies and cannot replace that
+reference value.
+
 DF11 all-call replies may overlay the CRC parity with a non-zero II/SI interrogator code. Stream1090 accepts these replies for known aircraft. A new ICAO address is added to the cache only after two matching DF11 replies separated in time, so phase duplicates or a single low CRC syndrome cannot seed the cache.
 
 Important: If you want to see the statistics for the whole file and not every 5 seconds. You can enable the a summary at the end by rebuilding stream with after the following cmake call in the build directory

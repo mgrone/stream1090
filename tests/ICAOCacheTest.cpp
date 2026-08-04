@@ -92,6 +92,25 @@ bool expiredEntriesDisappear() {
         && !table.find(icaoWithCA & 0xffffffu).isValid();
 }
 
+bool validationOnlyAltitudeCannotPoisonState() {
+    ICAOTable table;
+    const auto entry = table.insertWithCA(0x5abcde1);
+
+    if (table.checkAltitude(entry, 0, false))
+        return false;
+    if (table.checkAltitude(entry, 10000, false))
+        return false;
+    if (table.checkAltitude(entry, 10000))
+        return false;
+    if (!table.checkAltitude(entry, 10000))
+        return false;
+    if (!table.checkAltitude(entry, 10500, false))
+        return false;
+    if (table.checkAltitude(entry, 13000, false))
+        return false;
+    return table.checkAltitude(entry, 10000);
+}
+
 } // namespace
 
 int main() {
@@ -100,5 +119,6 @@ int main() {
         && hashCollisionsCannotConfirmAnotherAddress()
         && emptySlotsRejectUnknownAddresses()
         && insertedAndReplacementEntriesAreFound()
-        && expiredEntriesDisappear());
+        && expiredEntriesDisappear()
+        && validationOnlyAltitudeCannotPoisonState());
 }
