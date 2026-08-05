@@ -70,7 +70,7 @@ public:
 
 	bool sendFrameLongAligned(int,
 							  const uint8_t downlinkFormat, 
-							  CRC::crc_t, 
+							  CRC::crc_t crc,
 							  const Bits128& frame, 
 							  const ICAOTable::Iterator& it) {
 		auto& e = m_cache.getMsgStatEntry(it);
@@ -84,16 +84,19 @@ public:
 		if ((downlinkFormat == 20) || (downlinkFormat == 16)) {
 			const auto alt_bits = ModeS::extractSquawkAlt_Long(frame);
 			const auto alt = ModeS::decodeAltitude(alt_bits);
-			if (!alt || !m_cache.checkAltitude(it, *alt, alt_bits & 0x0010)) {
+			const bool altitudeAccepted = alt
+				&& m_cache.checkAltitude(it, *alt, alt_bits & 0x0010);
+			if (!altitudeAccepted
+					&& !m_cache.confirmRejectedLong(crc, frame.high(), frame.low())) {
 				return false;
-			} else {
-				m_cache.markAsSeen(it);
 			}
+			m_cache.markAsSeen(it);
 		}
 		
 		if (downlinkFormat == 21) {
 			const auto sqwk = ModeS::extractSquawkAlt_Long(frame);
-			if (!m_cache.checkSquawk(it, sqwk))
+			if (!m_cache.checkSquawk(it, sqwk)
+					&& !m_cache.confirmRejectedLong(crc, frame.high(), frame.low()))
 				return false;
 			m_cache.markAsSeen(it);
 		}
@@ -104,7 +107,7 @@ public:
 		return true;
 	}
 
-	bool sendFrameShortAligned(int, const uint8_t downlinkFormat, CRC::crc_t, const uint64_t& frameShort, const ICAOTable::Iterator& it) {
+	bool sendFrameShortAligned(int, const uint8_t downlinkFormat, CRC::crc_t crc, const uint64_t& frameShort, const ICAOTable::Iterator& it) {
 		auto& e = m_cache.getMsgStatEntry(it);
 		static constexpr uint64_t DUP_WINDOW_TICKS = 30 * NumStreams;
 		if ((m_currTime - e.last_time) < DUP_WINDOW_TICKS) {
@@ -116,16 +119,19 @@ public:
 		if ((downlinkFormat == 4) || (downlinkFormat == 0)) {
 			const auto alt_bits = ModeS::extractSquawkAlt_Short(frameShort);
 			const auto alt = ModeS::decodeAltitude(alt_bits);
-			if (!alt || !m_cache.checkAltitude(it, *alt, alt_bits & 0x0010)) {
+			const bool altitudeAccepted = alt
+				&& m_cache.checkAltitude(it, *alt, alt_bits & 0x0010);
+			if (!altitudeAccepted
+					&& !m_cache.confirmRejectedShort(crc, frameShort)) {
 				return false;
-			} else {
-				m_cache.markAsSeen(it);
 			}
+			m_cache.markAsSeen(it);
 		}
 
 		if (downlinkFormat == 5) {
 			const auto sqwk = ModeS::extractSquawkAlt_Short(frameShort);
-			if (!m_cache.checkSquawk(it, sqwk))
+			if (!m_cache.checkSquawk(it, sqwk)
+					&& !m_cache.confirmRejectedShort(crc, frameShort))
 				return false;
 			m_cache.markAsSeen(it);
 		}

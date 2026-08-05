@@ -51,6 +51,47 @@ bool hashCollisionsCannotConfirmAnotherAddress() {
     return !table.confirmDF11Candidate(first);
 }
 
+bool rejectedFramesNeedIndependentConfirmation() {
+    ICAOTable table;
+    constexpr uint32_t icao = 0xabcdef;
+    constexpr uint64_t frame = 0x0200102acac271;
+
+    if (table.confirmRejectedShort(icao, frame))
+        return false;
+    if (table.confirmRejectedShort(icao, frame))
+        return false;
+
+    tick(table, ICAOTable::RejectedCandidateMinTicks);
+    if (!table.confirmRejectedShort(icao, frame))
+        return false;
+    return !table.confirmRejectedShort(icao, frame ^ 1);
+}
+
+bool expiredRejectedFramesNeedNewPair() {
+    ICAOTable table;
+    constexpr uint32_t icao = 0xabcdef;
+    constexpr uint64_t frame = 0x0200102acac271;
+
+    if (table.confirmRejectedShort(icao, frame))
+        return false;
+    tick(table, ICAOTable::RejectedCandidateMaxTicks + 1);
+    return !table.confirmRejectedShort(icao, frame);
+}
+
+bool shortAndLongCandidatesCannotConfirmEachOther() {
+    ICAOTable table;
+    constexpr uint32_t icao = 0xabcdef;
+    constexpr uint64_t frame = 0x0200102acac271;
+
+    if (table.confirmRejectedShort(icao, frame))
+        return false;
+    tick(table, ICAOTable::RejectedCandidateMinTicks);
+    if (table.confirmRejectedLong(icao, 0, frame))
+        return false;
+    tick(table, ICAOTable::RejectedCandidateMinTicks);
+    return table.confirmRejectedLong(icao, 0, frame);
+}
+
 bool emptySlotsRejectUnknownAddresses() {
     ICAOTable table;
     constexpr uint32_t unknownWithCA = 0x5abcde1;
@@ -117,6 +158,9 @@ int main() {
     return !(confirmsOnlySeparateSightings()
         && expiresOldSightings()
         && hashCollisionsCannotConfirmAnotherAddress()
+        && rejectedFramesNeedIndependentConfirmation()
+        && expiredRejectedFramesNeedNewPair()
+        && shortAndLongCandidatesCannotConfirmEachOther()
         && emptySlotsRejectUnknownAddresses()
         && insertedAndReplacementEntriesAreFound()
         && expiredEntriesDisappear()
