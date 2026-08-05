@@ -568,7 +568,12 @@ while True:
 
     print("# Per-parameter margins:", margins)
 
-    center = best_params.copy()
+    # The bounds above are recentred on the population's best while center
+    # carries the best ever seen, and those are not the same point, so after a
+    # narrowing round the seed can fall outside its own bounds and scipy
+    # refuses to start. Clamp rather than drop it: the seed is still the most
+    # useful starting point we have.
+    center = np.clip(best_params, [lo for lo, _ in bounds], [hi for _, hi in bounds])
 
     # Each run narrows the bounds around the current best, so once a few of
     # them in a row bring nothing the schedule has stopped finding anything and
