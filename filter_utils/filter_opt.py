@@ -13,6 +13,8 @@ from scipy.optimize import differential_evolution
 from scipy.signal import firwin2
 import subprocess
 from datetime import datetime
+import multiprocessing
+import os
 import re
 
 # ============================================================
@@ -60,6 +62,11 @@ def parse_args():
     p.add_argument("--df17-weight", type=float, default=1.0,
                    help="Weight for DF17 messages in the objective function")
 
+    p.add_argument("--workers", type=int, default=1,
+                   help="Parallel evaluations (-1 for all cores). Each one runs "
+                        "a full stream1090 pass, so this scales close to linearly "
+                        "until the disk gives out")
+
     return p.parse_args()
 
 
@@ -71,7 +78,16 @@ args = parse_args()
 
 STREAM1090_EXE = "../build/stream1090"
 DATA_PATH = args.data
-FILTER_PATH = "./diff_evolve_fir_temp.txt"
+
+
+def filter_path():
+    """Scratch file holding the taps for one evaluation.
+
+    Per process, because with --workers several evaluations are in flight at
+    once and a single shared path would have them overwrite each other's taps
+    between the write and the run.
+    """
+    return f"./diff_evolve_fir_temp_{os.getpid()}.txt"
 FS = args.fs
 FS_UP = args.fs_up
 NUMTAPS = args.num_taps
@@ -255,6 +271,37 @@ def default_output_rate(input_mhz: float) -> float:
     raise ValueError(f"No default output rate for input rate {input_mhz}")
 
 
+def score_taps(h):
+    """Run stream1090 once over the data with these taps and score the result."""
+    path = filter_path()
+    with open(path, "w") as f:
+        for t in h:
+            f.write(f"{t}\n")
+
+    input_mhz = FS / 1_000_000.0
+
+    if FS_UP is not None:
+        output_mhz = FS_UP / 1_000_000.0
+    else:
+        output_mhz = default_output_rate(input_mhz)
+
+    cmd = [
+        "bash", "-c",
+        f"cat {DATA_PATH} | {STREAM1090_EXE} "
+        f"-s {input_mhz} "
+        f"-u {output_mhz} "
+        f"-f {path}"
+    ]
+
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
+    out, _ = proc.communicate()
+
+    total, long_count, df_counts = parse_frames(out)
+    df17 = df_counts.get(17, 0)
+    score = total + long_count
+    return score, total, df17
+
+
 def evaluate_builtin_filter():
     input_mhz = FS / 1_000_000.0
 
@@ -292,36 +339,16 @@ def evaluate_filter(params):
     if not is_lowpass(h):
         return 1e9
 
-    with open(FILTER_PATH, "w") as f:
-        for t in h:
-            f.write(f"{t}\n")
+    score, total, df17 = score_taps(h)
 
-    input_mhz = FS / 1_000_000.0
-
-    if FS_UP is not None:
-        output_mhz = FS_UP / 1_000_000.0
-    else:
-        output_mhz = default_output_rate(input_mhz)
-
-    cmd = [
-        "bash", "-c",
-        f"cat {DATA_PATH} | {STREAM1090_EXE} "
-        f"-s {input_mhz} "
-        f"-u {output_mhz} "
-        f"-f {FILTER_PATH}"
-    ]
-
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
-    out, _ = proc.communicate()
-
-    total, long_count, df_counts = parse_frames(out)
-    df17 = df_counts.get(17, 0)
-    # score = total + args.df17_weight * df17
-    score = total + long_count
-    # score = total + df_counts.get(17, 0)
-    #score = df_counts.get(17, 0) + df_counts.get(11, 0) * 0.25
-    
-    print(score)
+    # With --workers the evaluation runs in a child process, so updating these
+    # globals here would only touch that child's copy and be thrown away. The
+    # parent recovers the winner from the optimiser's result instead. Still
+    # report each result, otherwise a parallel run prints nothing for hours.
+    if args.workers != 1:
+        print(f"[{os.getpid()}] total={total}, df17={df17}, score={score}",
+              flush=True)
+        return -score
 
     if score > best_score:
         best_score = score
@@ -393,6 +420,22 @@ with open(LOGFILE, "a") as f:
     f.write(f"# Built-in DF17 count: {baseline_df17}\n")
     f.write("\n")
 
+def open_pool(n):
+    """Worker pool for parallel evaluation, or None to stay in this process.
+
+    Forced onto the fork start method: this script does its work at module
+    level, so under spawn every worker would re-import it and start its own
+    optimisation run.
+    """
+    if n == 1:
+        return None
+    if n < 0:
+        n = multiprocessing.cpu_count()
+    return multiprocessing.get_context("fork").Pool(n)
+
+
+pool = open_pool(args.workers)
+
 while True:
     print("Starting Differential Evolution...")
 
@@ -404,9 +447,19 @@ while True:
         mutation=(0.5, 1.0),
         recombination=0.7,
         polish=False,
-        workers=1,
+        # a parallel map has to score a whole generation before any of it can
+        # be used, so the population is updated once per generation
+        workers=pool.map if pool else 1,
+        updating="deferred" if pool else "immediate",
         x0=center,
     )
+
+    if pool:
+        # the winner was scored in a child, so its taps and counts never made
+        # it back here; recompute them once from the parameters that won
+        best_params = np.asarray(result.x)
+        best_taps = build_lowpass_firwin2(best_params, K)[0]
+        best_score, best_total, best_df17 = score_taps(best_taps)
 
     print("\n================ END OF RUN ====================")
     print(f"Best params: {np.round(best_params, 6)}")
