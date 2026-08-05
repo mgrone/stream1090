@@ -19,6 +19,9 @@ public:
 	// detections of the same transmission while two seconds keeps the pair local.
 	static constexpr uint32_t DF11CandidateMinTicks { 100 };
 	static constexpr uint32_t DF11CandidateMaxTicks { 2'000'000 };
+	// Apply the same separation limits when corroborating rejected AP frames.
+	static constexpr uint32_t RejectedCandidateMinTicks { 100 };
+	static constexpr uint32_t RejectedCandidateMaxTicks { 2'000'000 };
 	//static constexpr auto ALT_delta_25ft { 80 };
 	static constexpr auto ALT_delta_ft { 2000 };
     // number if bits used for the look up table 
@@ -141,6 +144,14 @@ public:
 		return false;
 	}
 
+	bool confirmRejectedShort(uint32_t icao, uint64_t frame) noexcept {
+		return confirmRejectedFrame(icao, 0, frame, 56);
+	}
+
+	bool confirmRejectedLong(uint32_t icao, uint64_t high, uint64_t low) noexcept {
+		return confirmRejectedFrame(icao, high, low, 112);
+	}
+
 	void tick() noexcept {
 		m_df11Clock++;
 		
@@ -238,6 +249,39 @@ public:
 		return m_msgStatTable[it.key];
 	}
 private:
+	struct RejectedFrameCandidate {
+		uint64_t high { 0 };
+		uint64_t low { 0 };
+		uint64_t firstSeen { 0 };
+		uint32_t icao { 0 };
+		uint8_t bits { 0 };
+	};
+
+	static constexpr size_t RejectedCandidateCount { 2048 };
+
+	// Full-frame identity makes confirmation exact. This is direct-mapped so a
+	// collision can replace a candidate, but can never confirm a different one.
+	bool confirmRejectedFrame(uint32_t icao, uint64_t high, uint64_t low,
+			uint8_t bits) noexcept {
+		const uint64_t mixed = low ^ (high * 0x9e3779b97f4a7c15ull)
+			^ (uint64_t(icao) * 0xbf58476d1ce4e5b9ull);
+		auto& candidate = m_rejectedCandidates[mixed & (RejectedCandidateCount - 1)];
+		const auto age = m_df11Clock - candidate.firstSeen;
+
+		if (candidate.bits == bits && candidate.icao == icao
+				&& candidate.high == high && candidate.low == low) {
+			if (age >= RejectedCandidateMinTicks && age <= RejectedCandidateMaxTicks) {
+				candidate.firstSeen = m_df11Clock;
+				return true;
+			}
+			if (age < RejectedCandidateMinTicks)
+				return false;
+		}
+
+		candidate = RejectedFrameCandidate{high, low, m_df11Clock, icao, bits};
+		return false;
+	}
+
 	struct DF11Candidate {
 		uint32_t icaoWithCA { 0 };
 		uint64_t firstSeen { 0 };
@@ -310,6 +354,7 @@ private:
 	uint32_t m_time1Mhz { 0 };
 	uint64_t m_df11Clock { 0 };
 	std::array<DF11Candidate, 256> m_df11Candidates{};
+	std::array<RejectedFrameCandidate, RejectedCandidateCount> m_rejectedCandidates{};
 
     // the table with the icao addresses including transponder CA 
 	std::unique_ptr<Entry[]> m_table;
