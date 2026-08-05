@@ -62,6 +62,14 @@ def parse_args():
     p.add_argument("--df17-weight", type=float, default=1.0,
                    help="Weight for DF17 messages in the objective function")
 
+    p.add_argument("--patience", type=int, default=3,
+                   help="Stop after this many consecutive runs that fail to "
+                        "improve the best score. 0 never stops, which is what "
+                        "this script used to do")
+
+    p.add_argument("--max-runs", type=int, default=0,
+                   help="Hard cap on the number of runs, 0 for no cap")
+
     p.add_argument("--workers", type=int, default=1,
                    help="Parallel evaluations (-1 for all cores). Each one runs "
                         "a full stream1090 pass, so this scales close to linearly "
@@ -420,6 +428,51 @@ with open(LOGFILE, "a") as f:
     f.write(f"# Built-in DF17 count: {baseline_df17}\n")
     f.write("\n")
 
+def log_improvement():
+    """Append the current best, in the format --resume reads back."""
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with open(LOGFILE, "a") as f:
+        f.write("# ================================================================\n")
+        f.write(f"# Instance: {DATA_PATH}\n")
+        f.write(f"# Time: {timestamp}\n")
+        f.write(f"# FS: {FS/1_000_000} MHz → FS_UP: {FS_UP/1_000_000} MHz\n")
+        f.write(f"# Number of taps: {NUMTAPS}\n")
+        f.write(f"# Best score: {best_score}\n")
+        f.write(f"# Best message count: {best_total}\n")
+        f.write(f"# Best DF17 count: {best_df17}\n")
+        f.write(f"# Best params: {best_params.tolist()}\n")
+        f.write("# Current bounds:\n")
+        for lo, hi in bounds:
+            f.write(f"# [{lo:.6f}, {hi:.6f}]\n")
+        f.write("# Best taps:\n")
+        for t in best_taps:
+            f.write(f"{t}\n")
+        f.write("\n")
+
+
+def on_generation(intermediate_result):
+    """Record the best after each generation when running in parallel.
+
+    The workers cannot do this themselves, so without it a parallel run would
+    write nothing until it finished and a crash would lose everything. scipy
+    calls this in the parent, once per generation, which is cheap next to the
+    generation itself.
+    """
+    global best_score, best_params, best_taps, best_total, best_df17
+
+    score = -intermediate_result.fun
+    if score <= best_score:
+        return
+
+    best_params = np.asarray(intermediate_result.x).copy()
+    best_taps = build_lowpass_firwin2(best_params, K)[0]
+    # fun carries the score but not the breakdown the log wants
+    best_score, best_total, best_df17 = score_taps(best_taps)
+    print(f"| generation improved: score={best_score}, total={best_total}, "
+          f"df17={best_df17}", flush=True)
+    log_improvement()
+
+
 def open_pool(n):
     """Worker pool for parallel evaluation, or None to stay in this process.
 
@@ -436,7 +489,12 @@ def open_pool(n):
 
 pool = open_pool(args.workers)
 
+runs = 0
+stale = 0
+
 while True:
+    runs += 1
+    score_before = best_score
     print("Starting Differential Evolution...")
 
     result = differential_evolution(
@@ -451,10 +509,11 @@ while True:
         # be used, so the population is updated once per generation
         workers=pool.map if pool else 1,
         updating="deferred" if pool else "immediate",
+        callback=on_generation if pool else None,
         x0=center,
     )
 
-    if pool:
+    if pool and -result.fun > best_score:
         # the winner was scored in a child, so its taps and counts never made
         # it back here; recompute them once from the parameters that won
         best_params = np.asarray(result.x)
@@ -510,3 +569,31 @@ while True:
     print("# Per-parameter margins:", margins)
 
     center = best_params.copy()
+
+    # Each run narrows the bounds around the current best, so once a few of
+    # them in a row bring nothing the schedule has stopped finding anything and
+    # the remaining ones are just spending evaluations. The objective is
+    # deterministic for a given tap set and data, so "no improvement" is exact
+    # rather than a noise threshold.
+    stale = 0 if best_score > score_before else stale + 1
+    print(f"# Run {runs}: best {best_score}, "
+          f"{'improved' if stale == 0 else f'stale for {stale}'}")
+
+    if args.patience and stale >= args.patience:
+        print(f"\nConverged: {stale} run{'' if stale == 1 else 's'} without "
+              "improvement, stopping.")
+        break
+
+    if args.max_runs and runs >= args.max_runs:
+        print(f"\nReached the cap of {args.max_runs} "
+              f"run{'' if args.max_runs == 1 else 's'}, stopping.")
+        break
+
+if pool:
+    pool.close()
+    pool.join()
+
+print(f"\nFinished after {runs} run{'' if runs == 1 else 's'}. "
+      f"Best score {best_score} "
+      f"({best_total} messages, {best_df17} DF17).")
+print(f"Best taps written to {LOGFILE}")
