@@ -170,7 +170,7 @@ python filter_opt.py --data samples.bin --fs 10000000 --fs-up 24000000 --num-gai
 ```
 So let us go through the parameters.
 - Tell the script to optimize on our sample data by `--data samples.bin`
-- The samples have been recorded at 10 Msps and we want to optimize for an internal upsampling rate of 24 Msps. `--fs 10000000 --fs-up 24000000` corresponds to running stream1090 with `-s 10 -u 10`. Note that these are given in Hz here. 
+- The samples have been recorded at 10 Msps and we want to optimize for an internal upsampling rate of 24 Msps. `--fs 10000000 --fs-up 24000000` corresponds to running stream1090 with `-s 10 -u 24`. Note that these are given in Hz here.
 - The number of gain points used by the optimizer is set via `--num-gain-points 9`. Please stick to 9 for now.
 - `--num-taps 15` determines the number of taps to be calculated from the gain points. 15 is stream1090 default. **Important:** This number has to be odd for now.
 - Since we do not provide any initial starting solution we set the bounds for the gain points to something very large by `--margin 1.0`
