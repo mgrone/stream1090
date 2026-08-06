@@ -13,11 +13,14 @@
 
 
 struct DCRemoval {
-    explicit DCRemoval(float alpha = 0.005f)
-        : m_alpha(alpha), m_avg_I(0.0f), m_avg_Q(0.0f)
+    explicit DCRemoval(float alpha = 0.005f, bool enabled = true)
+        : m_alpha(alpha), m_avg_I(0.0f), m_avg_Q(0.0f), m_enabled(enabled)
     {}
 
     void apply(float& I, float& Q) noexcept {
+        if (!m_enabled)
+            return;
+
         float dI = I - m_avg_I;
         float dQ = Q - m_avg_Q;
 
@@ -32,15 +35,16 @@ struct DCRemoval {
         m_alpha = alpha;
     }
 
-    std::string toString() const { 
-        std::ostringstream oss; 
-        oss << "[DCRemoval] alpha: " << m_alpha; 
-        return oss.str(); 
+    std::string toString() const {
+        std::ostringstream oss;
+        oss << "[DCRemoval] alpha: " << m_alpha << (m_enabled ? "" : " (disabled)");
+        return oss.str();
     }
 private:
     float m_alpha;
     float m_avg_I;
     float m_avg_Q;
+    bool m_enabled;
 };
 
 
@@ -106,4 +110,3 @@ template<typename... Stages>
 auto make_pipeline(Stages&&... stages) {
     return IQPipeline<std::decay_t<Stages>...>(std::forward<Stages>(stages)...);
 }
-
