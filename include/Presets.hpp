@@ -42,6 +42,14 @@ constexpr auto presets = std::make_tuple(
 #else 
 constexpr auto presets = std::make_tuple(
     // RTL-SDR (uint8) default presets
+    // 2 MHz is the rate the original dump1090 used, so recordings pinned to it
+    // can be read without resampling them first. 12 MHz out is the useful point
+    // of the curve: 2 -> 8 decodes 3.7% fewer messages, and going past 12 buys
+    // nothing, since a bit is only two samples long at this input rate.
+    Preset<IQ_UINT8_RTL_SDR, Sampler_2_0_to_12_0_Mhz, IQPipelineOptions::NONE>{},
+    Preset<IQ_UINT8_RTL_SDR, Sampler_2_0_to_12_0_Mhz, IQPipelineOptions::IQ_FIR_RTL_SDR>{},
+    Preset<IQ_UINT8_RTL_SDR, Sampler_2_0_to_12_0_Mhz, IQPipelineOptions::IQ_FIR_RTL_SDR_FILE>{},
+
     Preset<IQ_UINT8_RTL_SDR, Sampler_2_4_to_8_0_Mhz, IQPipelineOptions::NONE>{},
     Preset<IQ_UINT8_RTL_SDR, Sampler_2_4_to_8_0_Mhz, IQPipelineOptions::IQ_FIR_RTL_SDR>{},
     Preset<IQ_UINT8_RTL_SDR, Sampler_2_4_to_8_0_Mhz, IQPipelineOptions::IQ_FIR_RTL_SDR_FILE>{},
