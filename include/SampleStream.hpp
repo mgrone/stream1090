@@ -14,6 +14,7 @@
 #include <cstring>
 #include <cmath>
 
+#include "RawInputFormat.hpp"
 #include "DemodCore.hpp"
 #include "Sampler.hpp"
 #include "MessageHandler.hpp"
@@ -121,7 +122,7 @@ public:
     static constexpr size_t NumSampleBuffers = 2;
     static constexpr size_t TotalSampleBufferLength = NumSampleBuffers * Sampler::SampleBufferSize + Sampler::SampleBufferOverlap;
 
-    SampleStream() : m_inputRingBuffer(0.0f), m_sampleRingBuffer(0.0f) { }
+    SampleStream() : m_inputRingBuffer(0), m_sampleRingBuffer(0) { }
    
     // the main method that streams from InputStream using inputReader
     template<typename InputReaderType, MessageHandler Handler>
@@ -137,10 +138,11 @@ public:
         // ShiftRegisters::extractAlignedFrameLong for the 16 bit alignment
         const size_t delay = (size_t(16) + frameBit) * Sampler::NumStreams;
         const auto offsetInBlock = size_t(m_demodPos - m_sampleRingBuffer.readPos());
-        const float first  = m_sampleRingBuffer.lookBack(delay - stream, offsetInBlock);
-        const float second = m_sampleRingBuffer.lookBack(delay - stream - (Sampler::NumStreams >> 1),
-                                                        offsetInBlock);
-        return std::fabs(first - second);
+        // the ring holds linear magnitudes scaled by MagScale
+        const float first  = float(m_sampleRingBuffer.lookBack(delay - stream, offsetInBlock));
+        const float second = float(m_sampleRingBuffer.lookBack(delay - stream - (Sampler::NumStreams >> 1),
+                                                               offsetInBlock));
+        return std::fabs(first - second) * (1.0f / MagScale);
     }
 
     uint8_t getRSSI() const noexcept {
@@ -152,12 +154,13 @@ public:
         const auto offsetInBlock = m_demodPos - m_sampleRingBuffer.readPos();
         // check the rssi of the surounding samples. This index is the first to
         // catch the message, usually with bad RSSI
-        float rssi = 0.0f;
+        int32_t peak = 0;
         for (size_t s = 0; s < Sampler::NumStreams; s++) {
-            float v = std::max(m_sampleRingBuffer.lookBack(samplesDelay + s, offsetInBlock), 
-                               m_sampleRingBuffer.lookBack(samplesDelay + s - (Sampler::NumStreams >> 1), offsetInBlock));
-            rssi = std::max(rssi, v);
-        }
+                int32_t v = std::max(m_sampleRingBuffer.lookBack(samplesDelay + s, offsetInBlock),
+                                     m_sampleRingBuffer.lookBack(samplesDelay + s - (Sampler::NumStreams >> 1), offsetInBlock));
+                peak = std::max(peak, v);
+            }
+            float rssi = float(peak) * (1.0f / MagScale);
         // normalize
         rssi = std::min(1.41f, rssi) / 1.41f;
         // and return as byte
@@ -165,13 +168,18 @@ public:
     }
 
 private:
-    uint32_t m_newBits[Sampler::NumStreams];    
+    // Samples reach the ring as ((I*I) >> 2) + ((Q*Q) >> 2) with I and Q in
+    // Q14, so the stored value is the squared magnitude times (SampleOne/2)^2
+    // and a linear magnitude comes back as stored / MagScale.
+    static constexpr float MagScale = float(SampleOne) * 256.0f;
+
+    uint32_t m_newBits[Sampler::NumStreams];
     // we have one ring buffer for the IQ pipeline
-    BlockRing<float, Sampler::InputBufferSize,  NumInputBuffers,  Sampler::InputBufferOverlap>  m_inputRingBuffer;
+    BlockRing<int32_t, Sampler::InputBufferSize,  NumInputBuffers,  Sampler::InputBufferOverlap>  m_inputRingBuffer;
     // and one for the upsampled magnitudes
-    BlockRing<float, Sampler::SampleBufferSize, NumSampleBuffers, Sampler::SampleBufferOverlap> m_sampleRingBuffer;
+    BlockRing<int32_t, Sampler::SampleBufferSize, NumSampleBuffers, Sampler::SampleBufferOverlap> m_sampleRingBuffer;
     // not nice. Will change
-    const float* m_demodPos = nullptr;
+    const int32_t* m_demodPos = nullptr;
 };
 
 
