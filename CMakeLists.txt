@@ -19,12 +19,14 @@ option(ENABLE_RSSI           "Compile with STREAM1090_ENABLE_RSSI" ON)
 option(ENABLE_RTLSDR_BLOG    "Enable vendored RTL-SDR Blog fork" OFF)
 option(ENABLE_TOO_MUCH_CPU   "Unlocks the 40 and 48 Msps speeds" OFF)
 option(BUILD_TESTING         "Build tests" OFF)
+set(INTERPOLATION_KERNEL "6" CACHE STRING "RTL-SDR interpolation kernel (1 linear, 6 sharpening cubic)")
 
 set(STATS_DEF        STATS_ENABLED=$<BOOL:${ENABLE_STATS}>)
 set(STATS_END_DEF    STATS_END_ONLY=$<BOOL:${END_STATS}>)
 set(CUSTOM_INPUT_DEF STREAM1090_CUSTOM_INPUT=$<BOOL:${ENABLE_CUSTOM_INPUT}>)
 set(RSSI_DEF         STREAM1090_RSSI=$<BOOL:${ENABLE_RSSI}>)
 set(TOO_MUCH_CPU_DEF STREAM1090_TOO_MUCH_CPU=$<BOOL:${ENABLE_TOO_MUCH_CPU}>)
+set(INTERPOLATION_DEF STREAM1090_INTERP=${INTERPOLATION_KERNEL})
 
 # ------------------------------------------------------------
 # Compiler settings
@@ -134,6 +136,7 @@ target_compile_definitions(stream1090 PRIVATE
     ${CUSTOM_INPUT_DEF}
     ${RSSI_DEF}
     ${TOO_MUCH_CPU_DEF}
+    ${INTERPOLATION_DEF}
     ${DEVICE_DEFINITIONS}
 )
 
@@ -170,6 +173,12 @@ if(BUILD_TESTING)
     target_include_directories(sampler_test PRIVATE include)
     target_compile_options(sampler_test PRIVATE ${DEFAULT_COMPILE_OPTIONS})
     add_test(NAME sampler_test COMMAND sampler_test)
+
+    add_executable(sampler_interp_sharpening_test tests/SamplerInterpolationTest.cpp)
+    target_include_directories(sampler_interp_sharpening_test PRIVATE include)
+    target_compile_options(sampler_interp_sharpening_test PRIVATE ${DEFAULT_COMPILE_OPTIONS})
+    target_compile_definitions(sampler_interp_sharpening_test PRIVATE STREAM1090_INTERP=6)
+    add_test(NAME sampler_interp_sharpening_test COMMAND sampler_interp_sharpening_test)
 
     add_executable(mode_s_altitude_test tests/ModeSAltitudeTest.cpp)
     target_include_directories(mode_s_altitude_test PRIVATE include)
