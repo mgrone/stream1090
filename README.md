@@ -184,6 +184,11 @@ To enable filtering use
 ```
 Stream1090 comes with a single filter for each sample rate combination. These have been optimized for a set of pre-recorded sample data provided by people from around the world with different setups.
 
+On ARM64/NEON builds, symmetric fixed-point FIR taps are evaluated four output
+samples at a time. Opposing input samples are widened and added before their
+shared tap is multiplied, which nearly halves the multiply-accumulate count.
+The portable path remains in use on other architectures. The optimized and
+plain kernels are covered by an exact-output equivalence test.
 
 ## Stack Integration
 In order to utilize the output of Stream1090, we will send it to a decoder like readsb or dump1090-fa via TCP. This has one big advantage: You do not have to modify anything in the remaining stack.
