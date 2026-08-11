@@ -85,7 +85,7 @@ public:
 			const auto alt_bits = ModeS::extractSquawkAlt_Long(frame);
 			const auto alt = ModeS::decodeAltitude(alt_bits);
 			const bool altitudeAccepted = alt
-				&& m_cache.checkAltitude(it, *alt, alt_bits & 0x0010);
+				&& m_cache.checkAltitude(it, *alt);
 			if (!altitudeAccepted
 					&& !m_cache.confirmRejectedLong(crc, frame.high(), frame.low())) {
 				return false;
@@ -120,7 +120,7 @@ public:
 			const auto alt_bits = ModeS::extractSquawkAlt_Short(frameShort);
 			const auto alt = ModeS::decodeAltitude(alt_bits);
 			const bool altitudeAccepted = alt
-				&& m_cache.checkAltitude(it, *alt, alt_bits & 0x0010);
+				&& m_cache.checkAltitude(it, *alt);
 			if (!altitudeAccepted
 					&& !m_cache.confirmRejectedShort(crc, frameShort)) {
 				return false;
