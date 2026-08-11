@@ -184,6 +184,18 @@ To enable filtering use
 ```
 Stream1090 comes with a single filter for each sample rate combination. These have been optimized for a set of pre-recorded sample data provided by people from around the world with different setups.
 
+### DC Offset Removal
+
+DC offset removal can be enabled without the low-pass FIR filter:
+```
+--dc-removal    Removes the receiver's DC offset without enabling the FIR filter
+```
+For example:
+```
+./build/stream1090 -s 6 -u 24 --dc-removal -d ./configs/airspy.ini > /dev/null
+```
+This is useful when the receiver has a measurable DC offset but the additional CPU cost of the FIR filter is not desired. The Airspy `-q` and `-f` pipelines already include DC offset removal, so `--dc-removal` does not need to be combined with either option. For RTL-SDR, `--dc-removal` can also be combined with `-q` or `-f` when both DC removal and FIR filtering are desired.
+
 
 ## Stack Integration
 In order to utilize the output of Stream1090, we will send it to a decoder like readsb or dump1090-fa via TCP. This has one big advantage: You do not have to modify anything in the remaining stack.

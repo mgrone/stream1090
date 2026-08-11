@@ -175,6 +175,11 @@ if(BUILD_TESTING)
     target_include_directories(mode_s_altitude_test PRIVATE include)
     target_compile_options(mode_s_altitude_test PRIVATE ${DEFAULT_COMPILE_OPTIONS})
     add_test(NAME mode_s_altitude_test COMMAND mode_s_altitude_test)
+
+    add_executable(iq_pipeline_test tests/IQPipelineTest.cpp)
+    target_include_directories(iq_pipeline_test PRIVATE include)
+    target_compile_options(iq_pipeline_test PRIVATE ${DEFAULT_COMPILE_OPTIONS})
+    add_test(NAME iq_pipeline_test COMMAND iq_pipeline_test)
 endif()
 
 # ------------------------------------------------------------

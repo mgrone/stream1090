@@ -118,6 +118,8 @@ void print_help() {
     "  -d <file.ini>        Device configuration INI file for native devices\n"
     "                       See configs/airspy.ini or configs/rtlsdr.ini\n"                       
     "  -q                   Enables IQ FIR filter with built-in taps\n"
+    "  --dc-removal         Removes the receiver's DC offset without the FIR.\n"
+    "                       Airspy -q and -f pipelines already include it.\n"
     "  -f <taps file>       Taps to load that are used for the IQ FIR filter\n"
     "  -v                   Verbose output\n"
     "  -h, --help           Show this help message\n\n";
@@ -137,6 +139,7 @@ struct CliArgs {
     std::string deviceConfig = "";
     std::string tapsFile = "";
     bool iq_filter = false;
+    bool dc_removal = false;
     bool verbose = false;
 };
 
@@ -166,6 +169,11 @@ bool parse_cli(int argc, char** argv, CliArgs& out) {
 
         if (arg == "-f" && i + 1 < argc) {
             out.tapsFile = argv[++i];
+            continue;
+        }
+
+        if (arg == "--dc-removal") {
+            out.dc_removal = true;
             continue;
         }
 
@@ -268,7 +276,7 @@ int main(int argc, char** argv) {
 
     CliArgs args;
     if (!parse_cli(argc, argv, args)) {
-        std::cerr << "Usage: stream1090 -s <rate> -u <rate> [-d <device.ini>] [-f <taps file>] [-q] [-v] [-h]\n";
+        std::cerr << "Usage: stream1090 -s <rate> -u <rate> [-d <device.ini>] [-f <taps file>] [-q] [--dc-removal] [-v] [-h]\n";
         return 1;
     }
 
@@ -330,6 +338,8 @@ int main(int argc, char** argv) {
     // ------------------------
     // FIR taps loading
     // ------------------------
+    r_vars.dcRemoval = args.dc_removal;
+
     if (!args.tapsFile.empty()) {
         r_vars.filterTaps = load_taps_from_file(args.tapsFile);
         if (r_vars.filterTaps.empty()) {
@@ -415,7 +425,6 @@ int main(int argc, char** argv) {
     }
     return *outcome ? 0 : 1;
 }
-
 
 
 
