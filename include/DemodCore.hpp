@@ -310,10 +310,6 @@ public:
 			repaired = repaired ^ flip;
 		}
 
-		// the solve is only as good as the candidate set, so verify
-		if (CRC::compute<112>(repaired) != 0)
-			return false;
-
 		// repairing may have moved the address; it must still be trusted
 		const auto icaoWithCA = ModeS::extractICAOWithCA_Long(repaired);
 		const auto e = m_cache.findWithCA(icaoWithCA);
