@@ -245,7 +245,6 @@ std::vector<float> load_taps_from_file(const std::string& filename) {
 
         // parse float
         try {
-            //float v = std::stof(line);
             double v = std::stod(line);
             taps.push_back((float)v);
         } catch (...) {
@@ -263,6 +262,12 @@ std::vector<float> load_taps_from_file(const std::string& filename) {
 }
 
 int main(int argc, char** argv) {
+    // Input and logging may run beside AVR output. Their default ties must not
+    // flush std::cout concurrently from another thread.
+    std::ios::sync_with_stdio(false);
+    std::cin.tie(nullptr);
+    std::cerr.tie(nullptr);
+
     RuntimeVars r_vars;
     CompileTimeVars c_vars;
 

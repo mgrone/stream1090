@@ -500,8 +500,8 @@ private:
 	
 	// while dealing with a single stream, this holds a copy of the frame
 	// from the previous stream  
-	alignas(16) Bits128 m_prevLongFrame; 
-	alignas(16) uint64_t m_prevShortFrame; 
+	alignas(16) Bits128 m_prevLongFrame;
+	alignas(16) uint64_t m_prevShortFrame{ 0 };
 
 	// plane lookup table
 	ICAOTable m_cache; 
