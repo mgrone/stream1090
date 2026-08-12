@@ -10,10 +10,16 @@
 #include <memory>
 #include <algorithm>
 
-template<typename T, size_t BlockSize, size_t NumBlocks, size_t Delay = 0>
+template<typename T, size_t BlockSize, size_t NumBlocks, size_t Delay = 0,
+         size_t HistoryBlocks = 0>
 class BlockRing {
 public:
-    static constexpr size_t TotalSize = BlockSize * NumBlocks + Delay;
+    static_assert(NumBlocks > HistoryBlocks);
+    static_assert(Delay <= BlockSize);
+
+    static constexpr size_t RingSize = BlockSize * NumBlocks;
+    static constexpr size_t TotalSize = RingSize + Delay;
+    static constexpr size_t Capacity = NumBlocks - HistoryBlocks;
 
     BlockRing(const T& initValue)
         : m_data(
@@ -72,12 +78,12 @@ public:
 
     const T& lookBack(size_t k, size_t offsetInBlock = 0) const noexcept {
         size_t absoluteIndex = m_readPos + offsetInBlock;
-        if (absoluteIndex >= TotalSize)
-            absoluteIndex -= TotalSize;
+        if (absoluteIndex >= RingSize)
+            absoluteIndex -= RingSize;
 
-        size_t lookBackIndex = absoluteIndex + TotalSize - k;
-        if (lookBackIndex >= TotalSize)
-            lookBackIndex -= TotalSize;
+        size_t lookBackIndex = absoluteIndex + RingSize - k;
+        if (lookBackIndex >= RingSize)
+            lookBackIndex -= RingSize;
 
         return m_data[lookBackIndex];
     }

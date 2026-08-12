@@ -38,7 +38,8 @@ public:
 
 template<typename R>
 concept RssiProvider = requires(R r) {
-    { r.getRSSI() } -> std::convertible_to<uint8_t>;
+    { r.getRSSIShort() } -> std::convertible_to<uint8_t>;
+    { r.getRSSILong() } -> std::convertible_to<uint8_t>;
 };
 
 template<typename Sampler, RssiProvider R>
@@ -50,13 +51,13 @@ public:
 
     void handleShort(uint64_t sampleIndex, const uint64_t frame) {
         const uint64_t MLAT_timeStamp = MLAT::sampleIndexToMlatTime<Sampler::NumStreams>(sampleIndex);
-        const uint8_t rssi = rssiProvider.getRSSI();
+        const uint8_t rssi = rssiProvider.getRSSIShort();
         m_writer.write_short_MLAT_RSSI(MLAT_timeStamp, frame, rssi);
     }
 
     void handleLong(uint64_t sampleIndex, const Bits128& frame) {
         const uint64_t MLAT_timeStamp = MLAT::sampleIndexToMlatTime<Sampler::NumStreams>(sampleIndex);
-        const uint8_t rssi = rssiProvider.getRSSI();
+        const uint8_t rssi = rssiProvider.getRSSILong();
         m_writer.write_long_MLAT_RSSI(MLAT_timeStamp, frame, rssi);
     }
 

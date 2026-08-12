@@ -45,26 +45,36 @@ public:
         return std::fabs(first - second) * (1.0f / MagScale);
     }
 
-    uint8_t getRSSI() const noexcept {
-        // we are 128 bits behind and are looking for the preamble pulse
-        constexpr size_t bitDelay     = 128 - 8;
-        // how much is that in samples?
-        constexpr size_t samplesDelay = bitDelay * Sampler::NumStreams;
-        // how far is the demodulator in the block?
-        const auto offsetInBlock = m_demodPos - m_sampleRingBuffer.readPos();
-        // check the rssi of the surounding samples. This index is the first to
-        // catch the message, usually with bad RSSI
+    uint8_t getRSSI(uint8_t frameBit) const noexcept {
+        // we are in total 128 bits late already. So the first bit is 128 * NumStreams samples old.
+        const size_t delay = (size_t(128) - frameBit) * Sampler::NumStreams;
+        const auto offsetInBlock = size_t(m_demodPos - m_sampleRingBuffer.readPos());
+        // we assume here that we hit the message quite early.
+        // Subsequent streams probably would have done a better job.
+        // We therefore iterate and take the maximum. Even if stream 3 got a hit, we start at 0
         int32_t peak = 0;
         for (size_t s = 0; s < Sampler::NumStreams; s++) {
-                int32_t v = std::max(m_sampleRingBuffer.lookBack(samplesDelay + s, offsetInBlock),
-                                     m_sampleRingBuffer.lookBack(samplesDelay + s - (Sampler::NumStreams >> 1), offsetInBlock));
-                peak = std::max(peak, v);
-            }
-            float rssi = float(peak) * (1.0f / MagScale);
+            const int32_t v  = m_sampleRingBuffer.lookBack(delay - s, offsetInBlock);
+            peak = std::max(peak, v);
+        }
+        // conversion to float
+        float rssi = float(peak) * (1.0f / MagScale);
         // normalize
         rssi = std::min(1.41f, rssi) / 1.41f;
         // and return as byte
         return uint8_t(rssi * 255.0);
+    }
+
+    // implements concept RssiProvider for getting the rssi value for long messages
+    uint8_t getRSSILong() const noexcept {
+        // we sample in the middle of the 112 bit long frame
+        return getRSSI(56);
+    }
+
+    // implements concept RssiProvider for getting the rssi value for short messages
+    uint8_t getRSSIShort() const noexcept {
+        // we sample in the middle of the 56 bit short frame
+        return getRSSI(28);
     }
 
 private:
