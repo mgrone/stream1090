@@ -13,7 +13,7 @@
 #include <chrono>
 #include <optional>
 
-#define STREAM1090_VERSION "260802"
+#define STREAM1090_VERSION "260812"
 
 #include "MainInstance.hpp"
 

@@ -99,7 +99,7 @@ private:
 template<typename... Stages>
 class IQPipeline {
 public:
-    IQPipeline(Stages... stages)
+    IQPipeline(const Stages& ... stages)
         : m_stages(std::move(stages)...)
     {}
 
