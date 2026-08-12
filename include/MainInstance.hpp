@@ -20,6 +20,7 @@
 #include <chrono>
 #include <optional>
 #include <sstream>
+#include <unistd.h>
 
 
 template<typename Sampler>
@@ -257,7 +258,7 @@ public:
             RawFormatType,
             SamplerType::InputBufferSize,
             decltype(iqPipeline)
-        > inputReader(iqPipeline, std::cin);
+        > inputReader(iqPipeline, STDIN_FILENO);
 
         
         SampleStream<SamplerType> sampleStream;
