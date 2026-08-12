@@ -22,7 +22,7 @@ public:
           m_reader(ringBuffer)
     { }
 
-    inline void readMagnitude(float* out) {
+    inline void readMagnitude(int32_t* out) {
         m_reader.process([&](const RawType* buffer) {
             this->processBlock(buffer, out);
         });

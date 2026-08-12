@@ -22,7 +22,7 @@ public:
         std::fill(m_buffer.get(), m_buffer.get() + NumValuesToRead, RawType(0));
     }
 
-    inline void readMagnitude(float* out) {
+    inline void readMagnitude(int32_t* out) {
         constexpr size_t N = InputBufferSize;
         constexpr size_t NumValuesToRead = 2 * N;
         constexpr size_t NumBytesToRead  = NumValuesToRead * sizeof(RawType);

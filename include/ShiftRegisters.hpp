@@ -31,20 +31,23 @@ class alignas(16) ShiftRegistersBase {
             m_crc_112[i] = 0;
             m_high[i] = 0;
             m_low[i] = 0;
-            m_df[i] = 0;
         };
     }
 
     constexpr CRC::crc_t getCRC_56(auto i) const noexcept {
-        return (CRC::crc_t)m_crc_56[i];
+        return m_crc_56[i];
     }
 
     constexpr CRC::crc_t getCRC_112(auto i) const noexcept {
-        return (CRC::crc_t)m_crc_112[i];
+        return m_crc_112[i];
     }
 
+    /// The downlink format is the top five bits of the register, so keeping a
+    /// separate array for it meant storing NumStreams words every sample to
+    /// serve a read that only happens on a handled format. Derived here
+    /// instead, from the value the update has already written.
     constexpr uint32_t getDF(auto i) const noexcept{
-        return (uint32_t)m_df[i];
+        return (uint32_t)(m_high[i] >> 59);
     }
 
     protected:
@@ -52,14 +55,12 @@ class alignas(16) ShiftRegistersBase {
     uint64_t m_low[NumStreams];
     uint64_t m_high[NumStreams];
 
-	// And a checksum for the short messages (56 bit). Held in 64 bit so the
-	// masked update below needs no narrowing in the middle of the chain.
-	uint64_t m_crc_56[NumStreams];
+	// And a checksum for the short messages (56 bit). Never wider than 25 bits,
+	// so it is held in 32 and the update moves half the bytes it used to.
+	CRC::crc_t m_crc_56[NumStreams];
 
     // Each stream has a checksum for long messages (112 bit)
-	uint64_t m_crc_112[NumStreams];
-
-    uint64_t m_df[NumStreams];
+	CRC::crc_t m_crc_112[NumStreams];
 };
 
 
@@ -85,13 +86,13 @@ class alignas(16) ShiftRegisters : public ShiftRegistersBase<NumStreams> {
                 const uint64_t low  = this->m_low[i];
 
                 // all ones when a one bit leaves the register at the top
-                const uint64_t shiftedOut = uint64_t(0) - (high >> 63);
+                const uint32_t shiftedOut = uint32_t(0) - uint32_t(high >> 63);
 
-                uint64_t crc56  = this->m_crc_56[i]  ^ (Delta55  & shiftedOut);
-                uint64_t crc112 = this->m_crc_112[i] ^ (Delta111 & shiftedOut);
+                uint32_t crc56  = this->m_crc_56[i]  ^ (Delta55  & shiftedOut);
+                uint32_t crc112 = this->m_crc_112[i] ^ (Delta111 & shiftedOut);
 
-                crc56  = (crc56  << 1) | ((high >> 7)  & 0x1);
-                crc112 = (crc112 << 1) | ((low  >> 15) & 0x1);
+                crc56  = (crc56  << 1) | uint32_t((high >> 7)  & 0x1);
+                crc112 = (crc112 << 1) | uint32_t((low  >> 15) & 0x1);
 
                 const uint64_t newHigh = (high << 1) | (low >> 63);
                 const uint64_t newLow  = (low  << 1) | cmp[i];
@@ -99,14 +100,13 @@ class alignas(16) ShiftRegisters : public ShiftRegistersBase<NumStreams> {
 
                 // Fold the polynomial back in whenever bit 24 is set. The CRC
                 // never exceeds 25 bits here, so the shift is a 0/1 flag.
-                crc56  ^= Polynomial & (uint64_t(0) - (crc56  >> 24));
-                crc112 ^= Polynomial & (uint64_t(0) - (crc112 >> 24));
+                crc56  ^= Polynomial & (uint32_t(0) - (crc56  >> 24));
+                crc112 ^= Polynomial & (uint32_t(0) - (crc112 >> 24));
 
                 this->m_crc_56[i]  = crc56;
                 this->m_crc_112[i] = crc112;
                 this->m_high[i]    = newHigh;
                 this->m_low[i]     = newLow;
-                this->m_df[i]      = df;
 
                 handledMask |= uint64_t((handledDownlinkFormats >> df) & 0x1) << i;
             }
@@ -123,8 +123,8 @@ class alignas(16) ShiftRegisters : public ShiftRegistersBase<NumStreams> {
         }
 
     private:
-        static constexpr uint64_t Delta55  = CRC::delta<55>();
-        static constexpr uint64_t Delta111 = CRC::delta<111>();
-        static constexpr uint64_t Polynomial = CRC::polynomial;
+        static constexpr CRC::crc_t Delta55  = CRC::delta<55>();
+        static constexpr CRC::crc_t Delta111 = CRC::delta<111>();
+        static constexpr CRC::crc_t Polynomial = CRC::polynomial;
 
 };
