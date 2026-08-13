@@ -22,6 +22,17 @@ public:
     static constexpr size_t NumSampleBuffers = 2;
     static constexpr size_t TotalSampleBufferLength = NumSampleBuffers * Sampler::SampleBufferSize + Sampler::SampleBufferOverlap;
 
+    // How long a decoded frame may sit in the output buffer before it is
+    // pushed out. Ten milliseconds is below anything downstream notices - a
+    // tracker sees aircraft at 2 Hz, and MLAT reads the timestamp carried
+    // inside the frame rather than the arrival time of the bytes - and it
+    // batches roughly six frames per flush at a busy site.
+    static constexpr size_t FlushIntervalMicros = 10000;
+    // a block is SampleBufferSize / NumStreams bit periods, i.e. microseconds
+    static constexpr size_t BlockMicros = Sampler::SampleBufferSize / Sampler::NumStreams;
+    static constexpr size_t FlushEveryBlocks =
+        (FlushIntervalMicros + BlockMicros - 1) / BlockMicros;
+
     SampleStream() : m_inputRingBuffer(0), m_sampleRingBuffer(0) { }
    
     // the main method that streams from InputStream using inputReader
@@ -90,6 +101,7 @@ private:
     BlockRing<int32_t, Sampler::SampleBufferSize, NumSampleBuffers, Sampler::SampleBufferOverlap> m_sampleRingBuffer;
     // not nice. Will change
     const int32_t* m_demodPos = nullptr;
+    size_t m_blocksSinceFlush = 0;
 };
 
 
@@ -151,6 +163,23 @@ inline void SampleStream<Sampler>::read(InputReaderType& inputReader, Handler& m
                 m_demodPos += Sampler::NumStreams;
             }
             m_sampleRingBuffer.advanceReadPos();
+
+            // Hand the buffered frames to the operating system on a fixed
+            // cadence rather than one frame at a time. The block boundary is
+            // already on this thread, so nothing has to be locked, and it
+            // ticks with the samples rather than with the traffic: a lone
+            // frame at a quiet site still leaves within FlushIntervalMicros,
+            // which a timer could only manage by flushing the stream from a
+            // second thread.
+            if (++m_blocksSinceFlush >= FlushEveryBlocks) {
+                m_blocksSinceFlush = 0;
+                if constexpr (requires { messageHandler.flush(); })
+                    messageHandler.flush();
+            }
         }
     }
+
+    // and whatever is left over when the input ends
+    if constexpr (requires { messageHandler.flush(); })
+        messageHandler.flush();
 }

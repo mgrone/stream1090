@@ -31,6 +31,19 @@ public:
         std::ios::sync_with_stdio(false);
     }
 
+    /// Push whatever is buffered to the underlying stream.
+    ///
+    /// The write functions deliberately do not flush. A frame is 30 or 44
+    /// bytes, so flushing every one of them turns a 20 kB/s feed into ~450
+    /// pieces per second, and each piece costs a write here plus a read and a
+    /// write in whatever relays the pipe. Measured on a Pi 4 feeding readsb
+    /// through socat: 2270 reads and 2270 writes in five seconds inside socat,
+    /// 4.3% of a core, to move 20 kB/s. SampleStream flushes on a fixed
+    /// cadence instead.
+    void flush() {
+        m_out.flush();
+    }
+
     // Writes an AVR short frame with MLAT timestamp (no RSSI)
     void write_short_MLAT(uint64_t ts, uint64_t frameShort) {
         char* p = m_buf;
@@ -42,7 +55,6 @@ public:
         *p++ = '\n';
 
         m_out.write(m_buf, p - m_buf);
-        m_out.flush();
     }
 
     // Writes an AVR long frame with MLAT timestamp (no RSSI)
@@ -57,7 +69,6 @@ public:
         *p++ = '\n';
 
         m_out.write(m_buf, p - m_buf);
-        m_out.flush();
     }
 
     // Writes an AVR short frame with MLAT timestamp and RSSI
@@ -72,7 +83,6 @@ public:
         *p++ = '\n';
 
         m_out.write(m_buf, p - m_buf);
-        m_out.flush();
     }
 
     // Writes an AVR long frame with MLAT timestamp and RSSI
@@ -88,7 +98,6 @@ public:
         *p++ = '\n';
 
         m_out.write(m_buf, p - m_buf);
-        m_out.flush();
     }
 
 private:
