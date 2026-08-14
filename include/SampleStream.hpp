@@ -77,6 +77,79 @@ public:
         return getRSSI(28);
     }
 
+    /// Ratio of the weakest preamble pulse to the strongest inter-pulse gap
+    /// across the eight preamble slots, sampled just before the frame. A real
+    /// preamble scores well above 1; noise hovers around 0.5.
+    float preambleScore(size_t stream) const noexcept {
+        return preambleScoreAt(stream, 135);
+    }
+
+    float preambleScoreAt(size_t stream, size_t PreambleStart) const noexcept {
+        constexpr size_t Half = Sampler::NumStreams >> 1;
+        const auto offsetInBlock = size_t(m_demodPos - m_sampleRingBuffer.readPos());
+
+        float pulse = std::numeric_limits<float>::max();
+        float gap = 0.0f;
+
+        for (size_t slot = 0; slot < 8; ++slot) {
+            const size_t base = (PreambleStart - slot) * Sampler::NumStreams;
+            for (size_t h = 0; h < 2; ++h) {
+                const size_t off = base - stream - h * Half;
+                float sum = 0.0f;
+                for (size_t k = 0; k < Half; ++k)
+                    sum += m_sampleRingBuffer.lookBack(off - k, offsetInBlock);
+
+                const bool isPulse = (h == 0 && (slot == 0 || slot == 1))
+                                  || (h == 1 && (slot == 3 || slot == 4));
+                if (isPulse)
+                    pulse = std::min(pulse, sum);
+                else
+                    gap = std::max(gap, sum);
+            }
+        }
+
+        return (gap > 0.0f) ? (pulse / gap) : 0.0f;
+    }
+
+    /// Signal-to-noise ratio of a frame: the peak magnitude across the frame's
+    /// data region over the median magnitude of a quiet window before it. This
+    /// is a ratio, so it is independent of receiver gain. A real transmission
+    /// sits well above its local noise floor; a fabricated frame is at it.
+    float snr(size_t frameBit) const noexcept {
+        const auto offsetInBlock = size_t(m_demodPos - m_sampleRingBuffer.readPos());
+
+        int32_t peak = 0;
+        {
+            const size_t delay = (size_t(128) - frameBit) * Sampler::NumStreams;
+            for (size_t s = 0; s < Sampler::NumStreams; s++)
+                peak = std::max(peak, m_sampleRingBuffer.lookBack(delay - s, offsetInBlock));
+        }
+
+        // noise floor: a low percentile of magnitudes over a quiet window
+        // before the preamble. The low percentile ignores any other
+        // transmission that happens to fall in the window, so the estimate is
+        // the receiver's own noise level and the ratio transfers between sites.
+        constexpr size_t NoiseBits = 64;
+        constexpr size_t StartBit = 200;
+        std::array<int32_t, NoiseBits * Sampler::NumStreams> window{};
+        size_t n = 0;
+        for (size_t b = 0; b < NoiseBits; b++) {
+            const size_t delay = (size_t(StartBit) + b) * Sampler::NumStreams;
+            for (size_t s = 0; s < Sampler::NumStreams; s++) {
+                window[n++] = m_sampleRingBuffer.lookBack(delay - s, offsetInBlock);
+                if (n == window.size())
+                    break;
+            }
+            if (n == window.size())
+                break;
+        }
+        std::sort(window.begin(), window.begin() + n);
+        const float noise = float(window[n / 4]);
+        if (noise <= 0.0f)
+            return 0.0f;
+        return float(peak) / noise;
+    }
+
 private:
     // Samples reach the ring as ((I*I) >> 2) + ((Q*Q) >> 2) with I and Q in
     // Q14, so the stored value is the squared magnitude times (SampleOne/2)^2
@@ -101,6 +174,14 @@ inline void SampleStream<Sampler>::read(InputReaderType& inputReader, Handler& m
     demodCore.setConfidenceSource(this, [](const void* ctx, uint8_t bit, size_t stream) -> float {
         return static_cast<const SampleStream<Sampler>*>(ctx)->confidenceAt(bit, stream);
     });
+    const auto preambleSource = [](const void* ctx, size_t stream) -> float {
+        return static_cast<const SampleStream<Sampler>*>(ctx)->preambleScore(stream);
+    };
+    demodCore.setPreambleSource(this, preambleSource);
+    const auto snrSource = [](const void* ctx, uint8_t frameBit) -> float {
+        return static_cast<const SampleStream<Sampler>*>(ctx)->snr(frameBit);
+    };
+    demodCore.setSnrSource(this, snrSource);
 
      // the main loop for reading the stream
     while (!inputReader.eof()) {
