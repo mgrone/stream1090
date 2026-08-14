@@ -47,6 +47,46 @@ public:
 		m_confidenceFn = fn;
 	}
 
+	using PreambleFn = float(*)(const void*, size_t);
+	void setPreambleSource(const void* ctx, PreambleFn fn) noexcept {
+		m_preambleCtx = ctx;
+		m_preambleFn = fn;
+	}
+
+	using SnrFn = float(*)(const void*, uint8_t);
+	void setSnrSource(const void* ctx, SnrFn fn) noexcept {
+		m_snrCtx = ctx;
+		m_snrFn = fn;
+	}
+
+#ifndef STREAM1090_MIN_SNR
+#define STREAM1090_MIN_SNR 0
+#endif
+	static constexpr float MinSnr = STREAM1090_MIN_SNR;
+
+	/// True when the frame's signal is not clearly above its local noise floor.
+	/// This is a ratio, so it transfers between receivers; 0 disables the test.
+	bool signalAtNoiseFloor(int streamIndex) noexcept {
+		if constexpr (MinSnr <= 0.0f)
+			return false;
+		if (m_snrFn == nullptr)
+			return false;
+		return m_snrFn(m_snrCtx, 56) < MinSnr;
+	}
+
+	/// True when the preamble in front of this candidate is strong enough to be
+	/// a real transmission. Disabled unless STREAM1090_PREAMBLE_GATE is defined.
+	bool preambleConfirms(int streamIndex) noexcept {
+	#if defined(STREAM1090_PREAMBLE_GATE) && STREAM1090_PREAMBLE_GATE
+		if (m_preambleFn == nullptr)
+			return false;
+		return m_preambleFn(m_preambleCtx, size_t(streamIndex))
+			>= float(STREAM1090_PREAMBLE_THRESHOLD);
+	#else
+		return false;
+	#endif
+	}
+
 	void shiftInNewBits(uint32_t* cmp) {
 		// the shift registers tell us which streams ended up on a downlink
 		// format we handle. That is a rare event, so most calls leave here
@@ -72,7 +112,7 @@ public:
 		logStats(Stats::NUM_ITERATIONS);
 	}
 
-	bool sendFrameLongAligned(int,
+	bool sendFrameLongAligned(int streamIndex,
 							  const uint8_t downlinkFormat, 
 							  CRC::crc_t crc,
 							  const Bits128& frame, 
@@ -83,6 +123,18 @@ public:
 		    e.last_time = m_currTime;
     		logStatsDup(downlinkFormat);
     		return false;
+		}
+
+		// Address-parity frames (DF16/20/21) carry no checkable CRC, so the
+		// payload checks are all they have, and a noise frame can pass them by
+		// coincidence (a parity that matches a cached address plus a plausible
+		// altitude). Reject the ones that are ALSO at the local noise floor with
+		// no preamble in front of them: both are ratios, so the test transfers
+		// between receivers. DF17/18 reach here with a checkable CRC and are
+		// not gated.
+		if ((downlinkFormat == 16 || downlinkFormat == 20 || downlinkFormat == 21)
+				&& signalAtNoiseFloor(streamIndex) && !preambleConfirms(streamIndex)) {
+			return false;
 		}
 
 		if ((downlinkFormat == 20) || (downlinkFormat == 16)) {
@@ -111,13 +163,20 @@ public:
 		return true;
 	}
 
-	bool sendFrameShortAligned(int, const uint8_t downlinkFormat, CRC::crc_t crc, const uint64_t& frameShort, const ICAOTable::Iterator& it) {
+	bool sendFrameShortAligned(int streamIndex, const uint8_t downlinkFormat, CRC::crc_t crc, const uint64_t& frameShort, const ICAOTable::Iterator& it) {
 		auto& e = m_cache.getMsgStatEntry(it);
 		static constexpr uint64_t DUP_WINDOW_TICKS = 30 * NumStreams;
 		if ((m_currTime - e.last_time) < DUP_WINDOW_TICKS) {
 		    e.last_time = m_currTime;
     		logStatsDup(downlinkFormat);
     		return false;
+		}
+
+		// Same rationale as the long path: DF0/4/5 recover the address from the
+		// parity, so reject frames at the noise floor with no preamble.
+		if ((downlinkFormat == 0 || downlinkFormat == 4 || downlinkFormat == 5)
+				&& signalAtNoiseFloor(streamIndex) && !preambleConfirms(streamIndex)) {
+			return false;
 		}
 
 		if ((downlinkFormat == 4) || (downlinkFormat == 0)) {
@@ -448,6 +507,13 @@ public:
 		const auto crc = m_shiftRegisters.getCRC_56(streamIndex);
 	
 		if (crc == 0) {
+			// A 24-bit CRC passes on noise about once per 16M candidate windows,
+			// and each such DF11 inserts an address that then licenses
+			// address-parity frames of its own. Reject the noise-floor,
+			// preamble-less ones to break that loop.
+			if (signalAtNoiseFloor(streamIndex) && !preambleConfirms(streamIndex)) {
+				return false;
+			}
 			logStats(Stats::DF11_ICAO_CA_FOUND_GOOD_CRC);
 			return handleDF11ShortMessageWithZeroCRC(streamIndex, frameShort, false);
 		} else if (crc < 80) {
@@ -493,6 +559,10 @@ public:
 private:
 	const void* m_confidenceCtx = nullptr;
 	ConfidenceFn m_confidenceFn = nullptr;
+	const void* m_preambleCtx = nullptr;
+	PreambleFn m_preambleFn = nullptr;
+	const void* m_snrCtx = nullptr;
+	SnrFn m_snrFn = nullptr;
 
 
 #if defined(STATS_ENABLED) && STATS_ENABLED

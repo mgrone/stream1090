@@ -9,6 +9,7 @@
 
 #include <array>
 #include <cstdlib>
+#include <limits>
 #include <memory>
 
 class ICAOTable {
@@ -24,6 +25,7 @@ public:
 	static constexpr uint32_t RejectedCandidateMaxTicks { 2'000'000 };
 	//static constexpr auto ALT_delta_25ft { 80 };
 	static constexpr auto ALT_delta_ft { 2000 };
+	static constexpr auto AltitudeUnset { std::numeric_limits<int16_t>::min() };
     // number if bits used for the look up table 
 	static constexpr auto NumBits { 16 };
 
@@ -82,7 +84,8 @@ public:
 		std::fill(m_table.get(), m_table.get() + Size, Entry{0x0, 0, 0});
 
 		m_squawkAlt = std::make_unique<SquawkAlt[]>(Size);
-		std::fill(m_squawkAlt.get(), m_squawkAlt.get() + Size, SquawkAlt{0, 0, 0, 0});
+		std::fill(m_squawkAlt.get(), m_squawkAlt.get() + Size,
+			SquawkAlt{0, 0, 0, AltitudeUnset});
 
 		m_msgStatTable = std::make_unique<MsgStatEntry[]>(Size);
 		std::fill(m_msgStatTable.get(), m_msgStatTable.get() + Size, MsgStatEntry{0});
@@ -222,6 +225,11 @@ public:
 
 	bool checkAltitude(const Iterator& entry, int32_t newAlt, bool updateState = true) noexcept {
 		auto& state = m_squawkAlt[entry.key];
+		if (state.altitude_25ft == AltitudeUnset) {
+			if (updateState)
+				state.altitude_25ft = newAlt / 25;
+			return false;
+		}
 		if (!updateState && state.altitude_cnt == 0)
 			return false;
 
@@ -346,7 +354,7 @@ private:
 		entry.ttl = 0;
 		clearOccupiedBit(index);
 		m_msgStatTable[index].last_time = 0;
-		m_squawkAlt[index] = SquawkAlt{0, 0, 0, 0};
+		m_squawkAlt[index] = SquawkAlt{0, 0, 0, AltitudeUnset};
 	}
 
 	
