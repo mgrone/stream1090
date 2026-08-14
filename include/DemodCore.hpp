@@ -66,7 +66,7 @@ public:
 
 	/// True when the frame's signal is not clearly above its local noise floor.
 	/// This is a ratio, so it transfers between receivers; 0 disables the test.
-	bool signalAtNoiseFloor(int streamIndex) noexcept {
+	bool signalAtNoiseFloor(int) noexcept {
 		if constexpr (MinSnr <= 0.0f)
 			return false;
 		if (m_snrFn == nullptr)
