@@ -152,6 +152,15 @@ bool validationOnlyAltitudeCannotPoisonState() {
     return table.checkAltitude(entry, 10000);
 }
 
+bool firstLowAltitudeNeedsConfirmation() {
+    ICAOTable table;
+    const auto entry = table.insertWithCA(0x5abcde1);
+
+    if (table.checkAltitude(entry, -500))
+        return false;
+    return table.checkAltitude(entry, -500);
+}
+
 } // namespace
 
 int main() {
@@ -164,5 +173,6 @@ int main() {
         && emptySlotsRejectUnknownAddresses()
         && insertedAndReplacementEntriesAreFound()
         && expiredEntriesDisappear()
-        && validationOnlyAltitudeCannotPoisonState());
+        && validationOnlyAltitudeCannotPoisonState()
+        && firstLowAltitudeNeedsConfirmation());
 }
