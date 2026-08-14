@@ -60,6 +60,10 @@ public:
 			const auto i = std::countr_zero(handledStreams);
 			// handleStream() looks at m_currTime, so keep it in step
 			m_currTime = baseTime + i;
+			if (addressParityRejects(uint32_t(i))) {
+				handledStreams &= handledStreams - 1;
+				continue;
+			}
 			handleStream(i);
 			handledStreams &= handledStreams - 1;
 		}
@@ -156,6 +160,29 @@ public:
 		
 		m_prevLongFrame = frameLong;
 		return false;
+	}
+
+	/// Reject address-parity candidates whose syndrome is not a cached address
+	/// before entering the dispatcher. Keep the phase deduplication state in
+	/// step exactly as the corresponding handler would have done.
+	bool addressParityRejects(uint32_t streamIndex) noexcept {
+		const auto df = m_shiftRegisters.getDF(streamIndex);
+		const bool isShort = (df == 0) || (df == 4) || (df == 5);
+		const bool isLong = (df == 16) || (df == 20) || (df == 21);
+		if (!isShort && !isLong)
+			return false;
+
+		const CRC::crc_t syndrome = isShort
+			? m_shiftRegisters.getCRC_56(streamIndex)
+			: m_shiftRegisters.getCRC_112(streamIndex);
+		if (syndrome != 0 && m_cache.find(syndrome).isValid())
+			return false;
+
+		if (isShort)
+			phaseDupCheckShort(m_shiftRegisters.extractAlignedFrameShort(streamIndex));
+		else
+			phaseDupCheckLong(m_shiftRegisters.extractAlignedFrameLong(streamIndex));
+		return true;
 	}
 
 	// Dispatcher function for handling messages based on the downlink format  
