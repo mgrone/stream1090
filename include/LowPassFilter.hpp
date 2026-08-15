@@ -12,6 +12,12 @@
 #include <cstdint>
 #include <algorithm>
 #include <bit>
+#include <fstream>
+#include <sstream>
+#include <vector>
+#if defined(__ARM_NEON)
+#include <arm_neon.h>
+#endif
 #include "Sampler.hpp"
 #include "CustomFilterTaps.hpp"
 
@@ -58,8 +64,10 @@ namespace FirDetail {
     }
 
     /// Filters one contiguous block. w* hold history followed by the new
-    /// samples, so w*[i + k] is the k-th tap partner of output i.
-    /// numTaps has to be a multiple of four, the padding taps being zero.
+    /// samples, so w*[i + k] is the k-th tap partner of output i. Symmetric
+    /// integer taps may pair their samples before multiplying: unlike the old
+    /// float path this preserves the final rounded result exactly.
+    template<bool Symmetric>
     inline void firBlock(const int16_t* __restrict taps, size_t numTaps,
                          const int16_t* __restrict wI, const int16_t* __restrict wQ,
                          int16_t* __restrict outI, int16_t* __restrict outQ,
@@ -70,12 +78,42 @@ namespace FirDetail {
         // multiply accumulate. Four int32 accumulators to a vector, the same
         // count float had, but the operands are half the width.
         for (; i + 4 <= n; i += 4) {
+#if defined(__ARM_NEON)
+            int32x4_t accI = vdupq_n_s32(0);
+            int32x4_t accQ = vdupq_n_s32(0);
+
+            if constexpr (Symmetric) {
+                const size_t half = numTaps / 2;
+                for (size_t k = 0; k < half; ++k) {
+                    const size_t opposite = numTaps - 1 - k;
+                    const int32x4_t pairI = vaddl_s16(vld1_s16(wI + i + k),
+                                                      vld1_s16(wI + i + opposite));
+                    const int32x4_t pairQ = vaddl_s16(vld1_s16(wQ + i + k),
+                                                      vld1_s16(wQ + i + opposite));
+                    accI = vmlaq_n_s32(accI, pairI, taps[k]);
+                    accQ = vmlaq_n_s32(accQ, pairQ, taps[k]);
+                }
+                if (numTaps & 1) {
+                    accI = vmlal_n_s16(accI, vld1_s16(wI + i + half), taps[half]);
+                    accQ = vmlal_n_s16(accQ, vld1_s16(wQ + i + half), taps[half]);
+                }
+            } else {
+                for (size_t k = 0; k < numTaps; ++k) {
+                    accI = vmlal_n_s16(accI, vld1_s16(wI + i + k), taps[k]);
+                    accQ = vmlal_n_s16(accQ, vld1_s16(wQ + i + k), taps[k]);
+                }
+            }
+
+            const int32x4_t rounding = vdupq_n_s32(1 << (TapFracBits - 1));
+            vst1_s16(outI + i, vshrn_n_s32(vaddq_s32(accI, rounding), TapFracBits));
+            vst1_s16(outQ + i, vshrn_n_s32(vaddq_s32(accQ, rounding), TapFracBits));
+#else
             int32_t accI[4] = { 0, 0, 0, 0 };
             int32_t accQ[4] = { 0, 0, 0, 0 };
 
-            for (size_t k = 0; k < numTaps; k++) {
+            for (size_t k = 0; k < numTaps; ++k) {
                 const int32_t t = taps[k];
-                for (size_t l = 0; l < 4; l++) {
+                for (size_t l = 0; l < 4; ++l) {
                     accI[l] += t * int32_t(wI[i + k + l]);
                     accQ[l] += t * int32_t(wQ[i + k + l]);
                 }
@@ -85,13 +123,14 @@ namespace FirDetail {
                 outI[i + l] = int16_t((accI[l] + (1 << (TapFracBits - 1))) >> TapFracBits);
                 outQ[i + l] = int16_t((accQ[l] + (1 << (TapFracBits - 1))) >> TapFracBits);
             }
+#endif
         }
 
         // whatever does not fill a vector
         for (; i < n; i++) {
             int32_t sumI = 0;
             int32_t sumQ = 0;
-            for (size_t k = 0; k < numTaps; k++) {
+            for (size_t k = 0; k < numTaps; ++k) {
                 sumI += int32_t(taps[k]) * int32_t(wI[i + k]);
                 sumQ += int32_t(taps[k]) * int32_t(wQ[i + k]);
             }
@@ -146,7 +185,7 @@ public:
             std::fill(workI + HistorySize + m, workI + HistorySize + m + numPaddedTaps, int16_t(0));
             std::fill(workQ + HistorySize + m, workQ + HistorySize + m + numPaddedTaps, int16_t(0));
 
-            FirDetail::firBlock(paddedTaps.data(), numPaddedTaps,
+            FirDetail::firBlock<areTapsSymmetric>(paddedTaps.data(), numTaps,
                                 workI, workQ, I + base, Q + base, m);
 
             // the tail of the work buffer is the history of the next chunk
@@ -339,8 +378,18 @@ public:
             std::fill(workI + m_historySize + m, workI + m_historySize + m + m_numPaddedTaps, int16_t(0));
             std::fill(workQ + m_historySize + m, workQ + m_historySize + m + m_numPaddedTaps, int16_t(0));
 
-            FirDetail::firBlock(m_taps.data(), m_numPaddedTaps,
-                                workI, workQ, I + base, Q + base, m);
+#if defined(__ARM_NEON)
+            if (m_areTapsSymmetric) {
+                FirDetail::firBlock<true>(m_taps.data(), m_numTaps,
+                                           workI, workQ, I + base, Q + base, m);
+            } else {
+                FirDetail::firBlock<false>(m_taps.data(), m_numTaps,
+                                            workI, workQ, I + base, Q + base, m);
+            }
+#else
+            FirDetail::firBlock<false>(m_taps.data(), m_numTaps,
+                                        workI, workQ, I + base, Q + base, m);
+#endif
 
             std::copy(workI + m, workI + m + m_historySize, m_historyI.begin());
             std::copy(workQ + m, workQ + m + m_historySize, m_historyQ.begin());
