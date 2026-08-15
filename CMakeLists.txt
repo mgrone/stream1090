@@ -149,46 +149,23 @@ target_compile_definitions(stream1090 PRIVATE
 target_link_libraries(stream1090 PRIVATE ${DEVICE_LIBS})
 
 include(CTest)
+
+function(stream1090_add_test target source)
+    add_executable(${target} ${source})
+    target_include_directories(${target} PRIVATE include)
+    target_compile_options(${target} PRIVATE ${DEFAULT_COMPILE_OPTIONS})
+    add_test(NAME ${target} COMMAND ${target})
+endfunction()
+
 if(BUILD_TESTING)
-    add_executable(crc_error_table_test tests/CRCErrorTableTest.cpp)
-    target_include_directories(crc_error_table_test PRIVATE include)
-    target_compile_options(crc_error_table_test PRIVATE ${DEFAULT_COMPILE_OPTIONS})
-    add_test(NAME crc_error_table_test COMMAND crc_error_table_test)
-
-    add_executable(icao_cache_test tests/ICAOCacheTest.cpp)
-    target_include_directories(icao_cache_test PRIVATE include)
-    target_compile_options(icao_cache_test PRIVATE ${DEFAULT_COMPILE_OPTIONS})
-    add_test(NAME icao_cache_test COMMAND icao_cache_test)
-
-    add_executable(df11_interrogator_test tests/DF11InterrogatorTest.cpp)
-    target_include_directories(df11_interrogator_test PRIVATE include)
-    target_compile_options(df11_interrogator_test PRIVATE ${DEFAULT_COMPILE_OPTIONS})
-    add_test(NAME df11_interrogator_test COMMAND df11_interrogator_test)
-
-    add_executable(ring_buffer_test tests/RingBufferTest.cpp)
-    target_include_directories(ring_buffer_test PRIVATE include)
-    target_compile_options(ring_buffer_test PRIVATE ${DEFAULT_COMPILE_OPTIONS})
-    add_test(NAME ring_buffer_test COMMAND ring_buffer_test)
-
-    add_executable(erasure_repair_test tests/ErasureRepairTest.cpp)
-    target_include_directories(erasure_repair_test PRIVATE include)
-    target_compile_options(erasure_repair_test PRIVATE ${DEFAULT_COMPILE_OPTIONS})
-    add_test(NAME erasure_repair_test COMMAND erasure_repair_test)
-
-    add_executable(low_pass_filter_test tests/LowPassFilterTest.cpp)
-    target_include_directories(low_pass_filter_test PRIVATE include)
-    target_compile_options(low_pass_filter_test PRIVATE ${DEFAULT_COMPILE_OPTIONS})
-    add_test(NAME low_pass_filter_test COMMAND low_pass_filter_test)
-
-    add_executable(sampler_test tests/SamplerTest.cpp)
-    target_include_directories(sampler_test PRIVATE include)
-    target_compile_options(sampler_test PRIVATE ${DEFAULT_COMPILE_OPTIONS})
-    add_test(NAME sampler_test COMMAND sampler_test)
-
-    add_executable(mode_s_altitude_test tests/ModeSAltitudeTest.cpp)
-    target_include_directories(mode_s_altitude_test PRIVATE include)
-    target_compile_options(mode_s_altitude_test PRIVATE ${DEFAULT_COMPILE_OPTIONS})
-    add_test(NAME mode_s_altitude_test COMMAND mode_s_altitude_test)
+    stream1090_add_test(crc_error_table_test tests/CRCErrorTableTest.cpp)
+    stream1090_add_test(icao_cache_test tests/ICAOCacheTest.cpp)
+    stream1090_add_test(df11_interrogator_test tests/DF11InterrogatorTest.cpp)
+    stream1090_add_test(ring_buffer_test tests/RingBufferTest.cpp)
+    stream1090_add_test(erasure_repair_test tests/ErasureRepairTest.cpp)
+    stream1090_add_test(low_pass_filter_test tests/LowPassFilterTest.cpp)
+    stream1090_add_test(sampler_test tests/SamplerTest.cpp)
+    stream1090_add_test(mode_s_altitude_test tests/ModeSAltitudeTest.cpp)
 endif()
 
 # ------------------------------------------------------------

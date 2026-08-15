@@ -58,6 +58,14 @@ We are ready to compile. Switch to the stream1090 folder and do the usual cmake 
 
 Run ```./stream1090 -h``` in the build directory to bring up the help screen. Verify that the second line starting with ```Native device support``` has your device type listed (```Airspy``` and/or ```RTL-SDR```). 
 
+To build and run the unit tests, enable `BUILD_TESTING` during configuration:
+
+```
+cmake -S . -B build -DBUILD_TESTING=ON
+cmake --build build
+ctest --test-dir build
+```
+
 ## First Steps
 Before we start, you have to understand how stream1090 works. The rough principle is:
 ```
