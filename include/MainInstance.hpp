@@ -6,6 +6,7 @@
  */
 #pragma once
 #include "Global.hpp"
+#include "Logger.hpp"
 #include "Sampler.hpp"
 #include "RingBuffer.hpp"
 #include "Presets.hpp"
@@ -17,7 +18,9 @@
 #include "devices/IniConfig.hpp"
 #include "devices/DeviceFactory.hpp"
 #include <chrono>
+#include <optional>
 #include <sstream>
+#include <unistd.h>
 
 
 template<typename Sampler>
@@ -71,7 +74,7 @@ public:
     bool reloadDeviceConfig() {
         // Re-read the INI file from disk
         if (!m_runtimeVars.deviceConfig.reload()) {
-            log("[Stream1090] Failed to reload INI file.");
+            Log::error("Stream1090", "Failed to reload INI file.");
             return false;
         }
 
@@ -80,7 +83,7 @@ public:
         // Extract the correct section
         if (m_runtimeVars.deviceType == InputDeviceType::AIRSPY) {
             if (!cfg.count("airspy")) {
-                log("[Stream1090] Reloaded INI missing [airspy] section.");
+                Log::error("Stream1090", "Reloaded INI missing [airspy] section.");
                 return false;
             }
             m_runtimeVars.deviceConfigSection = cfg.at("airspy");
@@ -88,7 +91,7 @@ public:
 
         else if (m_runtimeVars.deviceType == InputDeviceType::RTLSDR) {
             if (!cfg.count("rtlsdr")) {
-                log("[Stream1090] Reloaded INI missing [rtlsdr] section.");
+                Log::error("Stream1090", "Reloaded INI missing [rtlsdr] section.");
                 return false;
             }
             m_runtimeVars.deviceConfigSection = cfg.at("rtlsdr");
@@ -100,26 +103,23 @@ public:
     bool setup_device() {
         const auto& cfg = m_runtimeVars.deviceConfigSection;
         
-        // before we open, we check the serial
-        uint64_t serial = 0;
-        if (cfg.contains("serial")) {
-            serial = std::stoull(cfg.at("serial"), nullptr, 0);
-        }
+        // tell the device to read all properties required to open it
+        Log::info("Stream1090","Reading initial properties from the ini file");
+        m_device->applyConfigPreOpen(cfg);
 
+        
         // let us try to open the device
-        if (!m_device->open_with_serial(serial)) {
-            log("[Stream1090] Opening device failed.");
+        Log::info("Stream1090","Trying to open the device.");
+        if (!m_device->open()) {
+            Log::error("Stream1090","Opening device failed.");
             // this is not good at all
             return false;
         };
 
         // device is ready, apply all the other properties
-        for (auto& [key, value] : cfg) {
-            if (key == "serial")
-                continue;
-            m_device->applySetting(key, value);
-        }
-
+        Log::info("Stream1090","Device is open. Reading the ini file.");
+        m_device->applyConfigPostOpen(cfg);
+        
         // we do not care if any of the properties did not work
         return true;
    }
@@ -132,30 +132,30 @@ public:
         }
     }
 
-    void run_async_device(auto& iqPipeline) {
+    bool run_async_device(auto& iqPipeline) {
         RingBuffer ringBuffer;
         Writer writer(ringBuffer);
 
         m_device = DeviceFactory<RawType>::create(m_runtimeVars.deviceType, inputRate, writer);
         if (!m_device) {
-            log("[Stream1090] Device instantiation failed.");
-            return;
+            Log::error("Stream1090", "Device instantiation failed.");
+            return false;
         }
-        log("[Stream1090] Device created.");
+        Log::info("Stream1090", "Device created.");
 
         if (!setup_device()) {
-            log("[Stream1090] Device configuration failed.");
-            return;
+            Log::error("Stream1090", "Device configuration failed.");
+            return false;
         }
-        log("[Stream1090] Device successfully configured.");
+        Log::info("Stream1090", "Device successfully configured.");
 
         if (!m_device->start()) {
-            log("[Stream1090] Device refuses to start. Aborting.");
-            return;
+            Log::error("Stream1090", "Device refuses to start. Aborting.");
+            return false;
         }
-        log("[Stream1090] Device is running.");
+        Log::info("Stream1090", "Device is running. ");
 
-        log("[Stream1090] Installing sig handlers.");
+        Log::info("Stream1090", "Installing sig handlers.");
         ProcessSignals::install();
 
         // If we made it until here, we assume that this device is ready and alive.
@@ -164,37 +164,49 @@ public:
         // In other words, the driver is still initializing, but takes so long that
         // the watchdog thinks it is dead and tries to kill it.
         m_device->markAsAlive();
+        Log::info("Stream1090", "Devices has been marked as alive.");
 
         // -------------------------------
         // WATCHDOG THREAD
         // -------------------------------
         std::thread watchdog([this] {
             using namespace std::chrono_literals;
+            Log::info("Watchdog", "Started.");
             while (!ProcessSignals::shutdownRequested()) {
                 // 1) Device health check. Is the device still alive?
                 if (m_device && m_device->lastSignOfLife() > 1000ms) {
-                    log("[Stream1090] No samples for 1000ms. Device lost?");
-                    m_device->close();
+                    Log::error("Watchdog", "No samples for 1000ms. Device lost? Initiating shutdown.");
+                    // Only wake the pipeline here, and leave the device to the
+                    // shutdown path below, which closes it in every case.
+                    // Closing from this thread as well means two threads run
+                    // close() concurrently: both reach rtlsdr_close/airspy_close
+                    // on the same handle and both join the same reader thread.
+                    m_device->shutdownWriter();
                     ProcessSignals::handle_sigint(0);
                     break;
                 }
 
-                // 2) Reload request (SIGHUP)
+                // 2) Device health check. Issue a warning if the device falls behind.
+                if (m_device && m_device->lastSignOfLife() > 200ms) {
+                    Log::warn("Watchdog", "No samples for more than 200ms. The device is falling behind.");
+                }
+
+                // 3) Reload request (SIGHUP)
                 if (ProcessSignals::reloadRequested()) {
                     ProcessSignals::clearReload();
-                    log("[Stream1090] Reload requested. Re-reading config file.");
+                    Log::info("Stream1090", "Re-reading config file.");
 
                     if (reloadDeviceConfig()) {
-                        log("[Stream1090] Applying new configuration.");
-                        m_device->applyReloadedConfig(m_runtimeVars.deviceConfigSection);
+                        Log::info("Stream1090", "Applying new configuration.");
+                        m_device->applyConfigPostOpen(m_runtimeVars.deviceConfigSection);
                     } else {
-                        log("[Stream1090] Reload failed. Keeping old settings.");
+                        Log::warn("Stream1090", "Reload failed. Keeping old settings.");
                     }
                 }
 
                 std::this_thread::sleep_for(200ms);
             }
-            log("[Stream1090] Watchdog is done.");
+            Log::info("Watchdog", "Watchdog is done.");
         });
 
 
@@ -204,7 +216,7 @@ public:
         auto start_wct = std::chrono::steady_clock::now();
 
         if (m_device->isRunning()) {
-            log("[Stream1090] Device is running, starting stream.");
+            Log::info("Stream1090", "Device is running, starting stream.");
             InputBufferReader<
                 RawFormatType,
                 SamplerType::InputBufferSize * 2,
@@ -221,32 +233,32 @@ public:
         // -------------------------------
         // SHUTDOWN
         // -------------------------------
-        log("[Stream1090] Shutting down device.");
+        Log::info("Stream1090", "Shutting down device.");
         m_device->close();
-        log("[Stream1090] Device closed down.");
+        Log::info("Stream1090", "Device closed down.");
 
         auto end_wct = std::chrono::steady_clock::now();
         auto dur_wct_secs = std::chrono::duration_cast<std::chrono::milliseconds>(end_wct - start_wct).count();
         if (watchdog.joinable()) {
-            log("[Stream1090] Watchdog joining.");
+            Log::info("Stream1090", "Watchdog joining.");
             watchdog.join();
-            log("[Stream1090] Watchdog joined.");
+            Log::info("Stream1090", "Watchdog joined.");
         }
-        log("[Stream1090] Shutdown completed.");
-        log((std::ostringstream() << "[Stream1090] Finished. (" << dur_wct_secs/1000.0 << "s)").str());
-        std::exit(0);
+        Log::info("Stream1090", "Shutdown completed.");
+        Log::msg("Stream1090") << "Finished. (" << dur_wct_secs/1000.0 << "s)";
+        return true;
     }
 
 
-    void run_sync_stdin(auto& iqPipeline) {
-        log("[Stream1090] Reading from stdin");
+    bool run_sync_stdin(auto& iqPipeline) {
+        Log::info("Stream1090", "Reading from stdin");
         auto start_wct = std::chrono::steady_clock::now();
 
         InputStdStreamReader<
             RawFormatType,
             SamplerType::InputBufferSize,
             decltype(iqPipeline)
-        > inputReader(iqPipeline, std::cin);
+        > inputReader(iqPipeline, STDIN_FILENO);
 
         
         SampleStream<SamplerType> sampleStream;
@@ -255,32 +267,24 @@ public:
 
         auto end_wct = std::chrono::steady_clock::now();
         auto dur_wct_secs = std::chrono::duration_cast<std::chrono::milliseconds>(end_wct - start_wct).count();
-        log((std::ostringstream() << "[Stream1090] Finished. (" << dur_wct_secs/1000.0 << "s)").str());
-        std::exit(0);
+        Log::msg("Stream1090") << "Finished. (" << dur_wct_secs/1000.0 << "s)";
+        return true;
     }
 
-    void run() {
+    bool run() {
         // setup pipeline
         auto iqPipeline = IQPipelineSelector<inputRate, outputRate, pipelineOption>().make(m_runtimeVars.filterTaps);
-        log(iqPipeline.toString());
+        Log::info("",iqPipeline.toString());
         // for sync read from std in we take a short cut
         if (m_runtimeVars.deviceType == InputDeviceType::STREAM) {
-            log("[Stream1090] Sync Stdin Mode");
-            run_sync_stdin(iqPipeline);
+            Log::info("Stream1090", "Sync Stdin Mode");
+            return run_sync_stdin(iqPipeline);
         } else {
-            log("[Stream1090] Async Device Mode");
-            run_async_device(iqPipeline);
+            Log::info("Stream1090", "Async Device Mode");
+            return run_async_device(iqPipeline);
         }
     }
 
-    void log(const std::string& str) {
-        if (m_runtimeVars.verbose) {
-            if (!str.ends_with('\n'))
-                std::cerr << str << std::endl;
-            else
-                std::cerr << str;
-        }
-    }
 private:
     
     DevicePtr m_device = nullptr;
@@ -296,8 +300,12 @@ constexpr bool for_each_in_tuple(const Tuple& t, F&& f) {
     return done;
 }
 
-bool runInstanceFromPresets(const CompileTimeVars& compileTimeVars, const RuntimeVars& runtimeVars) {
-    return for_each_in_tuple(presets, [&](auto const& p) {
+// Returns nothing when no preset matches the requested configuration, and
+// otherwise the outcome of the run: true when the instance ran and shut down
+// normally, false when it gave up (for example because the device never came up).
+std::optional<bool> runInstanceFromPresets(const CompileTimeVars& compileTimeVars, const RuntimeVars& runtimeVars) {
+    std::optional<bool> outcome;
+    for_each_in_tuple(presets, [&](auto const& p) {
         using P = std::decay_t<decltype(p)>;
 
         if (P::RawFormatType::id  == compileTimeVars.rawFormat &&
@@ -305,9 +313,10 @@ bool runInstanceFromPresets(const CompileTimeVars& compileTimeVars, const Runtim
             P::outputRate         == compileTimeVars.outputRate &&
             P::pipelineOption     == compileTimeVars.pipelineOption) 
         {
-            MainInstance<P>(runtimeVars).run();
+            outcome = MainInstance<P>(runtimeVars).run();
             return true;
         }
         return false;
     });
+    return outcome;
 }

@@ -41,7 +41,7 @@ constexpr auto presets = std::make_tuple(
 );
 #else 
 constexpr auto presets = std::make_tuple(
-    // RTL-SDR (uint8)
+    // RTL-SDR (uint8) default presets
     Preset<IQ_UINT8_RTL_SDR, Sampler_2_4_to_8_0_Mhz, IQPipelineOptions::NONE>{},
     Preset<IQ_UINT8_RTL_SDR, Sampler_2_4_to_8_0_Mhz, IQPipelineOptions::IQ_FIR_RTL_SDR>{},
     Preset<IQ_UINT8_RTL_SDR, Sampler_2_4_to_8_0_Mhz, IQPipelineOptions::IQ_FIR_RTL_SDR_FILE>{},
@@ -58,25 +58,37 @@ constexpr auto presets = std::make_tuple(
     Preset<IQ_UINT8_RTL_SDR, Sampler_2_56_to_12_0_Mhz, IQPipelineOptions::IQ_FIR_RTL_SDR>{},
     Preset<IQ_UINT8_RTL_SDR, Sampler_2_56_to_12_0_Mhz, IQPipelineOptions::IQ_FIR_RTL_SDR_FILE>{} ,
     
-
-    // Airspy (uint16)
+    // Airspy (uint16) default presets
     Preset<IQ_UINT16_RAW_AIRSPY, Sampler_6_0_to_6_0_Mhz, IQPipelineOptions::NONE>{},
-    Preset<IQ_UINT16_RAW_AIRSPY, Sampler_6_0_to_12_0_Mhz, IQPipelineOptions::NONE>{},
-    Preset<IQ_UINT16_RAW_AIRSPY, Sampler_6_0_to_24_0_Mhz, IQPipelineOptions::NONE>{},
-    Preset<IQ_UINT16_RAW_AIRSPY, Sampler_10_0_to_10_0_Mhz, IQPipelineOptions::NONE>{},
-    Preset<IQ_UINT16_RAW_AIRSPY, Sampler_10_0_to_24_0_Mhz, IQPipelineOptions::NONE>{},
-
     Preset<IQ_UINT16_RAW_AIRSPY, Sampler_6_0_to_6_0_Mhz, IQPipelineOptions::IQ_FIR>{},
-    Preset<IQ_UINT16_RAW_AIRSPY, Sampler_6_0_to_12_0_Mhz, IQPipelineOptions::IQ_FIR>{},
-    Preset<IQ_UINT16_RAW_AIRSPY, Sampler_6_0_to_24_0_Mhz, IQPipelineOptions::IQ_FIR>{},
-    Preset<IQ_UINT16_RAW_AIRSPY, Sampler_10_0_to_10_0_Mhz, IQPipelineOptions::IQ_FIR>{},
-    Preset<IQ_UINT16_RAW_AIRSPY, Sampler_10_0_to_24_0_Mhz, IQPipelineOptions::IQ_FIR>{},
-
     Preset<IQ_UINT16_RAW_AIRSPY, Sampler_6_0_to_6_0_Mhz, IQPipelineOptions::IQ_FIR_FILE>{},
+
+    Preset<IQ_UINT16_RAW_AIRSPY, Sampler_6_0_to_12_0_Mhz, IQPipelineOptions::NONE>{},
+    Preset<IQ_UINT16_RAW_AIRSPY, Sampler_6_0_to_12_0_Mhz, IQPipelineOptions::IQ_FIR>{},
     Preset<IQ_UINT16_RAW_AIRSPY, Sampler_6_0_to_12_0_Mhz, IQPipelineOptions::IQ_FIR_FILE>{},
+
+    Preset<IQ_UINT16_RAW_AIRSPY, Sampler_6_0_to_24_0_Mhz, IQPipelineOptions::NONE>{},
+    Preset<IQ_UINT16_RAW_AIRSPY, Sampler_6_0_to_24_0_Mhz, IQPipelineOptions::IQ_FIR>{},
     Preset<IQ_UINT16_RAW_AIRSPY, Sampler_6_0_to_24_0_Mhz, IQPipelineOptions::IQ_FIR_FILE>{},
+
+    Preset<IQ_UINT16_RAW_AIRSPY, Sampler_10_0_to_10_0_Mhz, IQPipelineOptions::NONE>{},
+    Preset<IQ_UINT16_RAW_AIRSPY, Sampler_10_0_to_10_0_Mhz, IQPipelineOptions::IQ_FIR>{},
     Preset<IQ_UINT16_RAW_AIRSPY, Sampler_10_0_to_10_0_Mhz, IQPipelineOptions::IQ_FIR_FILE>{},
+
+    Preset<IQ_UINT16_RAW_AIRSPY, Sampler_10_0_to_24_0_Mhz, IQPipelineOptions::NONE>{},
+    Preset<IQ_UINT16_RAW_AIRSPY, Sampler_10_0_to_24_0_Mhz, IQPipelineOptions::IQ_FIR>{},
     Preset<IQ_UINT16_RAW_AIRSPY, Sampler_10_0_to_24_0_Mhz, IQPipelineOptions::IQ_FIR_FILE>{}
+#if defined(STREAM1090_TOO_MUCH_CPU) && STREAM1090_TOO_MUCH_CPU
+    ,
+    // too much cpu samplers
+    Preset<IQ_UINT16_RAW_AIRSPY, Sampler_10_0_to_40_0_Mhz, IQPipelineOptions::NONE>{},
+    Preset<IQ_UINT16_RAW_AIRSPY, Sampler_10_0_to_40_0_Mhz, IQPipelineOptions::IQ_FIR>{},
+    Preset<IQ_UINT16_RAW_AIRSPY, Sampler_10_0_to_40_0_Mhz, IQPipelineOptions::IQ_FIR_FILE>{},
+
+    Preset<IQ_UINT16_RAW_AIRSPY, Sampler_10_0_to_48_0_Mhz, IQPipelineOptions::NONE>{},
+    Preset<IQ_UINT16_RAW_AIRSPY, Sampler_10_0_to_48_0_Mhz, IQPipelineOptions::IQ_FIR>{},
+    Preset<IQ_UINT16_RAW_AIRSPY, Sampler_10_0_to_48_0_Mhz, IQPipelineOptions::IQ_FIR_FILE>{}
+#endif
 );
 
 #endif

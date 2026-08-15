@@ -9,10 +9,12 @@
 
 #include "Bits128.hpp"
 #include "CRC.hpp"
+#include "ErasureRepair.hpp"
 #include "CRCErrorTable.hpp"
 #include "ModeS.hpp"
 #include "ICAOCache.hpp"
 #include "Stats.hpp"
+#include <bit>
 #include <cmath>
 #include "ShiftRegisters.hpp"
 #include "MessageHandler.hpp"
@@ -36,20 +38,83 @@ public:
 	// This is the main entry function called by the SampleStream. 
 	// NumStreams many new bits are shifted in. The crc's are updated
 	// and the streams are being checked for new messages
+	using ConfidenceFn = float(*)(const void*, uint8_t, size_t);
+
+	/// Installed by SampleStream so a repair can ask for the demodulator's
+	/// per-bit confidence without the demodulation loop having to store it.
+	void setConfidenceSource(const void* ctx, ConfidenceFn fn) noexcept {
+		m_confidenceCtx = ctx;
+		m_confidenceFn = fn;
+	}
+
+	using PreambleFn = float(*)(const void*, size_t);
+	void setPreambleSource(const void* ctx, PreambleFn fn) noexcept {
+		m_preambleCtx = ctx;
+		m_preambleFn = fn;
+	}
+
+	using SnrFn = float(*)(const void*, uint8_t);
+	void setSnrSource(const void* ctx, SnrFn fn) noexcept {
+		m_snrCtx = ctx;
+		m_snrFn = fn;
+	}
+
+#ifndef STREAM1090_MIN_SNR
+#define STREAM1090_MIN_SNR 0
+#endif
+	static constexpr float MinSnr = STREAM1090_MIN_SNR;
+
+	/// True when the frame's signal is not clearly above its local noise floor.
+	/// This is a ratio, so it transfers between receivers; 0 disables the test.
+	bool signalAtNoiseFloor(int) noexcept {
+		if constexpr (MinSnr <= 0.0f)
+			return false;
+		if (m_snrFn == nullptr)
+			return false;
+		return m_snrFn(m_snrCtx, 56) < MinSnr;
+	}
+
+	/// True when the preamble in front of this candidate is strong enough to be
+	/// a real transmission. Disabled unless STREAM1090_PREAMBLE_GATE is defined.
+	bool preambleConfirms(int streamIndex) noexcept {
+	#if defined(STREAM1090_PREAMBLE_GATE) && STREAM1090_PREAMBLE_GATE
+		if (m_preambleFn == nullptr)
+			return false;
+		return m_preambleFn(m_preambleCtx, size_t(streamIndex))
+			>= float(STREAM1090_PREAMBLE_THRESHOLD);
+	#else
+		return false;
+	#endif
+	}
+
 	void shiftInNewBits(uint32_t* cmp) {
-		m_shiftRegisters.shiftInNewBits(cmp); 
+		// the shift registers tell us which streams ended up on a downlink
+		// format we handle. That is a rare event, so most calls leave here
+		// without touching the dispatcher at all.
+		uint64_t handledStreams = m_shiftRegisters.shiftInNewBits(cmp);
 		// the streams and crc's are ready
 		m_cache.tick();
-		for (auto i = 0; i < NumStreams; i++) {
-			handleStream(i);			
-			m_currTime++;
+
+		const uint64_t baseTime = m_currTime;
+		while (handledStreams) {
+			const auto i = std::countr_zero(handledStreams);
+			// handleStream() looks at m_currTime, so keep it in step
+			m_currTime = baseTime + i;
+			if (addressParityRejects(uint32_t(i))) {
+				handledStreams &= handledStreams - 1;
+				continue;
+			}
+			handleStream(i);
+			handledStreams &= handledStreams - 1;
 		}
+		m_currTime = baseTime + NumStreams;
+
 		logStats(Stats::NUM_ITERATIONS);
 	}
 
-	bool sendFrameLongAligned(int,
+	bool sendFrameLongAligned(int streamIndex,
 							  const uint8_t downlinkFormat, 
-							  CRC::crc_t, 
+							  CRC::crc_t crc,
 							  const Bits128& frame, 
 							  const ICAOTable::Iterator& it) {
 		auto& e = m_cache.getMsgStatEntry(it);
@@ -60,19 +125,34 @@ public:
     		return false;
 		}
 
+		// Address-parity frames (DF16/20/21) carry no checkable CRC, so the
+		// payload checks are all they have, and a noise frame can pass them by
+		// coincidence (a parity that matches a cached address plus a plausible
+		// altitude). Reject the ones that are ALSO at the local noise floor with
+		// no preamble in front of them: both are ratios, so the test transfers
+		// between receivers. DF17/18 reach here with a checkable CRC and are
+		// not gated.
+		if ((downlinkFormat == 16 || downlinkFormat == 20 || downlinkFormat == 21)
+				&& signalAtNoiseFloor(streamIndex) && !preambleConfirms(streamIndex)) {
+			return false;
+		}
+
 		if ((downlinkFormat == 20) || (downlinkFormat == 16)) {
 			const auto alt_bits = ModeS::extractSquawkAlt_Long(frame);
 			const auto alt = ModeS::decodeAltitude(alt_bits);
-			if (!m_cache.checkAltitude(it, alt)) {	
+			const bool altitudeAccepted = alt
+				&& m_cache.checkAltitude(it, *alt);
+			if (!altitudeAccepted
+					&& !m_cache.confirmRejectedLong(crc, frame.high(), frame.low())) {
 				return false;
-			} else {
-				m_cache.markAsSeen(it);
 			}
+			m_cache.markAsSeen(it);
 		}
 		
 		if (downlinkFormat == 21) {
 			const auto sqwk = ModeS::extractSquawkAlt_Long(frame);
-			if (!m_cache.checkSquawk(it, sqwk))
+			if (!m_cache.checkSquawk(it, sqwk)
+					&& !m_cache.confirmRejectedLong(crc, frame.high(), frame.low()))
 				return false;
 			m_cache.markAsSeen(it);
 		}
@@ -83,7 +163,7 @@ public:
 		return true;
 	}
 
-	bool sendFrameShortAligned(int, const uint8_t downlinkFormat, CRC::crc_t, const uint64_t& frameShort, const ICAOTable::Iterator& it) {
+	bool sendFrameShortAligned(int streamIndex, const uint8_t downlinkFormat, CRC::crc_t crc, const uint64_t& frameShort, const ICAOTable::Iterator& it) {
 		auto& e = m_cache.getMsgStatEntry(it);
 		static constexpr uint64_t DUP_WINDOW_TICKS = 30 * NumStreams;
 		if ((m_currTime - e.last_time) < DUP_WINDOW_TICKS) {
@@ -92,19 +172,29 @@ public:
     		return false;
 		}
 
+		// Same rationale as the long path: DF0/4/5 recover the address from the
+		// parity, so reject frames at the noise floor with no preamble.
+		if ((downlinkFormat == 0 || downlinkFormat == 4 || downlinkFormat == 5)
+				&& signalAtNoiseFloor(streamIndex) && !preambleConfirms(streamIndex)) {
+			return false;
+		}
+
 		if ((downlinkFormat == 4) || (downlinkFormat == 0)) {
 			const auto alt_bits = ModeS::extractSquawkAlt_Short(frameShort);
 			const auto alt = ModeS::decodeAltitude(alt_bits);
-			if (!m_cache.checkAltitude(it, alt)) {
+			const bool altitudeAccepted = alt
+				&& m_cache.checkAltitude(it, *alt);
+			if (!altitudeAccepted
+					&& !m_cache.confirmRejectedShort(crc, frameShort)) {
 				return false;
-			} else {
-				m_cache.markAsSeen(it);
 			}
+			m_cache.markAsSeen(it);
 		}
 
 		if (downlinkFormat == 5) {
 			const auto sqwk = ModeS::extractSquawkAlt_Short(frameShort);
-			if (!m_cache.checkSquawk(it, sqwk))
+			if (!m_cache.checkSquawk(it, sqwk)
+					&& !m_cache.confirmRejectedShort(crc, frameShort))
 				return false;
 			m_cache.markAsSeen(it);
 		}
@@ -129,6 +219,29 @@ public:
 		
 		m_prevLongFrame = frameLong;
 		return false;
+	}
+
+	/// Reject address-parity candidates whose syndrome is not a cached address
+	/// before entering the dispatcher. Keep the phase deduplication state in
+	/// step exactly as the corresponding handler would have done.
+	bool addressParityRejects(uint32_t streamIndex) noexcept {
+		const auto df = m_shiftRegisters.getDF(streamIndex);
+		const bool isShort = (df == 0) || (df == 4) || (df == 5);
+		const bool isLong = (df == 16) || (df == 20) || (df == 21);
+		if (!isShort && !isLong)
+			return false;
+
+		const CRC::crc_t syndrome = isShort
+			? m_shiftRegisters.getCRC_56(streamIndex)
+			: m_shiftRegisters.getCRC_112(streamIndex);
+		if (syndrome != 0 && m_cache.find(syndrome).isValid())
+			return false;
+
+		if (isShort)
+			phaseDupCheckShort(m_shiftRegisters.extractAlignedFrameShort(streamIndex));
+		else
+			phaseDupCheckLong(m_shiftRegisters.extractAlignedFrameLong(streamIndex));
+		return true;
 	}
 
 	// Dispatcher function for handling messages based on the downlink format  
@@ -217,9 +330,81 @@ public:
 					return sendFrameLongAligned(streamIndex, downlinkFormat, crc, toRepair, e);
 				};				
 			}
+			// The address must belong to a trusted aircraft for a repair to be
+			// accepted at all, so test that first. maybeTrusted() is a single
+			// L1-resident load; this runs at every DF17 header position, where a
+			// full cache probe would be a memory stall.
+			const auto icaoBefore = ModeS::extractICAOWithCA_Long(frame);
+			if (m_cache.maybeTrusted(icaoBefore)
+					&& tryErasureRepairLong(streamIndex, downlinkFormat, frame, crc, icaoBefore))
+				return true;
 			logStats(Stats::DF17_REPAIR_FAILED);
 		}
 		return false;
+	}
+
+	/// @brief Repair a damaged extended squitter by solving for which of the
+	/// least confident bits were flipped. Acceptance is the same as the error
+	/// table path: the recovered address must be a trusted aircraft.
+	/// @return returns true if a message has been send to the output
+	bool tryErasureRepairLong(int streamIndex, const uint8_t& downlinkFormat,
+							  const Bits128& frame, CRC::crc_t crc, uint32_t icaoBefore) {
+		if (m_confidenceFn == nullptr)
+			return false;
+
+		// maybeTrusted() can report a stale slot, so confirm against the table
+		const auto before = m_cache.findWithCA(icaoBefore);
+		if (!before.isValid() || !m_cache.isTrusted(before))
+			return false;
+
+		// collect the least confident bits, excluding the DF field
+		constexpr uint8_t SearchLimit = 112 - 5;
+		constexpr int k = ErasureRepair::Candidates;
+		uint8_t candidates[k];
+		float confidences[k];
+		int count = 0;
+
+		for (uint8_t bit = 0; bit < SearchLimit; ++bit) {
+			const float c = m_confidenceFn(m_confidenceCtx, bit, size_t(streamIndex));
+			if (count == k && c >= confidences[k - 1])
+				continue;
+			int j = (count < k) ? count++ : k - 1;
+			for (; j > 0 && confidences[j - 1] > c; --j) {
+				confidences[j] = confidences[j - 1];
+				candidates[j] = candidates[j - 1];
+			}
+			confidences[j] = c;
+			candidates[j] = bit;
+		}
+
+		const auto solution = ErasureRepair::solve(crc, candidates, size_t(count));
+		if (!solution.solved)
+			return false;
+
+		// Real damage is a few bits; a spurious solve over this many
+		// candidates flips about half of them. The weight cap is what pays
+		// for the width of the candidate window.
+		if (__builtin_popcount(solution.mask) > ErasureRepair::MaxWeight)
+			return false;
+
+		Bits128 repaired{ frame };
+		for (int i = 0; i < count; ++i) {
+			if (!((solution.mask >> i) & 1))
+				continue;
+			Bits128 flip(uint64_t(1));
+			flip.shiftLeft(candidates[i]);
+			repaired = repaired ^ flip;
+		}
+
+		// repairing may have moved the address; it must still be trusted
+		const auto icaoWithCA = ModeS::extractICAOWithCA_Long(repaired);
+		const auto e = m_cache.findWithCA(icaoWithCA);
+		if (!e.isValid() || !m_cache.isTrusted(e))
+			return false;
+
+		logStats(Stats::DF17_REPAIR_SUCCESS);
+		m_cache.markAsTrustedSeen(e);
+		return sendFrameLongAligned(streamIndex, downlinkFormat, crc, repaired, e);
 	}
 
 	/// @brief Handler for long ACAS and Comm-B messages
@@ -288,9 +473,13 @@ public:
 		
 		// if the plane is not in table,
 		if (!e.isValid()) {
-			// put it there.
-			if (!repaired) {
-				m_cache.insertWithCA(icaoWithCA);
+			// put it there, but make sure this is not some repaired msg and 
+			// that we are not resetting an existing entry with the same icao.
+			if (!repaired && !m_cache.find(icaoWithCA & 0xFFFFFF).isValid()) {
+				// insert and mark it as seen.
+				const auto it = m_cache.insertWithCA(icaoWithCA);
+				m_cache.markAsSeen(it);
+				m_cache.getMsgStatEntry(it).last_time = m_currTime;
 			}
 			// we stop here and do not send the message
 			return false;
@@ -318,8 +507,25 @@ public:
 		const auto crc = m_shiftRegisters.getCRC_56(streamIndex);
 	
 		if (crc == 0) {
+			// A 24-bit CRC passes on noise about once per 16M candidate windows,
+			// and each such DF11 inserts an address that then licenses
+			// address-parity frames of its own. Reject the noise-floor,
+			// preamble-less ones to break that loop.
+			if (signalAtNoiseFloor(streamIndex) && !preambleConfirms(streamIndex)) {
+				return false;
+			}
 			logStats(Stats::DF11_ICAO_CA_FOUND_GOOD_CRC);
 			return handleDF11ShortMessageWithZeroCRC(streamIndex, frameShort, false);
+		} else if (crc < 80) {
+			// PI is parity overlaid with the interrogator code (II/SI). Require
+			// a second, separate sighting before adding a new address to the cache.
+			const auto icaoWithCA = ModeS::extractICAOWithCA_Short(frameShort);
+			if (!m_cache.findWithCA(icaoWithCA).isValid()
+					&& !m_cache.confirmDF11Candidate(icaoWithCA))
+				return false;
+
+			logStats(Stats::DF11_ICAO_CA_FOUND_GOOD_CRC);
+			return handleDF11ShortMessageWithZeroCRC(streamIndex, frameShort ^ crc, false);
 		} else  {
 			// ask the 1 bit error correction table for short messages for help
 			const auto fix_op = CRC::df11ErrorTable.lookup(crc);
@@ -351,6 +557,13 @@ public:
 
 
 private:
+	const void* m_confidenceCtx = nullptr;
+	ConfidenceFn m_confidenceFn = nullptr;
+	const void* m_preambleCtx = nullptr;
+	PreambleFn m_preambleFn = nullptr;
+	const void* m_snrCtx = nullptr;
+	SnrFn m_snrFn = nullptr;
+
 
 #if defined(STATS_ENABLED) && STATS_ENABLED
 	Stats::StatsLog m_statsLog;
@@ -384,8 +597,8 @@ private:
 	
 	// while dealing with a single stream, this holds a copy of the frame
 	// from the previous stream  
-	alignas(16) Bits128 m_prevLongFrame; 
-	alignas(16) uint64_t m_prevShortFrame; 
+	alignas(16) Bits128 m_prevLongFrame;
+	alignas(16) uint64_t m_prevShortFrame{ 0 };
 
 	// plane lookup table
 	ICAOTable m_cache; 

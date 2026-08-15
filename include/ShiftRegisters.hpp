@@ -10,9 +10,20 @@
 #include "Bits128.hpp"
 #include "CRC.hpp"
 
+// Downlink formats the demodulator actually looks at: 0, 4, 5, 11, 16, 17, 18,
+// 19, 20, 21. Every other value is dropped right away, so the shift register
+// can tell the caller which streams are worth a closer look and which are not.
+inline constexpr uint32_t handledDownlinkFormats =
+      (1u <<  0) | (1u <<  4) | (1u <<  5) | (1u << 11)
+    | (1u << 16) | (1u << 17) | (1u << 18) | (1u << 19)
+    | (1u << 20) | (1u << 21);
+
 template<int NumStreams>
 class alignas(16) ShiftRegistersBase {
     public:
+
+    // one bit per stream has to fit into the returned mask
+    static_assert(NumStreams <= 64, "stream mask is 64 bit wide");
 
     constexpr ShiftRegistersBase() noexcept {
         for (auto i = 0; i < NumStreams; i++) {
@@ -20,34 +31,36 @@ class alignas(16) ShiftRegistersBase {
             m_crc_112[i] = 0;
             m_high[i] = 0;
             m_low[i] = 0;
-            m_df[i] = 0;
         };
     }
 
-    constexpr const CRC::crc_t& getCRC_56(auto i) const noexcept {
+    constexpr CRC::crc_t getCRC_56(auto i) const noexcept {
         return m_crc_56[i];
     }
 
-    constexpr const CRC::crc_t& getCRC_112(auto i) const noexcept {
+    constexpr CRC::crc_t getCRC_112(auto i) const noexcept {
         return m_crc_112[i];
     }
 
-    constexpr const uint32_t& getDF(auto i) const noexcept{
-        return m_df[i];
+    /// The downlink format is the top five bits of the register, so keeping a
+    /// separate array for it meant storing NumStreams words every sample to
+    /// serve a read that only happens on a handled format. Derived here
+    /// instead, from the value the update has already written.
+    constexpr uint32_t getDF(auto i) const noexcept{
+        return (uint32_t)(m_high[i] >> 59);
     }
 
     protected:
 
-    uint64_t m_low[NumStreams];    
+    uint64_t m_low[NumStreams];
     uint64_t m_high[NumStreams];
-    
-	// And a checksum for the short messages (56 bit)
+
+	// And a checksum for the short messages (56 bit). Never wider than 25 bits,
+	// so it is held in 32 and the update moves half the bytes it used to.
 	CRC::crc_t m_crc_56[NumStreams];
 
     // Each stream has a checksum for long messages (112 bit)
 	CRC::crc_t m_crc_112[NumStreams];
-
-    uint32_t m_df[NumStreams];
 };
 
 
@@ -56,33 +69,49 @@ class alignas(16) ShiftRegisters : public ShiftRegistersBase<NumStreams> {
     public:
         constexpr ShiftRegisters() : ShiftRegistersBase<NumStreams>() { }
 
-        constexpr void shiftInNewBits(const uint32_t* cmp) noexcept {
+        /// Shifts one new bit into every stream and updates both CRCs.
+        /// Returns a mask with bit i set when stream i now shows a downlink
+        /// format the demodulator handles.
+        ///
+        /// The two conditionals of the textbook version (did we shift a one out
+        /// of the register, did the CRC overflow past 24 bits) are replaced by
+        /// masks. Both are close to coin flips, so as branches they were mostly
+        /// mispredictions, and without them the loop has no control flow left
+        /// for the compiler to trip over.
+        uint64_t shiftInNewBits(const uint32_t* cmp) noexcept {
+            uint64_t handledMask = 0;
+
             for (auto i = 0; i < NumStreams; i++) {
-                // check if we shift out the msb 
-                if (this->m_df[i] > 0xf) {
-                    // adjust the 56 bit crc
-                    this->m_crc_56[i]  ^= CRC::delta<55>();//  * (m_bits[i].high() >> 63);
-                    // adjust the 112 bit crc accordingly
-                    this->m_crc_112[i] ^= CRC::delta<111>();// * (m_bits[i].high() >> 63);
-                };
-            
-                this->m_crc_56[i]  = (this->m_crc_56[i] << 1) | ((this->m_high[i] >> 7) & 0x1);
-                this->m_crc_112[i] = (this->m_crc_112[i]<< 1) | ((this->m_low[i] >> 15) & 0x1);
+                const uint64_t high = this->m_high[i];
+                const uint64_t low  = this->m_low[i];
 
-                this->m_high[i] = (this->m_high[i] << 1) | (this->m_low[i] >> 63);
-                this->m_low[i]  = (this->m_low[i] << 1) | cmp[i];           
-                this->m_df[i] = this->m_high[i] >> 59;
+                // all ones when a one bit leaves the register at the top
+                const uint32_t shiftedOut = uint32_t(0) - uint32_t(high >> 63);
 
-                // if the current crc is too large, shorten it with the polynomial
-                if (this->m_crc_56[i] > 0xfffffful) {
-                    this->m_crc_56[i] ^= CRC::polynomial;
-                }
+                uint32_t crc56  = this->m_crc_56[i]  ^ (Delta55  & shiftedOut);
+                uint32_t crc112 = this->m_crc_112[i] ^ (Delta111 & shiftedOut);
 
-                 // same for the crc of the 112 bits
-                if (this->m_crc_112[i] > 0xfffffful) {
-                    this->m_crc_112[i] ^= CRC::polynomial;
-                }
+                crc56  = (crc56  << 1) | uint32_t((high >> 7)  & 0x1);
+                crc112 = (crc112 << 1) | uint32_t((low  >> 15) & 0x1);
+
+                const uint64_t newHigh = (high << 1) | (low >> 63);
+                const uint64_t newLow  = (low  << 1) | cmp[i];
+                const uint64_t df      = newHigh >> 59;
+
+                // Fold the polynomial back in whenever bit 24 is set. The CRC
+                // never exceeds 25 bits here, so the shift is a 0/1 flag.
+                crc56  ^= Polynomial & (uint32_t(0) - (crc56  >> 24));
+                crc112 ^= Polynomial & (uint32_t(0) - (crc112 >> 24));
+
+                this->m_crc_56[i]  = crc56;
+                this->m_crc_112[i] = crc112;
+                this->m_high[i]    = newHigh;
+                this->m_low[i]     = newLow;
+
+                handledMask |= uint64_t((handledDownlinkFormats >> df) & 0x1) << i;
             }
+
+            return handledMask;
         }
 
         constexpr Bits128 extractAlignedFrameLong(auto i) const noexcept {
@@ -92,6 +121,10 @@ class alignas(16) ShiftRegisters : public ShiftRegistersBase<NumStreams> {
         constexpr uint64_t extractAlignedFrameShort(auto i) const noexcept {
             return (this->m_high[i] >> 8);
         }
+
+    private:
+        static constexpr CRC::crc_t Delta55  = CRC::delta<55>();
+        static constexpr CRC::crc_t Delta111 = CRC::delta<111>();
+        static constexpr CRC::crc_t Polynomial = CRC::polynomial;
+
 };
-
-

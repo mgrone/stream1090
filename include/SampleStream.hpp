@@ -7,108 +7,10 @@
 
 #pragma once
 
-#include <cstddef>
-#include <cstdint>
-#include <iostream>
-#include <memory>
-#include <cstring>
-
-#include "DemodCore.hpp"
 #include "Sampler.hpp"
+#include "BlockRing.hpp"
+#include "DemodCore.hpp"
 #include "MessageHandler.hpp"
-
-#pragma once
-#include <memory>
-#include <cstring>
-#include <algorithm>
-
-template<typename T, size_t BlockSize, size_t NumBlocks, size_t Delay = 0>
-class BlockRing {
-public:
-    static constexpr size_t TotalSize = BlockSize * NumBlocks + Delay;
-
-    BlockRing(const T& initValue)
-        : m_data(
-            new (std::align_val_t(16)) T[TotalSize],   // aligned allocation
-            AlignedDeleter{}                           // matching deleter
-        ),
-          m_readPos(0),
-          m_writePos(Delay),
-          m_fullBlocks(0)
-    {
-        std::fill(m_data.get(), m_data.get() + TotalSize, initValue);
-    }
-
-    T* writePos() noexcept {
-        return m_data.get() + m_writePos;
-    }
-
-    void advanceWritePos() noexcept {
-        m_writePos += BlockSize;
-
-        if (m_writePos + BlockSize > TotalSize) {
-            if constexpr (Delay > 0) {
-                std::memcpy(
-                    m_data.get(),
-                    m_data.get() + (TotalSize - Delay),
-                    Delay * sizeof(T)
-                );
-            }
-            m_writePos = Delay;
-        }
-
-        m_fullBlocks++;
-    }
-
-    const T* readPos() const noexcept {
-        return m_data.get() + m_readPos;
-    }
-
-    void advanceReadPos() noexcept {
-        m_readPos += BlockSize;
-
-        if (m_readPos >= BlockSize * NumBlocks) {
-            m_readPos = 0;
-        }
-
-        m_fullBlocks--;
-    }
-
-    bool isReadable() const noexcept {
-        return m_fullBlocks > 0;
-    }
-
-    bool isWritable() const noexcept {
-        return m_fullBlocks < NumBlocks;
-    }
-
-    const T& lookBack(size_t k, size_t offsetInBlock = 0) const noexcept {
-        size_t absoluteIndex = m_readPos + offsetInBlock;
-        if (absoluteIndex >= TotalSize)
-            absoluteIndex -= TotalSize;
-
-        size_t lookBackIndex = absoluteIndex + TotalSize - k;
-        if (lookBackIndex >= TotalSize)
-            lookBackIndex -= TotalSize;
-
-        return m_data[lookBackIndex];
-    }
-
-private:
-    struct AlignedDeleter {
-        void operator()(T* p) const noexcept {
-            ::operator delete[](p, std::align_val_t(16));
-        }
-    };
-
-    std::unique_ptr<T[], AlignedDeleter> m_data;
-
-    size_t m_readPos;
-    size_t m_writePos;
-    size_t m_fullBlocks;
-};
-
-
 
 // the main stream class. This class manages reading from the input stream
 // and also manages the buffers
@@ -120,41 +22,147 @@ public:
     static constexpr size_t NumSampleBuffers = 2;
     static constexpr size_t TotalSampleBufferLength = NumSampleBuffers * Sampler::SampleBufferSize + Sampler::SampleBufferOverlap;
 
-    SampleStream() : m_inputRingBuffer(0.0f), m_sampleRingBuffer(0.0f) { }
+    SampleStream() : m_inputRingBuffer(0), m_sampleRingBuffer(0) { }
    
     // the main method that streams from InputStream using inputReader
     template<typename InputReaderType, MessageHandler Handler>
     void read(InputReaderType& inputReader, Handler& messageHandler);
 
-    uint8_t getRSSI() const noexcept {
-        // we are 128 bits behind and are looking for the preamble pulse
-        constexpr size_t bitDelay     = 128 - 8;
-        // how much is that in samples?
-        constexpr size_t samplesDelay = bitDelay * Sampler::NumStreams;
-        // how far is the demodulator in the block?
-        const auto offsetInBlock = m_demodPos - m_sampleRingBuffer.readPos();
-        // check the rssi of the surounding samples. This index is the first to
-        // catch the message, usually with bad RSSI
-        float rssi = 0.0f;
+    /// Recompute the demodulator's confidence in a single frame bit, straight
+    /// from the retained sample ring. The demodulation loop deliberately stores
+    /// nothing: this is only ever called for a frame that already matched a
+    /// trusted address, a few dozen times a second, so recomputing is far
+    /// cheaper than keeping a per-bit history for every stream.
+    float confidenceAt(uint8_t frameBit, size_t stream) const noexcept {
+        // frame bit f was shifted in (16 + f) bit periods ago; see
+        // ShiftRegisters::extractAlignedFrameLong for the 16 bit alignment
+        const size_t delay = (size_t(16) + frameBit) * Sampler::NumStreams;
+        const auto offsetInBlock = size_t(m_demodPos - m_sampleRingBuffer.readPos());
+        // the ring holds linear magnitudes scaled by MagScale
+        const float first  = float(m_sampleRingBuffer.lookBack(delay - stream, offsetInBlock));
+        const float second = float(m_sampleRingBuffer.lookBack(delay - stream - (Sampler::NumStreams >> 1),
+                                                               offsetInBlock));
+        return std::fabs(first - second) * (1.0f / MagScale);
+    }
+
+    uint8_t getRSSI(uint8_t frameBit) const noexcept {
+        // we are in total 128 bits late already. So the first bit is 128 * NumStreams samples old.
+        const size_t delay = (size_t(128) - frameBit) * Sampler::NumStreams;
+        const auto offsetInBlock = size_t(m_demodPos - m_sampleRingBuffer.readPos());
+        // we assume here that we hit the message quite early.
+        // Subsequent streams probably would have done a better job.
+        // We therefore iterate and take the maximum. Even if stream 3 got a hit, we start at 0
+        int32_t peak = 0;
         for (size_t s = 0; s < Sampler::NumStreams; s++) {
-            float v = std::max(m_sampleRingBuffer.lookBack(samplesDelay + s, offsetInBlock), 
-                               m_sampleRingBuffer.lookBack(samplesDelay + s - (Sampler::NumStreams >> 1), offsetInBlock));
-            rssi = std::max(rssi, v);
+            const int32_t v  = m_sampleRingBuffer.lookBack(delay - s, offsetInBlock);
+            peak = std::max(peak, v);
         }
+        // conversion to float
+        float rssi = float(peak) * (1.0f / MagScale);
         // normalize
         rssi = std::min(1.41f, rssi) / 1.41f;
         // and return as byte
         return uint8_t(rssi * 255.0);
     }
 
+    // implements concept RssiProvider for getting the rssi value for long messages
+    uint8_t getRSSILong() const noexcept {
+        // we sample in the middle of the 112 bit long frame
+        return getRSSI(56);
+    }
+
+    // implements concept RssiProvider for getting the rssi value for short messages
+    uint8_t getRSSIShort() const noexcept {
+        // we sample in the middle of the 56 bit short frame
+        return getRSSI(28);
+    }
+
+    /// Ratio of the weakest preamble pulse to the strongest inter-pulse gap
+    /// across the eight preamble slots, sampled just before the frame. A real
+    /// preamble scores well above 1; noise hovers around 0.5.
+    float preambleScore(size_t stream) const noexcept {
+        return preambleScoreAt(stream, 135);
+    }
+
+    float preambleScoreAt(size_t stream, size_t PreambleStart) const noexcept {
+        constexpr size_t Half = Sampler::NumStreams >> 1;
+        const auto offsetInBlock = size_t(m_demodPos - m_sampleRingBuffer.readPos());
+
+        float pulse = std::numeric_limits<float>::max();
+        float gap = 0.0f;
+
+        for (size_t slot = 0; slot < 8; ++slot) {
+            const size_t base = (PreambleStart - slot) * Sampler::NumStreams;
+            for (size_t h = 0; h < 2; ++h) {
+                const size_t off = base - stream - h * Half;
+                float sum = 0.0f;
+                for (size_t k = 0; k < Half; ++k)
+                    sum += m_sampleRingBuffer.lookBack(off - k, offsetInBlock);
+
+                const bool isPulse = (h == 0 && (slot == 0 || slot == 1))
+                                  || (h == 1 && (slot == 3 || slot == 4));
+                if (isPulse)
+                    pulse = std::min(pulse, sum);
+                else
+                    gap = std::max(gap, sum);
+            }
+        }
+
+        return (gap > 0.0f) ? (pulse / gap) : 0.0f;
+    }
+
+    /// Signal-to-noise ratio of a frame: the peak magnitude across the frame's
+    /// data region over the median magnitude of a quiet window before it. This
+    /// is a ratio, so it is independent of receiver gain. A real transmission
+    /// sits well above its local noise floor; a fabricated frame is at it.
+    float snr(size_t frameBit) const noexcept {
+        const auto offsetInBlock = size_t(m_demodPos - m_sampleRingBuffer.readPos());
+
+        int32_t peak = 0;
+        {
+            const size_t delay = (size_t(128) - frameBit) * Sampler::NumStreams;
+            for (size_t s = 0; s < Sampler::NumStreams; s++)
+                peak = std::max(peak, m_sampleRingBuffer.lookBack(delay - s, offsetInBlock));
+        }
+
+        // noise floor: a low percentile of magnitudes over a quiet window
+        // before the preamble. The low percentile ignores any other
+        // transmission that happens to fall in the window, so the estimate is
+        // the receiver's own noise level and the ratio transfers between sites.
+        constexpr size_t NoiseBits = 64;
+        constexpr size_t StartBit = 200;
+        std::array<int32_t, NoiseBits * Sampler::NumStreams> window{};
+        size_t n = 0;
+        for (size_t b = 0; b < NoiseBits; b++) {
+            const size_t delay = (size_t(StartBit) + b) * Sampler::NumStreams;
+            for (size_t s = 0; s < Sampler::NumStreams; s++) {
+                window[n++] = m_sampleRingBuffer.lookBack(delay - s, offsetInBlock);
+                if (n == window.size())
+                    break;
+            }
+            if (n == window.size())
+                break;
+        }
+        std::sort(window.begin(), window.begin() + n);
+        const float noise = float(window[n / 4]);
+        if (noise <= 0.0f)
+            return 0.0f;
+        return float(peak) / noise;
+    }
+
 private:
-    uint32_t m_newBits[Sampler::NumStreams];    
+    // Samples reach the ring as ((I*I) >> 2) + ((Q*Q) >> 2) with I and Q in
+    // Q14, so the stored value is the squared magnitude times (SampleOne/2)^2
+    // and a linear magnitude comes back as stored / MagScale.
+    static constexpr float MagScale = float(SampleOne) * 256.0f;
+
+    uint32_t m_newBits[Sampler::NumStreams];
     // we have one ring buffer for the IQ pipeline
-    BlockRing<float, Sampler::InputBufferSize,  NumInputBuffers,  Sampler::InputBufferOverlap>  m_inputRingBuffer;
+    BlockRing<int32_t, Sampler::InputBufferSize,  NumInputBuffers,  Sampler::InputBufferOverlap>  m_inputRingBuffer;
     // and one for the upsampled magnitudes
-    BlockRing<float, Sampler::SampleBufferSize, NumSampleBuffers, Sampler::SampleBufferOverlap> m_sampleRingBuffer;
+    BlockRing<int32_t, Sampler::SampleBufferSize, NumSampleBuffers, Sampler::SampleBufferOverlap> m_sampleRingBuffer;
     // not nice. Will change
-    const float* m_demodPos = nullptr;
+    const int32_t* m_demodPos = nullptr;
 };
 
 
@@ -163,6 +171,17 @@ template<typename InputReaderType, MessageHandler Handler>
 inline void SampleStream<Sampler>::read(InputReaderType& inputReader, Handler& messageHandler) {  
     // the core logic for message recognition
     DemodCore<Sampler::NumStreams, Handler> demodCore(messageHandler);
+    demodCore.setConfidenceSource(this, [](const void* ctx, uint8_t bit, size_t stream) -> float {
+        return static_cast<const SampleStream<Sampler>*>(ctx)->confidenceAt(bit, stream);
+    });
+    const auto preambleSource = [](const void* ctx, size_t stream) -> float {
+        return static_cast<const SampleStream<Sampler>*>(ctx)->preambleScore(stream);
+    };
+    demodCore.setPreambleSource(this, preambleSource);
+    const auto snrSource = [](const void* ctx, uint8_t frameBit) -> float {
+        return static_cast<const SampleStream<Sampler>*>(ctx)->snr(frameBit);
+    };
+    demodCore.setSnrSource(this, snrSource);
 
      // the main loop for reading the stream
     while (!inputReader.eof()) {

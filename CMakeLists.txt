@@ -16,12 +16,21 @@ option(ENABLE_STATS          "Compile with STATS_ENABLED" ON)
 option(END_STATS             "Compile with STATS_END_ONLY" OFF)
 option(ENABLE_CUSTOM_INPUT   "Compile with STREAM1090_CUSTOM_INPUT" OFF)
 option(ENABLE_RSSI           "Compile with STREAM1090_ENABLE_RSSI" ON)
+option(ENABLE_PREAMBLE_GATE  "Reject address-parity frames that are weak and preamble-less" ON)
+set(PREAMBLE_GATE_THRESHOLD 1.2 CACHE STRING "Preamble score a real transmission must reach")
+set(MIN_SNR               2.5 CACHE STRING "Reject address-parity frames below this signal-to-noise ratio (0 disables; a ratio, so it transfers between receivers)")
 option(ENABLE_RTLSDR_BLOG    "Enable vendored RTL-SDR Blog fork" OFF)
+option(ENABLE_TOO_MUCH_CPU   "Unlocks the 40 and 48 Msps speeds" OFF)
+option(BUILD_TESTING         "Build tests" OFF)
 
 set(STATS_DEF        STATS_ENABLED=$<BOOL:${ENABLE_STATS}>)
 set(STATS_END_DEF    STATS_END_ONLY=$<BOOL:${END_STATS}>)
 set(CUSTOM_INPUT_DEF STREAM1090_CUSTOM_INPUT=$<BOOL:${ENABLE_CUSTOM_INPUT}>)
 set(RSSI_DEF         STREAM1090_RSSI=$<BOOL:${ENABLE_RSSI}>)
+set(PREAMBLE_GATE_DEF STREAM1090_PREAMBLE_GATE=$<BOOL:${ENABLE_PREAMBLE_GATE}>)
+set(PREAMBLE_THRESHOLD_DEF STREAM1090_PREAMBLE_THRESHOLD=${PREAMBLE_GATE_THRESHOLD})
+set(MIN_SNR_DEF         STREAM1090_MIN_SNR=${MIN_SNR})
+set(TOO_MUCH_CPU_DEF STREAM1090_TOO_MUCH_CPU=$<BOOL:${ENABLE_TOO_MUCH_CPU}>)
 
 # ------------------------------------------------------------
 # Compiler settings
@@ -49,7 +58,7 @@ pkg_check_modules(AIRSPY QUIET libairspy)
 if(AIRSPY_FOUND)
     message(STATUS "[stream1090] Airspy support enabled")
     list(APPEND DEVICE_SOURCES       src/devices/AirspyDevice.cpp)
-    list(APPEND DEVICE_LIBS          ${AIRSPY_LIBRARIES})
+    list(APPEND DEVICE_LIBS          ${AIRSPY_LDFLAGS})
     list(APPEND DEVICE_INCLUDE_DIRS  ${AIRSPY_INCLUDE_DIRS})
     list(APPEND DEVICE_DEFINITIONS   STREAM1090_HAVE_AIRSPY)
 else()
@@ -81,7 +90,7 @@ else()
         message(STATUS "[stream1090] System librtlsdr found")
 
         list(APPEND DEVICE_SOURCES       src/devices/RtlSdrDevice.cpp)
-        list(APPEND DEVICE_LIBS          ${RTLSDR_LIBRARIES})
+        list(APPEND DEVICE_LIBS          ${RTLSDR_LDFLAGS})
         list(APPEND DEVICE_INCLUDE_DIRS  ${RTLSDR_INCLUDE_DIRS})
         list(APPEND DEVICE_DEFINITIONS   STREAM1090_HAVE_RTLSDR)
 
@@ -130,10 +139,52 @@ target_compile_definitions(stream1090 PRIVATE
     ${STATS_END_DEF}
     ${CUSTOM_INPUT_DEF}
     ${RSSI_DEF}
+    ${TOO_MUCH_CPU_DEF}
+    ${PREAMBLE_GATE_DEF}
+    ${PREAMBLE_THRESHOLD_DEF}
+    ${MIN_SNR_DEF}
     ${DEVICE_DEFINITIONS}
 )
 
 target_link_libraries(stream1090 PRIVATE ${DEVICE_LIBS})
+
+include(CTest)
+if(BUILD_TESTING)
+    add_executable(crc_error_table_test tests/CRCErrorTableTest.cpp)
+    target_include_directories(crc_error_table_test PRIVATE include)
+    target_compile_options(crc_error_table_test PRIVATE ${DEFAULT_COMPILE_OPTIONS})
+    add_test(NAME crc_error_table_test COMMAND crc_error_table_test)
+
+    add_executable(icao_cache_test tests/ICAOCacheTest.cpp)
+    target_include_directories(icao_cache_test PRIVATE include)
+    target_compile_options(icao_cache_test PRIVATE ${DEFAULT_COMPILE_OPTIONS})
+    add_test(NAME icao_cache_test COMMAND icao_cache_test)
+
+    add_executable(df11_interrogator_test tests/DF11InterrogatorTest.cpp)
+    target_include_directories(df11_interrogator_test PRIVATE include)
+    target_compile_options(df11_interrogator_test PRIVATE ${DEFAULT_COMPILE_OPTIONS})
+    add_test(NAME df11_interrogator_test COMMAND df11_interrogator_test)
+
+    add_executable(ring_buffer_test tests/RingBufferTest.cpp)
+    target_include_directories(ring_buffer_test PRIVATE include)
+    target_compile_options(ring_buffer_test PRIVATE ${DEFAULT_COMPILE_OPTIONS})
+    add_test(NAME ring_buffer_test COMMAND ring_buffer_test)
+
+    add_executable(erasure_repair_test tests/ErasureRepairTest.cpp)
+    target_include_directories(erasure_repair_test PRIVATE include)
+    target_compile_options(erasure_repair_test PRIVATE ${DEFAULT_COMPILE_OPTIONS})
+    add_test(NAME erasure_repair_test COMMAND erasure_repair_test)
+
+    add_executable(sampler_test tests/SamplerTest.cpp)
+    target_include_directories(sampler_test PRIVATE include)
+    target_compile_options(sampler_test PRIVATE ${DEFAULT_COMPILE_OPTIONS})
+    add_test(NAME sampler_test COMMAND sampler_test)
+
+    add_executable(mode_s_altitude_test tests/ModeSAltitudeTest.cpp)
+    target_include_directories(mode_s_altitude_test PRIVATE include)
+    target_compile_options(mode_s_altitude_test PRIVATE ${DEFAULT_COMPILE_OPTIONS})
+    add_test(NAME mode_s_altitude_test COMMAND mode_s_altitude_test)
+endif()
 
 # ------------------------------------------------------------
 # Install rules

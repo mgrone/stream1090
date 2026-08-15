@@ -1,0 +1,56 @@
+# Variant of EU_mgrone_6_12 (the "sawbird") with more weight in the centre tap group.
+#
+# Derived by hand, not by filter_opt.py: the three centre taps were scaled by
+# 1.15 and the whole filter renormalised. Nothing else was changed.
+#
+#   centre taps 6,7,8 : +5.2%   (0.1741/0.2755/0.1741 -> 0.1830/0.2898/0.1830)
+#   outer taps        : -8.6%
+#   energy in centre  : 62.4% -> 65.6%
+#   -3 dB bandwidth   : 0.294 MHz -> 0.310 MHz
+#
+# Rationale: the bit decision compares two samples half a chip (0.5 us) apart, so
+# a more compact impulse response preserves that contrast, while the wings still
+# provide out-of-band rejection. This trades a little noise rejection for a
+# little less smearing across the half-chip boundary. It is the same reason a
+# textbook matched filter does poorly here despite maximising SNR - measured at
+# 28436 messages versus 31852 for the sawbird on the capture below.
+#
+# Measured with -s 6 -u 24 -q on Airspy Mini captures (Ferrara, IT), replayed
+# from file so runs are deterministic:
+#
+#                     60 s capture        150 s capture (held out)
+#   sawbird           31852               75892
+#   this filter       31911  (+59)        76173  (+281, +0.37%)
+#
+# The gain is LARGER on the held-out capture than on the one used to find it,
+# and it appears across every downlink format (DF11 +123, DF17 +85,
+# DF0/4/5/16/20/21 +74), which is what a genuine front-end improvement should
+# look like rather than a decode-path artefact.
+#
+# CAVEAT: tuned on one receiver. The optimum trade between noise rejection and
+# half-chip smearing depends on the local noise and interference environment,
+# so the direction may generalise while this exact scaling may not. Worth
+# measuring against the built-in filter on your own site before adopting.
+#
+# A second caveat worth recording: an 8-parameter local search over the same
+# taps scored BETTER than this on the 15 s slice it was tuned on (+69) and worse
+# on held-out data (+64 vs +281). filter_opt.py optimises 7-9 gain points
+# against a single capture, which is the same regime - results from it are worth
+# validating against a capture from a different day.
+#
+# Best taps:
+0.005794326709982184
+0.029460341832063187
+0.047685765392198223
+0.034963499118780751
+0.0028456999719045886
+0.051323175702354083
+0.18304253511798252
+0.28976931230946895
+0.18304253511798252
+0.051323175702354083
+0.0028456999719045886
+0.034963499118780751
+0.047685765392198223
+0.029460341832063187
+0.005794326709982184

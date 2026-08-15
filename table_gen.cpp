@@ -50,8 +50,33 @@ void generateKeySetExtSquitterBurst(std::vector<crc_t>& keys) {
     }
 
     // this seems to help, for the parity block
-    for (int i = 0; i < 16; i++) {
+    for (int i = 0; i < 105-5; i++) {
         keys.push_back(compute(encodeFixOp(129,i)));
+    }
+
+    // two bit errors with one correct bit in between (101)
+    for (int i = 0; i < 110-5; i++) {
+        keys.push_back(compute(encodeFixOp(0x5,i)));
+    }
+
+    // two bit errors with two correct bits in between (1001)
+    for (int i = 0; i < 109-5; i++) {
+        keys.push_back(compute(encodeFixOp(0x9,i)));
+    }
+
+    // two bit errors with three correct bits in between (10001)
+    for (int i = 0; i < 108-5; i++) {
+        keys.push_back(compute(encodeFixOp(0x11,i)));
+    }
+
+    // two bit errors with four correct bits in between (100001)
+    for (int i = 0; i < 107-5; i++) {
+        keys.push_back(compute(encodeFixOp(0x21,i)));
+    }
+
+    // two bit errors with five correct bits in between (1000001)
+    for (int i = 0; i < 106-5; i++) {
+        keys.push_back(compute(encodeFixOp(0x41,i)));
     }
 }
 
@@ -83,7 +108,7 @@ int testTableSize(const std::vector<crc_t>& keys, int tableSize) {
 }
 
 int bruteforceMinTableSize(const std::vector<crc_t>& keys) {
-    for (int N = keys.size(); N < 6000; N++) {
+    for (int N = keys.size(); N < 30000; N++) {
         int res = testTableSize(keys, N);
         if (res == 1) {
             return N;
@@ -101,7 +126,7 @@ int runExtSquitter() {
 int runExtSquitterBurst() {
     std::vector<crc_t> keys;
     generateKeySetExtSquitterBurst(keys);
-    return bruteforceMinTableSize(keys);
+    return keys.size();
 }
 
 int runOneBitShort() {
@@ -118,7 +143,7 @@ int runTwoBitShort() {
 
 int main(/*int argc, char** argv*/) {
     std::cout << "DF17 min table size: " << runExtSquitter() << std::endl;
-    std::cout << "DF17 min table size with advanced correction: " << runExtSquitterBurst() << std::endl;
+    std::cout << "DF17 advanced correction patterns: " << runExtSquitterBurst() << std::endl;
     std::cout << "DF11 one bit short message min table size: " << runOneBitShort() << std::endl;
     std::cout << "DF11 one bit short message min table size: " << runTwoBitShort() << std::endl;
     return 0;

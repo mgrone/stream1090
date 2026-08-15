@@ -18,7 +18,7 @@ situations, a higher overall message rate can be achieved compared to a preamble
 
 ## Requirements
 - RTL-SDR based dongle or Airspy with antenna etc.
-- Debian-based Linux (Ubuntu, Raspberry Pi OS, ...)
+- Debian-based Linux (Ubuntu, Raspberry Pi OS, ...) or macOS
 - Optional: RaspberryPi 5 or 4 should work for most settings. 
   This depends on your settings
 - Optional: For RTL-SDR (not airspy), a RaspberryPi 3B and Zero 2 W seems to work without cooling.
@@ -45,6 +45,10 @@ For both, you will need the dev version of the corresponding libraries.
 
 - For Airspy ```sudo apt install libairspy-dev``` 
 - For RTL-SDR ```sudo apt install librtlsdr-dev``` 
+
+On macOS, install the build tools and device libraries with Homebrew:
+
+```brew install cmake pkgconf airspy rtl-sdr```
 
 We are ready to compile. Switch to the stream1090 folder and do the usual cmake thing.
 
@@ -264,7 +268,7 @@ With stream1090 you proceed as above in the readsb section.
 #### Disable stream1090 statistics
 If you want to run stream1090 as a service, it makes sense to disable the statistics. You can do so by setting the corresponding option for cmake and rebuild the project:
 ```
-cmake ../ --fresh -DENABLE_STATS=OFF && make
+cmake .. -DENABLE_STATS=OFF && cmake --build .
 ```
 
 ## Experimental Features
@@ -282,7 +286,7 @@ If you have an RTL-SDR device and still not happy, you can push things further. 
 
 If you want to use it, there is no need to download anything nor building and such. Stream1090's CMake project will take care of it. Go to the build folder and rebuild with
 ```
-cmake ../ --fresh -DENABLE_RTLSDR_BLOG=1 && make
+cmake .. -DENABLE_RTLSDR_BLOG=1 && cmake --build .
 ``` 
 Check if everything has worked out by running ```./stream1090 -h```. The native device support section should now list ```RTL-SDR Blog (advanced)```.
 

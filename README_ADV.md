@@ -76,6 +76,18 @@ For ```airspy_rx``` this works the same way. However, make sure that your sample
     cat ./samples.bin | ./build/stream1090 -s 10 -u 24 > /dev/null
     ```
 
+When changing the CRC correction patterns, build and run the `table_gen` target to confirm the declared pattern count. The advanced table uses open addressing to preserve colliding entries. Then run CTest: `crc_error_table_test` verifies that every declared DF17 and DF11 correction remains reachable from its CRC syndrome.
+
+Altitude replies support both Q=1 binary encoding in 25-foot increments and
+Q=0 Gillham/Mode C encoding in 100-foot increments. Metric M=1 altitude
+encoding is currently treated as unavailable. Gillham values are checked
+against an altitude already established by Q=1 replies and cannot replace that
+reference value.
+
+DF11 all-call replies may overlay the CRC parity with a non-zero II/SI interrogator code. Stream1090 accepts these replies for known aircraft. A new ICAO address is added to the cache only after two matching DF11 replies separated in time, so phase duplicates or a single low CRC syndrome cannot seed the cache.
+
+For DF0/4/5/16/20/21 address-parity replies, altitude and squawk checks normally reject implausible values. A rejected frame from an already active ICAO address is nevertheless accepted after the identical complete frame is received again between 100 microseconds and two seconds later. The first observation is withheld, short and long frames cannot confirm each other, and cache collisions can only discard a candidate. Corroborated Gillham or unsupported metric altitude replies do not update the stored altitude reference.
+
 Important: If you want to see the statistics for the whole file and not every 5 seconds. You can enable the a summary at the end by rebuilding stream with after the following cmake call in the build directory
 ```
 cmake ../ --fresh -DEND_STATS=ON -DENABLE_STATS=ON && make
@@ -160,7 +172,7 @@ python filter_opt.py --data samples.bin --fs 10000000 --fs-up 24000000 --num-gai
 ```
 So let us go through the parameters.
 - Tell the script to optimize on our sample data by `--data samples.bin`
-- The samples have been recorded at 10 Msps and we want to optimize for an internal upsampling rate of 24 Msps. `--fs 10000000 --fs-up 24000000` corresponds to running stream1090 with `-s 10 -u 10`. Note that these are given in Hz here. 
+- The samples have been recorded at 10 Msps and we want to optimize for an internal upsampling rate of 24 Msps. `--fs 10000000 --fs-up 24000000` corresponds to running stream1090 with `-s 10 -u 24`. Note that these are given in Hz here.
 - The number of gain points used by the optimizer is set via `--num-gain-points 9`. Please stick to 9 for now.
 - `--num-taps 15` determines the number of taps to be calculated from the gain points. 15 is stream1090 default. **Important:** This number has to be odd for now.
 - Since we do not provide any initial starting solution we set the bounds for the gain points to something very large by `--margin 1.0`
@@ -181,7 +193,6 @@ One thing that is important to know is that you can also use a complete log file
 So it remains the question when the script terminates. Currently it does not. If there is no new solution after some time, you can stop it with Ctrl+c. If you are not happy with the results, you can restart it and resume from the log file and hope for some luck. You may want to increase the margin then a bit.
 
 **ATTENTION** The above description is a very sloppy one. Everything is subject to change. This includes the scoring function and additional parameters. If you want to use the optimizer, always check this section for any remarks first.
-
 
 
 

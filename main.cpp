@@ -13,7 +13,7 @@
 #include <chrono>
 #include <optional>
 
-#define STREAM1090_VERSION "260617"
+#define STREAM1090_VERSION "260812"
 
 #include "MainInstance.hpp"
 
@@ -245,7 +245,6 @@ std::vector<float> load_taps_from_file(const std::string& filename) {
 
         // parse float
         try {
-            //float v = std::stof(line);
             double v = std::stod(line);
             taps.push_back((float)v);
         } catch (...) {
@@ -263,6 +262,12 @@ std::vector<float> load_taps_from_file(const std::string& filename) {
 }
 
 int main(int argc, char** argv) {
+    // Input and logging may run beside AVR output. Their default ties must not
+    // flush std::cout concurrently from another thread.
+    std::ios::sync_with_stdio(false);
+    std::cin.tie(nullptr);
+    std::cerr.tie(nullptr);
+
     RuntimeVars r_vars;
     CompileTimeVars c_vars;
 
@@ -277,6 +282,7 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    Log::Logger::instance().setVerbose(args.verbose);
     // ------------------------
     // Device config loading
     // ------------------------
@@ -407,11 +413,12 @@ int main(int argc, char** argv) {
     // ------------------------
     // Let's go
     // ------------------------
-    if (!runInstanceFromPresets(c_vars, r_vars)) {
+    const auto outcome = runInstanceFromPresets(c_vars, r_vars);
+    if (!outcome) {
         std::cerr << "[Stream1090] Configuration is not supported: "<< c_vars.inputRate << " -> " << c_vars.outputRate << std::endl;
-        return -1;
+        return 1;
     }
-    return 0;
+    return *outcome ? 0 : 1;
 }
 
 

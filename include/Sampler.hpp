@@ -8,6 +8,7 @@
 #pragma once
 #include <numeric>
 #include <cstddef>
+#include <cstdint>
 #include "SamplerFunc.hpp"
 
 enum SampleRate {
@@ -25,6 +26,8 @@ enum SampleRate {
     Rate_16_0_Mhz = 16000000,
     Rate_20_0_Mhz = 20000000,
     Rate_24_0_Mhz = 24000000,
+    Rate_30_0_Mhz = 30000000,
+    Rate_36_0_Mhz = 36000000,
     Rate_40_0_Mhz = 40000000,
     Rate_48_0_Mhz = 48000000
 };
@@ -53,10 +56,12 @@ typedef SamplerBase<Rate_2_4_Mhz, Rate_4_0_Mhz> Sampler_2_4_to_4_0_Mhz;
 typedef SamplerBase<Rate_2_4_Mhz, Rate_6_0_Mhz> Sampler_2_4_to_6_0_Mhz;
 typedef SamplerBase<Rate_2_4_Mhz, Rate_8_0_Mhz> Sampler_2_4_to_8_0_Mhz;
 typedef SamplerBase<Rate_2_4_Mhz, Rate_12_0_Mhz> Sampler_2_4_to_12_0_Mhz;
+typedef SamplerBase<Rate_2_4_Mhz, Rate_24_0_Mhz> Sampler_2_4_to_24_0_Mhz;
 
 // 2.56 MHz upsamplers
 typedef SamplerBase<Rate_2_56_Mhz, Rate_8_0_Mhz> Sampler_2_56_to_8_0_Mhz;
 typedef SamplerBase<Rate_2_56_Mhz, Rate_12_0_Mhz> Sampler_2_56_to_12_0_Mhz;
+typedef SamplerBase<Rate_2_56_Mhz, Rate_24_0_Mhz> Sampler_2_56_to_24_0_Mhz;
 
 // 6 Mhz upsamplers
 typedef SamplerBase<Rate_6_0_Mhz, Rate_12_0_Mhz> Sampler_6_0_to_12_0_Mhz;
@@ -66,6 +71,10 @@ typedef SamplerBase<Rate_6_0_Mhz, Rate_24_0_Mhz> Sampler_6_0_to_24_0_Mhz;
 // 10 Mhz upsampler
 typedef SamplerBase<Rate_10_0_Mhz, Rate_20_0_Mhz> Sampler_10_0_to_20_0_Mhz;
 typedef SamplerBase<Rate_10_0_Mhz, Rate_24_0_Mhz> Sampler_10_0_to_24_0_Mhz;
+typedef SamplerBase<Rate_10_0_Mhz, Rate_30_0_Mhz> Sampler_10_0_to_30_0_Mhz;
+typedef SamplerBase<Rate_10_0_Mhz, Rate_36_0_Mhz> Sampler_10_0_to_36_0_Mhz;
+typedef SamplerBase<Rate_10_0_Mhz, Rate_40_0_Mhz> Sampler_10_0_to_40_0_Mhz;
+typedef SamplerBase<Rate_10_0_Mhz, Rate_48_0_Mhz> Sampler_10_0_to_48_0_Mhz;
 
 // 12 Mhz upsampler
 typedef SamplerBase<Rate_12_0_Mhz, Rate_24_0_Mhz> Sampler_12_0_to_24_0_Mhz;
@@ -74,6 +83,7 @@ typedef SamplerBase<Rate_12_0_Mhz, Rate_24_0_Mhz> Sampler_12_0_to_24_0_Mhz;
 typedef SamplerBase<Rate_3_0_Mhz, Rate_6_0_Mhz> Sampler_3_0_to_6_0_Mhz;
 typedef SamplerBase<Rate_20_0_Mhz, Rate_24_0_Mhz> Sampler_20_0_to_24_0_Mhz;
 typedef SamplerBase<Rate_20_0_Mhz, Rate_40_0_Mhz> Sampler_20_0_to_40_0_Mhz;
+typedef SamplerBase<Rate_6_0_Mhz, Rate_12_0_Mhz, 2> Sampler_6_0_to_12_0_Mhz_Poly;
 
 // This class serves as descriptor for various values required for managing buffers and iterating over them
 // All values are derived from the sample rates and optional the buffer overlap in case you want to write 
@@ -138,25 +148,35 @@ class SamplerBase {
     static constexpr bool isPassthrough = (InputSampleRate == OutputSampleRate);
 
     // the main sampling function that has to be implemented
-    static void sample(const float* __restrict in, float* __restrict out) noexcept {
+    static void sample(const int32_t* __restrict in, int32_t* __restrict out) noexcept {
         SamplerFunc<RatioInput, RatioOutput, NumBlocks>::sample(in, out);
     };    
 };
 
 
+
+namespace SamplerMix {
+    // Weighted average of two neighbouring magnitudes. A magnitude already
+    // uses most of an int32, so the numerator is widened before the divide.
+    // Ratios whose denominator is a power of two collapse to a shift here.
+    inline int32_t mix(int32_t w0, int32_t a, int32_t w1, int32_t b, int32_t den) noexcept {
+        return int32_t((int64_t(w0) * int64_t(a) + int64_t(w1) * int64_t(b)) / den);
+    }
+}
+
 // 2.4 Mhz to 4.0 Mhz (4 streams) upsampling function
 template<>
-inline void SamplerBase<Rate_2_4_Mhz, Rate_4_0_Mhz>::sample(const float* __restrict in, float* __restrict out) noexcept {
+inline void SamplerBase<Rate_2_4_Mhz, Rate_4_0_Mhz>::sample(const int32_t* __restrict in, int32_t* __restrict out) noexcept {
     for (size_t i = 0; i < NumBlocks; i++) {
         //  |00000|11111|22222|33333|
         //  +-----------------------+
         //  |..000|00022|22224|44444|
         //  |.....|11111|13333|33...|
-        out[0] = (3.0f * in[0] + 3.0f * in[1]) * (1.0f / 6.0f);   
-        out[1] = (5.0f * in[1] + 1.0f * in[2]) * (1.0f / 6.0f);
-        out[2] = (2.0f * in[1] + 4.0f * in[2]) * (1.0f / 6.0f);
-        out[3] = (4.0f * in[2] + 2.0f * in[3]) * (1.0f / 6.0f);
-        out[4] = (1.0f * in[2] + 5.0f * in[3]) * (1.0f / 6.0f);
+        out[0] = SamplerMix::mix(3, in[0], 3, in[1], 6);   
+        out[1] = SamplerMix::mix(5, in[1], 1, in[2], 6);
+        out[2] = SamplerMix::mix(2, in[1], 4, in[2], 6);
+        out[3] = SamplerMix::mix(4, in[2], 2, in[3], 6);
+        out[4] = SamplerMix::mix(1, in[2], 5, in[3], 6);
         in += 3;
         out += 5;
     }   
@@ -164,18 +184,18 @@ inline void SamplerBase<Rate_2_4_Mhz, Rate_4_0_Mhz>::sample(const float* __restr
 
 // 2.4 Mhz to 6.0 Mhz (6 streams) upsampling function
 template<>
-inline void SamplerBase<Rate_2_4_Mhz, Rate_6_0_Mhz>::sample(const float* __restrict in, float* __restrict out) noexcept {
+inline void SamplerBase<Rate_2_4_Mhz, Rate_6_0_Mhz>::sample(const int32_t* __restrict in, int32_t* __restrict out) noexcept {
     for (size_t i = 0; i < NumBlocks; i++) {
         //  |00000|11111|22222|
         //  +-----------------+
         //  |00000|03333|33...|
         //  |..111|11144|4444.|
         //  |....2|22222|.....|
-        out[0] = (5.0f * in[0] + 1.0f * in[1]) * (1.0f / 6.0f);   
-        out[1] = (3.0f * in[0] + 3.0f * in[1]) * (1.0f / 6.0f);
-        out[2] = (1.0f * in[0] + 5.0f * in[1]) * (1.0f / 6.0f);
-        out[3] = (4.0f * in[1] + 2.0f * in[2]) * (1.0f / 6.0f);
-        out[4] = (2.0f * in[1] + 4.0f * in[2]) * (1.0f / 6.0f);
+        out[0] = SamplerMix::mix(5, in[0], 1, in[1], 6);   
+        out[1] = SamplerMix::mix(3, in[0], 3, in[1], 6);
+        out[2] = SamplerMix::mix(1, in[0], 5, in[1], 6);
+        out[3] = SamplerMix::mix(4, in[1], 2, in[2], 6);
+        out[4] = SamplerMix::mix(2, in[1], 4, in[2], 6);
         in += 2;
         out += 5;
     }
@@ -183,7 +203,7 @@ inline void SamplerBase<Rate_2_4_Mhz, Rate_6_0_Mhz>::sample(const float* __restr
 
 // 2.4 Mhz to 8.0 Mhz (8 streams) upsampling function
 template<>
-inline void SamplerBase<Rate_2_4_Mhz, Rate_8_0_Mhz>::sample(const float* __restrict in, float* __restrict out) noexcept {
+inline void SamplerBase<Rate_2_4_Mhz, Rate_8_0_Mhz>::sample(const int32_t* __restrict in, int32_t* __restrict out) noexcept {
     for (size_t i = 0; i < NumBlocks; i++) {
         //  |0000000000|1111111111|2222222222|3333333333|
         //  +-------------------------------------------+
@@ -191,16 +211,16 @@ inline void SamplerBase<Rate_2_4_Mhz, Rate_8_0_Mhz>::sample(const float* __restr
         //  |......1111|1111....55|555555....|99999999..|
         //  |.........2|2222222...|.66666666.|..........|
         //  |..........|..33333333|....777777|77........|
-        out[0] = ( 7.0f * in[0] +  1.0f * in[1]) * (1.0f / 8.0f);   
-        out[1] = ( 4.0f * in[0] +  4.0f * in[1]) * (1.0f / 8.0f);
-        out[2] = ( 1.0f * in[0] +  7.0f * in[1]) * (1.0f / 8.0f);
-        out[3] = ( 8.0f * in[1] +  0.0f * in[2]) * (1.0f / 8.0f);
-        out[4] = ( 5.0f * in[1] +  3.0f * in[2]) * (1.0f / 8.0f);
-        out[5] = ( 2.0f * in[1] +  6.0f * in[2]) * (1.0f / 8.0f);
-        out[6] = ( 8.0f * in[2] +  0.0f * in[3]) * (1.0f / 8.0f);
-        out[7] = ( 6.0f * in[2] +  2.0f * in[3]) * (1.0f / 8.0f);
-        out[8] = ( 3.0f * in[2] +  5.0f * in[3]) * (1.0f / 8.0f);
-        out[9] = ( 0.0f * in[2] +  8.0f * in[3]) * (1.0f / 8.0f);
+        out[0] = SamplerMix::mix(7, in[0], 1, in[1], 8);   
+        out[1] = SamplerMix::mix(4, in[0], 4, in[1], 8);
+        out[2] = SamplerMix::mix(1, in[0], 7, in[1], 8);
+        out[3] = SamplerMix::mix(8, in[1], 0, in[2], 8);
+        out[4] = SamplerMix::mix(5, in[1], 3, in[2], 8);
+        out[5] = SamplerMix::mix(2, in[1], 6, in[2], 8);
+        out[6] = SamplerMix::mix(8, in[2], 0, in[3], 8);
+        out[7] = SamplerMix::mix(6, in[2], 2, in[3], 8);
+        out[8] = SamplerMix::mix(3, in[2], 5, in[3], 8);
+        out[9] = SamplerMix::mix(0, in[2], 8, in[3], 8);
         in += 3;
         out += 10;
     } 
@@ -208,23 +228,23 @@ inline void SamplerBase<Rate_2_4_Mhz, Rate_8_0_Mhz>::sample(const float* __restr
 
 // 2.56 Mhz to 8.0 Mhz (8 streams) upsampling function
 template<>
-inline void SamplerBase<Rate_2_56_Mhz, Rate_8_0_Mhz>::sample(const float* __restrict in, float* __restrict out) noexcept {
+inline void SamplerBase<Rate_2_56_Mhz, Rate_8_0_Mhz>::sample(const int32_t* __restrict in, int32_t* __restrict out) noexcept {
     for (size_t i = 0; i < NumBlocks; i++) {
             for (int j = 0; j < 25; j++) {
                 const auto offset = 8 * j;
                 const auto k = offset / 25;
-                const auto l = 24 - (offset % 25);
-                const auto r = 24 - l;
-                out[j] = ((float)l * in[k] + (float)r * in[k+1]) * (1.0f / 24.0f);
+                const auto l = 25 - (offset % 25);
+                const auto r = 25 - l;
+                out[j] = SamplerMix::mix((int32_t)l, in[k], (int32_t)r, in[k+1], 25);
             }
-            in += 8;//5;
-            out += 25;//12;
+            in += 8;
+            out += 25;
         }
 }
 
 // 6.0 Mhz to 16.0 Mhz (16 streams) upsampling function
 template<>
-inline void SamplerBase<Rate_6_0_Mhz, Rate_16_0_Mhz>::sample(const float* __restrict in, float* __restrict out) noexcept {
+inline void SamplerBase<Rate_6_0_Mhz, Rate_16_0_Mhz>::sample(const int32_t* __restrict in, int32_t* __restrict out) noexcept {
    for (size_t i = 0; i < NumBlocks; i++) {
             //  |00000000|11111111|22222222|33333333|
             //  +-----------------------------------+
@@ -237,14 +257,14 @@ inline void SamplerBase<Rate_6_0_Mhz, Rate_16_0_Mhz>::sample(const float* __rest
             //  |........|........|..666666|66......|
             //  |........|........|.....777|77777...|
             //  |........|........|........|88888888|
-            out[0] = ( 8.0f * in[0] +  0.0f * in[1]) * (1.0f / 8.0f);   
-            out[1] = ( 5.0f * in[0] +  3.0f * in[1]) * (1.0f / 8.0f);
-            out[2] = ( 2.0f * in[0] +  6.0f * in[1]) * (1.0f / 8.0f);
-            out[3] = ( 7.0f * in[1] +  1.0f * in[2]) * (1.0f / 8.0f);
-            out[4] = ( 4.0f * in[1] +  4.0f * in[2]) * (1.0f / 8.0f);
-            out[5] = ( 1.0f * in[1] +  7.0f * in[2]) * (1.0f / 8.0f);
-            out[6] = ( 6.0f * in[2] +  2.0f * in[3]) * (1.0f / 8.0f);
-            out[7] = ( 3.0f * in[2] +  5.0f * in[3]) * (1.0f / 8.0f);
+            out[0] = SamplerMix::mix(8, in[0], 0, in[1], 8);   
+            out[1] = SamplerMix::mix(5, in[0], 3, in[1], 8);
+            out[2] = SamplerMix::mix(2, in[0], 6, in[1], 8);
+            out[3] = SamplerMix::mix(7, in[1], 1, in[2], 8);
+            out[4] = SamplerMix::mix(4, in[1], 4, in[2], 8);
+            out[5] = SamplerMix::mix(1, in[1], 7, in[2], 8);
+            out[6] = SamplerMix::mix(6, in[2], 2, in[3], 8);
+            out[7] = SamplerMix::mix(3, in[2], 5, in[3], 8);
             in += 3;
             out += 8;
         }
@@ -252,76 +272,79 @@ inline void SamplerBase<Rate_6_0_Mhz, Rate_16_0_Mhz>::sample(const float* __rest
 
 // 6.0 Mhz to 12.0 Mhz (12 streams) upsampling function
 /*template<>
-inline void SamplerBase<Rate_6_0_Mhz, Rate_12_0_Mhz>::sample(const float* __restrict in, float* __restrict out) noexcept {
+inline void SamplerBase<Rate_6_0_Mhz, Rate_12_0_Mhz>::sample(const int32_t* __restrict in, int32_t* __restrict out) noexcept {
     for (size_t i = 0; i < NumBlocks; i++) {
-        out[0] = in[0];   
-        out[1] = 0.5f * in[0] +  0.5f * in[1];
+        out[0] = 0.6f * in[0] +  0.4f * in[1];
+        out[1] = 0.1f * in[0] +  0.9f * in[1];
         in += 1;
         out += 2;
     }
 } */
 
+// 6.0 Mhz to 12.0 Mhz (12 streams) upsampling function
+/*template<>
+inline void SamplerBase<Rate_6_0_Mhz, Rate_12_0_Mhz, 2>::sample(const int32_t* __restrict in, int32_t* __restrict out) noexcept {
+    for (size_t i = 0; i < NumBlocks; i++) {
+        out[0] = -0.1f *  in[0] + 1.0f * in[1] - 0.1f * in[2];   
+        out[1] =  0.5f *  in[0] + 0.5f * in[1] + 0.0f * in[2];   
+        in += 1;
+        out += 2;
+    }
+}*/
+
 // 6.0 Mhz to 24.0 Mhz (24 streams) upsampling function
 template<>
-inline void SamplerBase<Rate_6_0_Mhz, Rate_24_0_Mhz>::sample(const float* __restrict in, float* __restrict out) noexcept {
+inline void SamplerBase<Rate_6_0_Mhz, Rate_24_0_Mhz>::sample(const int32_t* __restrict in, int32_t* __restrict out) noexcept {
+   // the weights are quarters, so these are exact integer shifts and the
+   // interpolation loses nothing at all
    for (size_t i = 0; i < NumBlocks; i++) {
-        out[0] = 1.0f  * in[0]  +  0.0f  * in[1];
-        out[1] = 0.75f * in[0]  +  0.25f * in[1];
-        out[2] = 0.5f  * in[0]  +  0.5f  * in[1];
-        out[3] = 0.25f * in[0]  +  0.75f * in[1];
+        const int32_t a = in[0];
+        const int32_t b = in[1];
+        out[0] = a;
+        out[1] = (3 * a + b) >> 2;
+        out[2] = (a + b) >> 1;
+        out[3] = (a + 3 * b) >> 2;
         in += 1;
         out += 4;
     }
 } 
 
 // 10.0 Mhz to 24.0 Mhz (24 streams) upsampling function (unrolled)
-/*template<>
-inline void SamplerBase<Rate_10_0_Mhz, Rate_24_0_Mhz>::sample(const float* __restrict in, float* __restrict out) noexcept {
-    constexpr float s = 1.0f / 9.0f;
-
-    for (size_t i = 0; i < NumBlocks; i++) {
-
-        // j = 0,1,2  (k = 0)
-        out[0]  = (9.0f * in[0] + 0.0f * in[1]) * s; // l=9, r=0
-        out[1]  = (4.0f * in[0] + 5.0f * in[1]) * s; // l=4, r=5
-        out[2]  = (9.0f * in[0] + 0.0f * in[1]) * s; // l=9, r=0
-
-        // j = 3,4    (k = 1)
-        out[3]  = (4.0f * in[1] + 5.0f * in[2]) * s; // l=4, r=5
-        out[4]  = (9.0f * in[1] + 0.0f * in[2]) * s; // l=9, r=0
-
-        // j = 5,6,7  (k = 2)
-        out[5]  = (4.0f * in[2] + 5.0f * in[3]) * s; // l=4, r=5
-        out[6]  = (9.0f * in[2] + 0.0f * in[3]) * s; // l=9, r=0
-        out[7]  = (4.0f * in[2] + 5.0f * in[3]) * s; // l=4, r=5
-
-        // j = 8,9    (k = 3)
-        out[8]  = (9.0f * in[3] + 0.0f * in[4]) * s; // l=9, r=0
-        out[9]  = (4.0f * in[3] + 5.0f * in[4]) * s; // l=4, r=5
-
-        // j = 10,11  (k = 4)
-        out[10] = (9.0f * in[4] + 0.0f * in[5]) * s; // l=9, r=0
-        out[11] = (4.0f * in[4] + 5.0f * in[5]) * s; // l=4, r=5
-
-        in  += 5;
-        out += 12;
-    }
-}*/
-
 /*
-// original 10.0 Mhz to 24.0 Mhz (24 streams) upsampling function
-template<>
-inline void SamplerBase<Rate_10_0_Mhz, Rate_24_0_Mhz>::sample(const float* __restrict in, float* __restrict out) noexcept {
-    for (size_t i = 0; i < NumBlocks; i++) {
-        for (int j = 0; j < 12; j++) {
-            const auto offset = 5 * j;
-            const auto k = offset / 12;
-            const auto l = 9 - (offset % 10);
-            const auto r = 9 - l;
-            out[j] = ((float)l * in[k] + (float)r * in[k+1]) * (1.0f / 9.0f);
-        }
-        in += 5;
-        out += 12;
-    }
-}
+|.....0......|.....1......|......2.....|.....3......|.....4......|....5.......|
+|............|............|............|............|............|............|
+|.....0....1.|...2....3...|.4....5....6|....7....8..|..9....a....|b...........|
+|.....0000000|00000.......|............|............|............|............|
+|..........11|1111111111..|............|............|............|............|
+|............|...222222222|222.........|............|............|............|
+|............|........3333|33333333....|............|............|............|
+|............|............|.44444444444|4...........|............|............|
+|............|............|......555555|555555......|............|............|
+|............|............|...........6|66666666666.|............|............|
+|............|............|............|....77777777|7777........|............|
+|............|............|............|.........888|888888888...|............|
+|............|............|............|............|..9999999999|99..........|
+|............|............|............|............|.......aaaaa|aaaaaaa.....|
+|............|............|............|............|............|bbbbbbbbbbbb|
 */
+/*
+template<>
+inline void SamplerBase<Rate_10_0_Mhz, Rate_24_0_Mhz>::sample(const int32_t* __restrict in, int32_t* __restrict out) noexcept {
+    constexpr float s = 1.0f / 12.0f;
+    for (size_t i = 0; i < NumBlocks; i++) {
+        out[0] = ( 7.0f * in[0] +  5.0f * in[1]) * s; 
+        out[1] = ( 2.0f * in[0] + 10.0f * in[1]) * s; 
+        out[2] = ( 9.0f * in[1] +  3.0f * in[2]) * s; 
+        out[3] = ( 4.0f * in[1] +  8.0f * in[2]) * s; 
+        out[4] = (11.0f * in[2] +  1.0f * in[3]) * s; 
+        out[5] = ( 6.0f * in[2] +  6.0f * in[3]) * s; 
+        out[6] = ( 1.0f * in[2] + 11.0f * in[3]) * s; 
+        out[7] = ( 8.0f * in[3] +  4.0f * in[4]) * s; 
+        out[8] = ( 3.0f * in[3] +  9.0f * in[4]) * s; 
+        out[9] = (10.0f * in[4] +  2.0f * in[5]) * s; 
+        out[10]= ( 5.0f * in[4] +  7.0f * in[5]) * s; 
+        out[11]= ( 0.0f * in[4] + 12.0f * in[5]) * s;
+        in += 5;
+        out += 12; 
+    }
+} */
