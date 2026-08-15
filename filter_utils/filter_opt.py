@@ -13,6 +13,8 @@ from scipy.optimize import differential_evolution
 from scipy.signal import firwin2
 import subprocess
 from datetime import datetime
+import multiprocessing
+import os
 import re
 
 # ============================================================
@@ -60,6 +62,19 @@ def parse_args():
     p.add_argument("--df17-weight", type=float, default=1.0,
                    help="Weight for DF17 messages in the objective function")
 
+    p.add_argument("--patience", type=int, default=3,
+                   help="Stop after this many consecutive runs that fail to "
+                        "improve the best score. 0 never stops, which is what "
+                        "this script used to do")
+
+    p.add_argument("--max-runs", type=int, default=0,
+                   help="Hard cap on the number of runs, 0 for no cap")
+
+    p.add_argument("--workers", type=int, default=1,
+                   help="Parallel evaluations (-1 for all cores). Each one runs "
+                        "a full stream1090 pass, so this scales close to linearly "
+                        "until the disk gives out")
+
     return p.parse_args()
 
 
@@ -71,7 +86,16 @@ args = parse_args()
 
 STREAM1090_EXE = "../build/stream1090"
 DATA_PATH = args.data
-FILTER_PATH = "./diff_evolve_fir_temp.txt"
+
+
+def filter_path():
+    """Scratch file holding the taps for one evaluation.
+
+    Per process, because with --workers several evaluations are in flight at
+    once and a single shared path would have them overwrite each other's taps
+    between the write and the run.
+    """
+    return f"./diff_evolve_fir_temp_{os.getpid()}.txt"
 FS = args.fs
 FS_UP = args.fs_up
 NUMTAPS = args.num_taps
@@ -255,6 +279,37 @@ def default_output_rate(input_mhz: float) -> float:
     raise ValueError(f"No default output rate for input rate {input_mhz}")
 
 
+def score_taps(h):
+    """Run stream1090 once over the data with these taps and score the result."""
+    path = filter_path()
+    with open(path, "w") as f:
+        for t in h:
+            f.write(f"{t}\n")
+
+    input_mhz = FS / 1_000_000.0
+
+    if FS_UP is not None:
+        output_mhz = FS_UP / 1_000_000.0
+    else:
+        output_mhz = default_output_rate(input_mhz)
+
+    cmd = [
+        "bash", "-c",
+        f"cat {DATA_PATH} | {STREAM1090_EXE} "
+        f"-s {input_mhz} "
+        f"-u {output_mhz} "
+        f"-f {path}"
+    ]
+
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
+    out, _ = proc.communicate()
+
+    total, long_count, df_counts = parse_frames(out)
+    df17 = df_counts.get(17, 0)
+    score = total + long_count
+    return score, total, df17
+
+
 def evaluate_builtin_filter():
     input_mhz = FS / 1_000_000.0
 
@@ -292,36 +347,16 @@ def evaluate_filter(params):
     if not is_lowpass(h):
         return 1e9
 
-    with open(FILTER_PATH, "w") as f:
-        for t in h:
-            f.write(f"{t}\n")
+    score, total, df17 = score_taps(h)
 
-    input_mhz = FS / 1_000_000.0
-
-    if FS_UP is not None:
-        output_mhz = FS_UP / 1_000_000.0
-    else:
-        output_mhz = default_output_rate(input_mhz)
-
-    cmd = [
-        "bash", "-c",
-        f"cat {DATA_PATH} | {STREAM1090_EXE} "
-        f"-s {input_mhz} "
-        f"-u {output_mhz} "
-        f"-f {FILTER_PATH}"
-    ]
-
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
-    out, _ = proc.communicate()
-
-    total, long_count, df_counts = parse_frames(out)
-    df17 = df_counts.get(17, 0)
-    # score = total + args.df17_weight * df17
-    score = total + long_count
-    # score = total + df_counts.get(17, 0)
-    #score = df_counts.get(17, 0) + df_counts.get(11, 0) * 0.25
-    
-    print(score)
+    # With --workers the evaluation runs in a child process, so updating these
+    # globals here would only touch that child's copy and be thrown away. The
+    # parent recovers the winner from the optimiser's result instead. Still
+    # report each result, otherwise a parallel run prints nothing for hours.
+    if args.workers != 1:
+        print(f"[{os.getpid()}] total={total}, df17={df17}, score={score}",
+              flush=True)
+        return -score
 
     if score > best_score:
         best_score = score
@@ -393,7 +428,73 @@ with open(LOGFILE, "a") as f:
     f.write(f"# Built-in DF17 count: {baseline_df17}\n")
     f.write("\n")
 
+def log_improvement():
+    """Append the current best, in the format --resume reads back."""
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with open(LOGFILE, "a") as f:
+        f.write("# ================================================================\n")
+        f.write(f"# Instance: {DATA_PATH}\n")
+        f.write(f"# Time: {timestamp}\n")
+        f.write(f"# FS: {FS/1_000_000} MHz → FS_UP: {FS_UP/1_000_000} MHz\n")
+        f.write(f"# Number of taps: {NUMTAPS}\n")
+        f.write(f"# Best score: {best_score}\n")
+        f.write(f"# Best message count: {best_total}\n")
+        f.write(f"# Best DF17 count: {best_df17}\n")
+        f.write(f"# Best params: {best_params.tolist()}\n")
+        f.write("# Current bounds:\n")
+        for lo, hi in bounds:
+            f.write(f"# [{lo:.6f}, {hi:.6f}]\n")
+        f.write("# Best taps:\n")
+        for t in best_taps:
+            f.write(f"{t}\n")
+        f.write("\n")
+
+
+def on_generation(intermediate_result):
+    """Record the best after each generation when running in parallel.
+
+    The workers cannot do this themselves, so without it a parallel run would
+    write nothing until it finished and a crash would lose everything. scipy
+    calls this in the parent, once per generation, which is cheap next to the
+    generation itself.
+    """
+    global best_score, best_params, best_taps, best_total, best_df17
+
+    score = -intermediate_result.fun
+    if score <= best_score:
+        return
+
+    best_params = np.asarray(intermediate_result.x).copy()
+    best_taps = build_lowpass_firwin2(best_params, K)[0]
+    # fun carries the score but not the breakdown the log wants
+    best_score, best_total, best_df17 = score_taps(best_taps)
+    print(f"| generation improved: score={best_score}, total={best_total}, "
+          f"df17={best_df17}", flush=True)
+    log_improvement()
+
+
+def open_pool(n):
+    """Worker pool for parallel evaluation, or None to stay in this process.
+
+    Forced onto the fork start method: this script does its work at module
+    level, so under spawn every worker would re-import it and start its own
+    optimisation run.
+    """
+    if n == 1:
+        return None
+    if n < 0:
+        n = multiprocessing.cpu_count()
+    return multiprocessing.get_context("fork").Pool(n)
+
+
+pool = open_pool(args.workers)
+
+runs = 0
+stale = 0
+
 while True:
+    runs += 1
+    score_before = best_score
     print("Starting Differential Evolution...")
 
     result = differential_evolution(
@@ -404,9 +505,20 @@ while True:
         mutation=(0.5, 1.0),
         recombination=0.7,
         polish=False,
-        workers=1,
+        # a parallel map has to score a whole generation before any of it can
+        # be used, so the population is updated once per generation
+        workers=pool.map if pool else 1,
+        updating="deferred" if pool else "immediate",
+        callback=on_generation if pool else None,
         x0=center,
     )
+
+    if pool and -result.fun > best_score:
+        # the winner was scored in a child, so its taps and counts never made
+        # it back here; recompute them once from the parameters that won
+        best_params = np.asarray(result.x)
+        best_taps = build_lowpass_firwin2(best_params, K)[0]
+        best_score, best_total, best_df17 = score_taps(best_taps)
 
     print("\n================ END OF RUN ====================")
     print(f"Best params: {np.round(best_params, 6)}")
@@ -456,4 +568,37 @@ while True:
 
     print("# Per-parameter margins:", margins)
 
-    center = best_params.copy()
+    # The bounds above are recentred on the population's best while center
+    # carries the best ever seen, and those are not the same point, so after a
+    # narrowing round the seed can fall outside its own bounds and scipy
+    # refuses to start. Clamp rather than drop it: the seed is still the most
+    # useful starting point we have.
+    center = np.clip(best_params, [lo for lo, _ in bounds], [hi for _, hi in bounds])
+
+    # Each run narrows the bounds around the current best, so once a few of
+    # them in a row bring nothing the schedule has stopped finding anything and
+    # the remaining ones are just spending evaluations. The objective is
+    # deterministic for a given tap set and data, so "no improvement" is exact
+    # rather than a noise threshold.
+    stale = 0 if best_score > score_before else stale + 1
+    print(f"# Run {runs}: best {best_score}, "
+          f"{'improved' if stale == 0 else f'stale for {stale}'}")
+
+    if args.patience and stale >= args.patience:
+        print(f"\nConverged: {stale} run{'' if stale == 1 else 's'} without "
+              "improvement, stopping.")
+        break
+
+    if args.max_runs and runs >= args.max_runs:
+        print(f"\nReached the cap of {args.max_runs} "
+              f"run{'' if args.max_runs == 1 else 's'}, stopping.")
+        break
+
+if pool:
+    pool.close()
+    pool.join()
+
+print(f"\nFinished after {runs} run{'' if runs == 1 else 's'}. "
+      f"Best score {best_score} "
+      f"({best_total} messages, {best_df17} DF17).")
+print(f"Best taps written to {LOGFILE}")
