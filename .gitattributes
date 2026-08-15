@@ -1,0 +1,10 @@
+# Ensure Makefile-based files always use LF — CRLF breaks Make
+debian/rules          text eol=lf
+
+# Debian packaging files should always be LF
+debian/changelog      text eol=lf
+debian/control        text eol=lf
+debian/copyright      text eol=lf
+debian/install        text eol=lf
+debian/*.service      text eol=lf
+debian/*.conf         text eol=lf

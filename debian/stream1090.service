@@ -1,0 +1,15 @@
+[Unit]
+Description=stream1090 Mode-S demodulator
+After=network.target
+ConditionPathExists=/etc/stream1090/stream1090.conf
+
+[Service]
+EnvironmentFile=/etc/stream1090/stream1090.conf
+ExecStart=/bin/sh -c '/usr/bin/stream1090 $STREAM1090_OPTS | socat -u - TCP4:localhost:${READSB_PORT:-30001}'
+Restart=on-failure
+RestartSec=5
+StandardOutput=null
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
