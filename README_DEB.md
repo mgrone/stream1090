@@ -150,6 +150,16 @@ as well:
 sudo apt purge stream1090
 ```
 
+## Maintenance
+
+This Debian packaging is intentionally thin and should only require updates when the upstream build changes, such as:
+
+- dependency updates in the Debian control file
+- install path changes in the main CMake configuration
+- packaging metadata changes in the Debian packaging files
+
+This keeps the maintenance burden low while leaving the normal project build and upstream source logic unchanged.
+
 ## Alternative: CPack
 
 If you want to produce a `.deb` without the full Debian toolchain, CMake's
