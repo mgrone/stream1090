@@ -33,6 +33,10 @@ public:
         m_writer.write_long_MLAT(MLAT_timeStamp, frame);
     }
 
+    void flush() {
+        m_writer.flush();
+    }
+
     AVRWriter m_writer;
 };
 
@@ -59,6 +63,10 @@ public:
         const uint64_t MLAT_timeStamp = MLAT::sampleIndexToMlatTime<Sampler::NumStreams>(sampleIndex);
         const uint8_t rssi = rssiProvider.getRSSILong();
         m_writer.write_long_MLAT_RSSI(MLAT_timeStamp, frame, rssi);
+    }
+
+    void flush() {
+        m_writer.flush();
     }
 
 private:
