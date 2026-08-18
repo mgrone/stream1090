@@ -8,6 +8,7 @@
 #pragma once
 
 #include "Bits128.hpp"
+#include <cmath>
 #include <iostream>
 #include <iomanip>
 #include <chrono>
@@ -106,6 +107,61 @@ namespace ModeS {
 		if (bits & 0x0010)
 			return decodeAltitudeBitsFeet(bits);
 		return decodeGillhamAltitude(bits);
+	}
+
+	constexpr inline uint8_t extractMEType(const Bits128& frame) noexcept {
+		return uint8_t((frame.high() >> 11) & 0x1f);
+	}
+
+	constexpr inline uint8_t extractAirbornePositionCprOdd(const Bits128& frame) noexcept {
+		return uint8_t((frame.low() >> 58) & 1);
+	}
+
+	constexpr inline uint32_t extractAirbornePositionCprLat(const Bits128& frame) noexcept {
+		return uint32_t((frame.low() >> 41) & 0x1ffff);
+	}
+
+	constexpr inline uint32_t extractAirbornePositionCprLon(const Bits128& frame) noexcept {
+		return uint32_t((frame.low() >> 24) & 0x1ffff);
+	}
+
+	// Number of longitude zones for a given latitude, per ADS-B CPR. 59 at the
+	// equator, 1 at and beyond +-87 degrees.
+	inline int cprNl(double latitude) noexcept {
+		constexpr double Pi = 3.14159265358979323846;
+		const double absLatitude = std::abs(latitude);
+		if (absLatitude >= 87.0)
+			return 1;
+		if (absLatitude <= 1.0)
+			return 59;
+		const double c = std::cos(Pi * absLatitude / 180.0);
+		const double arg = 1.0 - (1.0 - std::cos(Pi / 30.0)) / (c * c);
+		return int(std::floor(2.0 * Pi / std::acos(
+			std::min(1.0, std::max(-1.0, arg)))));
+	}
+
+	// Decode a globally unambiguous airborne CPR odd/even pair.
+	inline bool decodeCprGlobal(uint32_t latEven, uint32_t lonEven,
+			uint32_t latOdd, uint32_t lonOdd, double& lat, double& lon) noexcept {
+		const double evenLat = double(latEven) / 131072.0;
+		const double oddLat = double(latOdd) / 131072.0;
+		const int j = int(std::floor(59.0 * evenLat - 60.0 * oddLat + 0.5));
+		double decodedEvenLat = (360.0 / 60.0) * (double((j % 60 + 60) % 60) + evenLat);
+		double decodedOddLat = (360.0 / 59.0) * (double((j % 59 + 59) % 59) + oddLat);
+		if (decodedEvenLat >= 270.0) decodedEvenLat -= 360.0;
+		if (decodedOddLat >= 270.0) decodedOddLat -= 360.0;
+		if (cprNl(decodedEvenLat) != cprNl(decodedOddLat))
+			return false;
+
+		lat = decodedEvenLat;
+		const int nl = cprNl(lat);
+		const int ni = nl > 1 ? nl : 1;
+		const double evenLon = double(lonEven) / 131072.0;
+		const double oddLon = double(lonOdd) / 131072.0;
+		const int m = int(std::floor(evenLon * double(nl - 1) - oddLon * double(nl) + 0.5));
+		lon = (360.0 / double(ni)) * (double((m % ni + ni) % ni) + evenLon);
+		if (lon > 180.0) lon -= 360.0;
+		return true;
 	}
 	
 	inline uint64_t currentTimestamp() {

@@ -189,6 +189,16 @@ if(BUILD_TESTING)
     target_include_directories(mode_s_altitude_test PRIVATE include)
     target_compile_options(mode_s_altitude_test PRIVATE ${DEFAULT_COMPILE_OPTIONS})
     add_test(NAME mode_s_altitude_test COMMAND mode_s_altitude_test)
+
+    add_executable(mode_s_position_test tests/ModeSPositionTest.cpp)
+    target_include_directories(mode_s_position_test PRIVATE include)
+    target_compile_options(mode_s_position_test PRIVATE ${DEFAULT_COMPILE_OPTIONS})
+    add_test(NAME mode_s_position_test COMMAND mode_s_position_test)
+
+    add_executable(position_repair_test tests/PositionRepairTest.cpp)
+    target_include_directories(position_repair_test PRIVATE include)
+    target_compile_options(position_repair_test PRIVATE ${DEFAULT_COMPILE_OPTIONS})
+    add_test(NAME position_repair_test COMMAND position_repair_test)
 endif()
 
 # ------------------------------------------------------------
