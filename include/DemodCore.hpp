@@ -14,6 +14,7 @@
 #include "ModeS.hpp"
 #include "ICAOCache.hpp"
 #include "Stats.hpp"
+#include <array>
 #include <bit>
 #include <cmath>
 #include "ShiftRegisters.hpp"
@@ -117,10 +118,20 @@ public:
 							  CRC::crc_t crc,
 							  const Bits128& frame, 
 							  const ICAOTable::Iterator& it) {
+		return sendFrameLongAlignedAt(streamIndex, downlinkFormat, crc,
+			frame, it, m_currTime);
+	}
+
+	bool sendFrameLongAlignedAt(int streamIndex,
+							  const uint8_t downlinkFormat, 
+							  CRC::crc_t crc,
+							  const Bits128& frame, 
+							  const ICAOTable::Iterator& it,
+							  uint64_t sampleTime) {
 		auto& e = m_cache.getMsgStatEntry(it);
 		static constexpr uint64_t DUP_WINDOW_TICKS = 30 * NumStreams;
-		if ((m_currTime - e.last_time) < DUP_WINDOW_TICKS) {
-		    e.last_time = m_currTime;
+		if (sampleTime - e.last_time < DUP_WINDOW_TICKS) {
+		    e.last_time = sampleTime;
     		logStatsDup(downlinkFormat);
     		return false;
 		}
@@ -158,8 +169,8 @@ public:
 		}
 		
 		logStatsSent(downlinkFormat);
-		e.last_time = m_currTime;		
-		m_messageHandler.handleLong(m_currTime, frame);
+		e.last_time = sampleTime;		
+		m_messageHandler.handleLong(sampleTime, frame);
 		return true;
 	}
 
@@ -290,16 +301,44 @@ public:
 			logStats(Stats::DF17_GOOD_MESSAGE);
 			// get the address including the CA field
 			const auto icaoWithCA = ModeS::extractICAOWithCA_Long(frame);
-			const auto e = m_cache.findWithCA(icaoWithCA);
-			
-			// if we know this plane
-			if (e.isValid()) {
-				m_cache.markAsTrustedSeen(e);
-				// and send the 112 bit message to the output
-				return sendFrameLongAligned(streamIndex, downlinkFormat, crc, frame, e);
-			} else {
-				m_cache.markAsTrustedSeen(m_cache.insertWithCA(icaoWithCA));
-			} 
+			auto e = m_cache.findWithCA(icaoWithCA);
+			const auto icao = icaoWithCA & 0xffffffu;
+			auto& pending = pendingFirstFrame(icao);
+			const bool hasPending = pending.valid && pending.icao == icao;
+
+			if (!e.isValid()) {
+				if (m_cache.find(icao).isValid()) {
+					// Same aircraft as before, different reported CA: keep the
+					// cached trust and state.
+					e = m_cache.insertWithCA(icaoWithCA);
+				} else {
+					// First sighting of an unknown address: cache it
+					// untrusted and hold the frame for a second sighting.
+					e = m_cache.insertWithCA(icaoWithCA);
+					m_cache.markAsSeen(e);
+					pending = PendingFirstFrame{
+						icao, downlinkFormat, true, m_currTime, frame};
+					return false;
+				}
+			}
+
+			// A recorded first sighting is confirmed by this one.
+			if (hasPending) {
+				const auto age = m_currTime - pending.sampleTime;
+				if (age < FirstFrameConfirmationMinTicks)
+					return false;
+				if (age <= FirstFrameConfirmationMaxTicks) {
+					noteCleanPosition(e, pending.frame, pending.sampleTime);
+					sendFrameLongAlignedAt(streamIndex, pending.downlinkFormat,
+						0, pending.frame, e, pending.sampleTime);
+				}
+				pending = PendingFirstFrame{};
+			}
+
+			noteCleanPosition(e, frame, m_currTime);
+			m_cache.markAsTrustedSeen(e);
+			// and send the 112 bit message to the output
+			return sendFrameLongAligned(streamIndex, downlinkFormat, crc, frame, e);
 		} else {
 			// the crc is not zero, so we might have a broken message
 			logStats(Stats::DF17_BAD_MESSAGE);
@@ -321,7 +360,7 @@ public:
 				if (!e.isValid())
 					return false;
 
-				if (m_cache.isTrusted(e)) {
+				if (m_cache.isTrusted(e) && repairPositionPlausible(e, toRepair)) {
 					// log that fixing the message was a success
 					logStats(Stats::DF17_REPAIR_SUCCESS);
 					// and keep the trusted entry alive
@@ -400,6 +439,8 @@ public:
 		const auto icaoWithCA = ModeS::extractICAOWithCA_Long(repaired);
 		const auto e = m_cache.findWithCA(icaoWithCA);
 		if (!e.isValid() || !m_cache.isTrusted(e))
+			return false;
+		if (!repairPositionPlausible(e, repaired))
 			return false;
 
 		logStats(Stats::DF17_REPAIR_SUCCESS);
@@ -557,6 +598,99 @@ public:
 
 
 private:
+	static constexpr uint64_t CprPairWindowTicks { 10'000'000ull * NumStreams };
+	static constexpr uint64_t PositionMaxAgeTicks { 60'000'000ull * NumStreams };
+	static constexpr double RepairDistanceLimitKm { 100.0 };
+
+	static bool isAirbornePosition(uint8_t typeCode) noexcept {
+		return (typeCode >= 9 && typeCode <= 18)
+			|| (typeCode >= 20 && typeCode <= 22);
+	}
+
+	void noteCleanPosition(const ICAOTable::Iterator& entry, const Bits128& frame,
+			uint64_t sampleTime) noexcept {
+		if (!isAirbornePosition(ModeS::extractMEType(frame)))
+			return;
+		m_cache.noteCprClean(entry,
+			ModeS::extractAirbornePositionCprOdd(frame),
+			ModeS::extractAirbornePositionCprLat(frame),
+			ModeS::extractAirbornePositionCprLon(frame), sampleTime,
+			CprPairWindowTicks);
+	}
+
+	static void decodeCprRelative(double refLat, double refLon, bool odd,
+			uint32_t latCpr, uint32_t lonCpr, double& lat, double& lon) noexcept {
+		const double dlat = odd ? 360.0 / 59.0 : 360.0 / 60.0;
+		const double normalizedLat = double(latCpr) / 131072.0;
+		lat = dlat * (std::floor(refLat / dlat)
+			+ std::floor(0.5 + std::fmod(refLat, dlat) / dlat - normalizedLat)
+			+ normalizedLat);
+		if (lat > 90.0) lat -= 180.0;
+		if (lat < -90.0) lat += 180.0;
+
+		const int zones = ModeS::cprNl(lat) - (odd ? 1 : 0);
+		const int ni = zones > 1 ? zones : 1;
+		const double dlon = 360.0 / double(ni);
+		const double normalizedLon = double(lonCpr) / 131072.0;
+		lon = dlon * (std::floor(refLon / dlon)
+			+ std::floor(0.5 + std::fmod(refLon, dlon) / dlon - normalizedLon)
+			+ normalizedLon);
+		if (lon > 180.0) lon -= 360.0;
+		if (lon < -180.0) lon += 360.0;
+	}
+
+	static double distanceKm(double lat1, double lon1, double lat2, double lon2) noexcept {
+		constexpr double EarthRadiusKm = 6371.0;
+		constexpr double DegreesToRadians = 3.14159265358979323846 / 180.0;
+		const double deltaLat = (lat2 - lat1) * DegreesToRadians;
+		const double deltaLon = (lon2 - lon1) * DegreesToRadians;
+		const double a = std::sin(deltaLat * 0.5) * std::sin(deltaLat * 0.5)
+			+ std::cos(lat1 * DegreesToRadians) * std::cos(lat2 * DegreesToRadians)
+			* std::sin(deltaLon * 0.5) * std::sin(deltaLon * 0.5);
+		return 2.0 * EarthRadiusKm * std::asin(std::sqrt(a));
+	}
+
+	bool repairPositionPlausible(const ICAOTable::Iterator& entry,
+			const Bits128& frame) const noexcept {
+		if (!isAirbornePosition(ModeS::extractMEType(frame)))
+			return true;
+
+		int32_t refLatE5 = 0;
+		int32_t refLonE5 = 0;
+		if (!m_cache.cachedPosition(entry, refLatE5, refLonE5,
+				m_currTime, PositionMaxAgeTicks))
+			return false;
+
+		const double refLat = refLatE5 * 1e-5;
+		const double refLon = refLonE5 * 1e-5;
+		double lat = 0.0;
+		double lon = 0.0;
+		decodeCprRelative(refLat, refLon,
+			ModeS::extractAirbornePositionCprOdd(frame),
+			ModeS::extractAirbornePositionCprLat(frame),
+			ModeS::extractAirbornePositionCprLon(frame), lat, lon);
+		return distanceKm(refLat, refLon, lat, lon) <= RepairDistanceLimitKm;
+	}
+
+	// First sighting of an unknown address: cache the frame, require a second,
+	// separate sighting before the aircraft is trusted and the frame released.
+	struct PendingFirstFrame {
+		uint32_t icao { 0 };
+		uint8_t downlinkFormat { 0 };
+		bool valid { false };
+		uint64_t sampleTime { 0 };
+		Bits128 frame { uint64_t(0) };
+	};
+
+	static constexpr size_t FirstFramePendingCount { 1024 };
+	static constexpr uint64_t FirstFrameConfirmationMinTicks { 100 * NumStreams };
+	static constexpr uint64_t FirstFrameConfirmationMaxTicks { 2'000'000 * NumStreams };
+
+	PendingFirstFrame& pendingFirstFrame(uint32_t icao) noexcept {
+		const auto index = (icao * 0x9e3779b1u) >> (32 - 10);
+		return m_pendingFirstFrames[index];
+	}
+
 	const void* m_confidenceCtx = nullptr;
 	ConfidenceFn m_confidenceFn = nullptr;
 	const void* m_preambleCtx = nullptr;
@@ -602,6 +736,7 @@ private:
 
 	// plane lookup table
 	ICAOTable m_cache; 
+	std::array<PendingFirstFrame, FirstFramePendingCount> m_pendingFirstFrames{}; 
 	
 	// the current time measured in samples.
 	uint64_t m_currTime{ 0 };

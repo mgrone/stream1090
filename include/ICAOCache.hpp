@@ -12,6 +12,8 @@
 #include <limits>
 #include <memory>
 
+#include "ModeS.hpp"
+
 class ICAOTable {
 public:
 	static constexpr auto TTL_not_trusted { 10 };
@@ -60,6 +62,16 @@ public:
 		// the last altitude in feet received
 		uint8_t altitude_cnt;
 		int16_t altitude_25ft;
+
+		uint32_t cpr_even_lat;
+		uint32_t cpr_even_lon;
+		uint32_t cpr_odd_lat;
+		uint32_t cpr_odd_lon;
+		uint64_t cpr_even_time;
+		uint64_t cpr_odd_time;
+		int32_t last_lat_e5;
+		int32_t last_lon_e5;
+		uint64_t position_time;
 	};
 
     // simple struct keeping an index
@@ -85,7 +97,7 @@ public:
 
 		m_squawkAlt = std::make_unique<SquawkAlt[]>(Size);
 		std::fill(m_squawkAlt.get(), m_squawkAlt.get() + Size,
-			SquawkAlt{0, 0, 0, AltitudeUnset});
+			SquawkAlt{0, 0, 0, AltitudeUnset, 0, 0, 0, 0, 0, 0, 0, 0, 0});
 
 		m_msgStatTable = std::make_unique<MsgStatEntry[]>(Size);
 		std::fill(m_msgStatTable.get(), m_msgStatTable.get() + Size, MsgStatEntry{0});
@@ -93,6 +105,13 @@ public:
 
 	Iterator insertWithCA(uint32_t icaoWithCA) noexcept  {
 		const auto key = icaoWithCA & HashMask;
+		const auto previous = m_table[key].icao;
+		if (previous != 0 && (previous & 0xffffffu) == (icaoWithCA & 0xffffffu)) {
+			// CA is a per-frame capability field, not part of the aircraft's
+			// identity. Refresh it without discarding the trusted aircraft state.
+			m_table[key].icao = icaoWithCA;
+			return Iterator(key);
+		}
 		doResetEntry(key);
 		m_table[key].icao = icaoWithCA;
 		if (icaoWithCA != 0x0)
@@ -253,6 +272,46 @@ public:
 		return false;
 	}
 
+	// Seed the per-aircraft CPR pair from a CRC-clean airborne position frame.
+	// When an odd/even pair within fitWindow lands close in time, the decoded
+	// position becomes the reference the repair gate checks against.
+	void noteCprClean(const Iterator& entry, bool odd, uint32_t latCpr,
+			uint32_t lonCpr, uint64_t now, uint64_t pairWindow) noexcept {
+		auto& state = m_squawkAlt[entry.key];
+		if (odd) {
+			state.cpr_odd_lat = latCpr;
+			state.cpr_odd_lon = lonCpr;
+			state.cpr_odd_time = now;
+		} else {
+			state.cpr_even_lat = latCpr;
+			state.cpr_even_lon = lonCpr;
+			state.cpr_even_time = now;
+		}
+
+		const uint64_t otherTime = odd ? state.cpr_even_time : state.cpr_odd_time;
+		if (otherTime == 0 || now - otherTime > pairWindow)
+			return;
+
+		double lat = 0.0;
+		double lon = 0.0;
+		if (!ModeS::decodeCprGlobal(state.cpr_even_lat, state.cpr_even_lon,
+				state.cpr_odd_lat, state.cpr_odd_lon, lat, lon))
+			return;
+		state.last_lat_e5 = int32_t(lat * 1e5);
+		state.last_lon_e5 = int32_t(lon * 1e5);
+		state.position_time = now;
+	}
+
+	bool cachedPosition(const Iterator& entry, int32_t& latE5, int32_t& lonE5,
+			uint64_t now, uint64_t maxAge) const noexcept {
+		const auto& state = m_squawkAlt[entry.key];
+		if (state.position_time == 0 || now - state.position_time > maxAge)
+			return false;
+		latE5 = state.last_lat_e5;
+		lonE5 = state.last_lon_e5;
+		return true;
+	}
+
 	MsgStatEntry& getMsgStatEntry(const Iterator& it) noexcept {
 		return m_msgStatTable[it.key];
 	}
@@ -354,7 +413,7 @@ private:
 		entry.ttl = 0;
 		clearOccupiedBit(index);
 		m_msgStatTable[index].last_time = 0;
-		m_squawkAlt[index] = SquawkAlt{0, 0, 0, AltitudeUnset};
+		m_squawkAlt[index] = SquawkAlt{0, 0, 0, AltitudeUnset, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 	}
 
 	
