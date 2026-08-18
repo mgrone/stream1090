@@ -199,6 +199,11 @@ if(BUILD_TESTING)
     target_include_directories(position_repair_test PRIVATE include)
     target_compile_options(position_repair_test PRIVATE ${DEFAULT_COMPILE_OPTIONS})
     add_test(NAME position_repair_test COMMAND position_repair_test)
+
+    add_executable(df17_first_frame_test tests/DF17FirstFrameTest.cpp)
+    target_include_directories(df17_first_frame_test PRIVATE include)
+    target_compile_options(df17_first_frame_test PRIVATE ${DEFAULT_COMPILE_OPTIONS})
+    add_test(NAME df17_first_frame_test COMMAND df17_first_frame_test)
 endif()
 
 # ------------------------------------------------------------

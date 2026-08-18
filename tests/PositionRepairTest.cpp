@@ -66,41 +66,45 @@ int main() {
 	CapturingHandler handler;
 	DemodCore<1, CapturingHandler> demod(handler);
 
-	// A repaired position for a trusted aircraft with no clean odd/even pair
-	// behind it must be rejected (repairs never establish the first position).
-	// 0x12345 becomes trusted via a clean identity frame first.
+	// Make aircraft 0x123456 trusted with a clean identity pair (the first
+	// sighting seeds trust on the second, separate sighting).
 	feedFrame(demod, makeIdentity(0x123456));
 	feedSilence(demod, 128);
-	auto firstRepair = makePosition(0x123456, false, 93000, 51372);
+	feedFrame(demod, makeIdentity(0x123456, 7));
+	if (handler.longCount != 2)
+		return 1;
+
+	// A repaired position for a trusted aircraft with no clean odd/even pair
+	// behind it must be rejected (repairs never establish the first position).
+	auto firstRepair = makePosition(0x123456, false, 93000, 51372, 7);
 	firstRepair.flip(0);
 	feedSilence(demod, 128);
 	feedFrame(demod, firstRepair);
-	if (handler.longCount != 0)
-		return 1;
-
-	// A CRC-clean even/odd pair establishes the reference position; both
-	// frames are emitted.
-	const auto firstEven = makePosition(0x123456, false, 93000, 51372);
-	feedFrame(demod, firstEven);
-	feedSilence(demod, 128);
-	const auto firstOdd = makePosition(0x123456, true, 74158, 50194);
-	feedFrame(demod, firstOdd);
 	if (handler.longCount != 2)
 		return 2;
 
+	// A CRC-clean even/odd pair establishes the reference position.
+	const auto firstEven = makePosition(0x123456, false, 93000, 51372, 7);
+	feedFrame(demod, firstEven);
+	feedSilence(demod, 128);
+	const auto firstOdd = makePosition(0x123456, true, 74158, 50194, 7);
+	feedFrame(demod, firstOdd);
+	if (handler.longCount != 4)
+		return 3;
+
 	// A single-bit damage repair landing near the established position passes.
-	auto nearby = makePosition(0x123456, false, 93000, 51372);
+	auto nearby = makePosition(0x123456, false, 93000, 51372, 7);
 	nearby.flip(0);
 	feedSilence(demod, 128);
 	feedFrame(demod, nearby);
-	if (handler.longCount != 3)
-		return 3;
+	if (handler.longCount != 5)
+		return 4;
 
 	// A repair that would place the aircraft > 100 km away is rejected.
-	auto farAway = makePosition(0x123456, false, 0, 0);
+	auto farAway = makePosition(0x123456, false, 0, 0, 7);
 	farAway.flip(0);
 	feedSilence(demod, 128);
 	feedFrame(demod, farAway);
 
-	return handler.longCount != 3 ? 4 : 0;
+	return handler.longCount != 5 ? 5 : 0;
 }
