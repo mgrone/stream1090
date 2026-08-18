@@ -181,6 +181,22 @@ bool cleanCprPairSeedsPosition() {
         && !table.cachedPosition(entry, lat, lon, now + 60'101, 60'000);
 }
 
+bool capabilityChangePreservesTrustedAircraft() {
+    ICAOTable table;
+    constexpr uint32_t ca5 = 0x5abcde1;
+    constexpr uint32_t ca7 = 0x7abcde1;
+
+    const auto original = table.insertWithCA(ca5);
+    table.markAsTrustedSeen(original);
+    const auto refreshed = table.insertWithCA(ca7);
+
+    return refreshed.key == original.key
+        && !table.findWithCA(ca5).isValid()
+        && table.findWithCA(ca7).isValid()
+        && table.find(ca5 & 0xffffffu).isValid()
+        && table.isTrusted(refreshed);
+}
+
 } // namespace
 
 int main() {
@@ -195,5 +211,6 @@ int main() {
         && expiredEntriesDisappear()
         && validationOnlyAltitudeCannotPoisonState()
         && firstLowAltitudeNeedsConfirmation()
-        && cleanCprPairSeedsPosition());
+        && cleanCprPairSeedsPosition()
+        && capabilityChangePreservesTrustedAircraft());
 }

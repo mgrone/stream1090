@@ -105,6 +105,13 @@ public:
 
 	Iterator insertWithCA(uint32_t icaoWithCA) noexcept  {
 		const auto key = icaoWithCA & HashMask;
+		const auto previous = m_table[key].icao;
+		if (previous != 0 && (previous & 0xffffffu) == (icaoWithCA & 0xffffffu)) {
+			// CA is a per-frame capability field, not part of the aircraft's
+			// identity. Refresh it without discarding the trusted aircraft state.
+			m_table[key].icao = icaoWithCA;
+			return Iterator(key);
+		}
 		doResetEntry(key);
 		m_table[key].icao = icaoWithCA;
 		if (icaoWithCA != 0x0)
