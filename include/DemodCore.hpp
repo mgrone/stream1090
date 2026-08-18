@@ -76,7 +76,7 @@ public:
 
 	/// True when the preamble in front of this candidate is strong enough to be
 	/// a real transmission. Disabled unless STREAM1090_PREAMBLE_GATE is defined.
-	bool preambleConfirms(int streamIndex) noexcept {
+	bool preambleConfirms([[maybe_unused]] int streamIndex) noexcept {
 	#if defined(STREAM1090_PREAMBLE_GATE) && STREAM1090_PREAMBLE_GATE
 		if (m_preambleFn == nullptr)
 			return false;
