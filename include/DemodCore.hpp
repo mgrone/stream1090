@@ -543,12 +543,14 @@ public:
 				// look up the address in the trusted list
 				const auto e = m_cache.findWithCA(icaoWithCA);
 				// if it is there and we consider this as an active trusted transponder
-				if (e.isValid() && m_cache.isTrusted(e)) {
-					// Hence, we trust the address including the CA field. Downlink format is correct. 
+				if (e.isValid() && m_cache.isTrusted(e)
+						&& (preambleConfirms(streamIndex) || !signalAtNoiseFloor(streamIndex))) {
+					const uint64_t corrected = frameShort ^ crc;
+					// Hence, we trust the address including the CA field. Downlink format is correct.
 					// make sure to have this sender address in the list of known but not thrustworthy addresses
 					m_cache.markAsSeen(e);
 					// The only remaining data in this short message is the parity block. Fix it and output the message
-					return sendFrameShortAligned(streamIndex, 11, 0, frameShort ^ crc, e);
+					return sendFrameShortAligned(streamIndex, 11, 0, corrected, e);
 				}
 			}
 		}
