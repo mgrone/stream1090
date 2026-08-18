@@ -2,6 +2,8 @@
 
 #include "ICAOCache.hpp"
 
+#include <cmath>
+
 namespace {
 
 void tick(ICAOTable& table, uint32_t count) {
@@ -161,6 +163,24 @@ bool firstLowAltitudeNeedsConfirmation() {
     return table.checkAltitude(entry, -500);
 }
 
+bool cleanCprPairSeedsPosition() {
+    ICAOTable table;
+    const auto entry = table.insertWithCA(0x5abcde1);
+    constexpr uint64_t now = 1'000;
+
+    table.noteCprClean(entry, false, 93000, 51372, now, 10'000);
+    int32_t lat = 0;
+    int32_t lon = 0;
+    if (table.cachedPosition(entry, lat, lon, now, 60'000))
+        return false;
+
+    table.noteCprClean(entry, true, 74158, 50194, now + 100, 10'000);
+    return table.cachedPosition(entry, lat, lon, now + 100, 60'000)
+        && std::abs(lat - 5'225'720) < 100
+        && std::abs(lon - 391'937) < 100
+        && !table.cachedPosition(entry, lat, lon, now + 60'101, 60'000);
+}
+
 } // namespace
 
 int main() {
@@ -174,5 +194,6 @@ int main() {
         && insertedAndReplacementEntriesAreFound()
         && expiredEntriesDisappear()
         && validationOnlyAltitudeCannotPoisonState()
-        && firstLowAltitudeNeedsConfirmation());
+        && firstLowAltitudeNeedsConfirmation()
+        && cleanCprPairSeedsPosition());
 }
