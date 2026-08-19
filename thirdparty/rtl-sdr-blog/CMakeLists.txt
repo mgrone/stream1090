@@ -19,7 +19,11 @@
 ########################################################################
 # Project setup
 ########################################################################
-cmake_minimum_required(VERSION 3.10.0)
+# 3.13 for target_link_directories(), which src/CMakeLists.txt needs to put
+# LIBUSB_LIBRARY_DIRS on the link line. Declared here rather than in the
+# parent project so it only binds builds that actually add this directory,
+# i.e. -DENABLE_RTLSDR_BLOG=ON.
+cmake_minimum_required(VERSION 3.13)
 
 # workaround for https://gitlab.kitware.com/cmake/cmake/issues/16967
 if(${CMAKE_VERSION} VERSION_LESS "3.12.0")
