@@ -21,6 +21,14 @@
 add_library(rtlsdr SHARED librtlsdr.c
   tuner_e4k.c tuner_fc0012.c tuner_fc0013.c tuner_fc2580.c tuner_r82xx.c)
 target_link_libraries(rtlsdr ${LIBUSB_LIBRARIES} ${THREADS_PTHREADS_LIBRARY})
+# LIBUSB_LIBRARIES from pkg_check_modules() is a bare lib name (e.g.
+# "usb-1.0"), not a full path, so the linker also needs LIBUSB_LIBRARY_DIRS on
+# its search path. PUBLIC so it propagates to anything linking against
+# rtlsdr, not just this target. Linux distros usually keep libusb in a
+# default linker search path so this went unnoticed there, but Homebrew's
+# /opt/homebrew (or /usr/local) is not searched by default, so linking fails
+# on macOS with "library 'usb-1.0' not found".
+target_link_directories(rtlsdr PUBLIC ${LIBUSB_LIBRARY_DIRS})
 target_include_directories(rtlsdr PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
@@ -39,7 +47,13 @@ generate_export_header(rtlsdr)
 ########################################################################
 add_library(rtlsdr_static STATIC librtlsdr.c
   tuner_e4k.c tuner_fc0012.c tuner_fc0013.c tuner_fc2580.c tuner_r82xx.c)
-target_link_libraries(rtlsdr ${LIBUSB_LIBRARIES} ${THREADS_PTHREADS_LIBRARY})
+# rtlsdr_static, not rtlsdr: this line named the shared target, so libusb was
+# attached to it twice ("ld: warning: ignoring duplicate libraries") while the
+# static variant got none at all. Nothing in this tree links rtlsdr_static, so
+# it built anyway, but it is in INSTALL_TARGETS and anyone linking the
+# installed librtlsdr.a would have had to supply libusb themselves.
+target_link_libraries(rtlsdr_static ${LIBUSB_LIBRARIES} ${THREADS_PTHREADS_LIBRARY})
+target_link_directories(rtlsdr_static PUBLIC ${LIBUSB_LIBRARY_DIRS})
 target_include_directories(rtlsdr_static PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
