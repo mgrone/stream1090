@@ -46,6 +46,7 @@ struct RuntimeVars {
     IniConfig deviceConfig;
     IniConfig::Section deviceConfigSection;
     std::vector<float> filterTaps;
+    bool dcRemoval = false;
     bool verbose = true;
 };
 
@@ -280,7 +281,7 @@ public:
 
     bool run() {
         // setup pipeline
-        auto iqPipeline = IQPipelineSelector<inputRate, outputRate, pipelineOption>().make(m_runtimeVars.filterTaps);
+        auto iqPipeline = IQPipelineSelector<inputRate, outputRate, pipelineOption>().make(m_runtimeVars.filterTaps, m_runtimeVars.dcRemoval);
         Log::info("",iqPipeline.toString());
         // for sync read from std in we take a short cut
         if (m_runtimeVars.deviceType == InputDeviceType::STREAM) {

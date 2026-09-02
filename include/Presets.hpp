@@ -93,39 +93,51 @@ constexpr auto presets = std::make_tuple(
 
 #endif
 
+template<SampleRate In>
+inline constexpr float dcRemovalAlpha =
+    (In == Rate_2_4_Mhz || In == Rate_2_56_Mhz) ? 0.0005f : 0.005f;
 
+/*
+ * The plain preset carries a DC removal that is switched off by default. The
+ * receivers this runs on sit a few LSB off the nominal centre of their ADC
+ * range, and with a truly empty pipeline nothing takes that out before the
+ * magnitude is formed, which costs messages. Keeping the stage here and
+ * gating it at run time avoids instantiating the whole chain a second time
+ * just to offer the choice.
+ */
 template<SampleRate In, SampleRate Out, IQPipelineOptions sel>
 struct IQPipelineSelector {
-    static auto make(const std::vector<float>&) {
-        return make_pipeline();
+    static auto make(const std::vector<float>&, bool dcRemoval = false) {
+        return make_pipeline(DCRemoval(dcRemovalAlpha<In>, dcRemoval));
     }
 };
 
 template<SampleRate In, SampleRate Out>
 struct IQPipelineSelector<In, Out, IQPipelineOptions::IQ_FIR> {
-    static auto make(const std::vector<float>&) {
+    static auto make(const std::vector<float>&, bool = true) {
         return make_pipeline(DCRemoval(), FlipSigns(), IQLowPass<In, Out>());
     }
 };
 
 template<SampleRate In, SampleRate Out>
 struct IQPipelineSelector<In, Out, IQPipelineOptions::IQ_FIR_FILE> {
-    static auto make(const std::vector<float>& taps) {
+    static auto make(const std::vector<float>& taps, bool = true) {
         return make_pipeline(DCRemoval(), FlipSigns(), IQLowPassDynamic(taps));
     }
 };
 
 template<SampleRate In, SampleRate Out>
 struct IQPipelineSelector<In, Out, IQPipelineOptions::IQ_FIR_RTL_SDR> {
-    static auto make(const std::vector<float>&) {
-        return make_pipeline(IQLowPass<In, Out>());
+    static auto make(const std::vector<float>&, bool dcRemoval = false) {
+        return make_pipeline(DCRemoval(dcRemovalAlpha<In>, dcRemoval),
+                             IQLowPass<In, Out>());
     }
 };
 
 template<SampleRate In, SampleRate Out>
 struct IQPipelineSelector<In, Out, IQPipelineOptions::IQ_FIR_RTL_SDR_FILE> {
-    static auto make(const std::vector<float>& taps) {
-        return make_pipeline(IQLowPassDynamic(taps));
+    static auto make(const std::vector<float>& taps, bool dcRemoval = false) {
+        return make_pipeline(DCRemoval(dcRemovalAlpha<In>, dcRemoval),
+                             IQLowPassDynamic(taps));
     }
 };
-

@@ -22,11 +22,23 @@
  * becomes 1/256.
  */
 struct DCRemoval {
-    explicit DCRemoval(float alpha = 0.005f)
-        : m_shift(shiftForAlpha(alpha)), m_acc_I(0), m_acc_Q(0)
+    explicit DCRemoval(float alpha = 0.005f, bool enabled = true)
+        : m_shift(shiftForAlpha(alpha)), m_acc_I(0), m_acc_Q(0),
+          m_enabled(enabled)
     {}
 
+    /// Whole blocks are handed over at a time, so a disabled stage costs one
+    /// test per block rather than anything per sample.
+    void applyBlock(int16_t* __restrict I, int16_t* __restrict Q, size_t n) noexcept {
+        if (!m_enabled)
+            return;
+        for (size_t i = 0; i < n; i++)
+            apply(I[i], Q[i]);
+    }
+
     void apply(int16_t& I, int16_t& Q) noexcept {
+        if (!m_enabled)
+            return;
         const int32_t dI = int32_t(I) - (m_acc_I >> m_shift);
         const int32_t dQ = int32_t(Q) - (m_acc_Q >> m_shift);
 
@@ -37,18 +49,16 @@ struct DCRemoval {
         Q = int16_t(dQ);
     }
 
-    void applyBlock(int16_t* __restrict I, int16_t* __restrict Q, size_t n) noexcept {
-        for (size_t i = 0; i < n; i++)
-            apply(I[i], Q[i]);
-    }
-
     void setAlpha(float alpha) noexcept {
         m_shift = shiftForAlpha(alpha);
     }
 
+    void setEnabled(bool enabled) noexcept { m_enabled = enabled; }
+
     std::string toString() const {
         std::ostringstream oss;
-        oss << "[DCRemoval] alpha: 1/" << (1 << m_shift);
+        oss << "[DCRemoval] alpha: 1/" << (1 << m_shift)
+            << (m_enabled ? "" : " (disabled)");
         return oss.str();
     }
 private:
@@ -64,6 +74,7 @@ private:
     int m_shift;
     int32_t m_acc_I;
     int32_t m_acc_Q;
+    bool m_enabled;
 };
 
 
@@ -173,4 +184,3 @@ template<typename... Stages>
 auto make_pipeline(Stages&&... stages) {
     return IQPipeline<std::decay_t<Stages>...>(std::forward<Stages>(stages)...);
 }
-
