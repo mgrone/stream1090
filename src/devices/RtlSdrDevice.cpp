@@ -8,6 +8,7 @@
 #include "devices/RtlSdrSerial.hpp"
 #include "Logger.hpp"
 #include <iostream>
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -405,24 +406,264 @@ bool RtlSdrDevice::applySetting(const std::string& key, const std::string& value
     return false;
 }
 
+bool RtlSdrDevice::validateSetting(const std::string& key,
+                                  const std::string& value) const {
+    int integer = 0;
+    uint32_t unsignedValue = 0;
+    float gain = 0.0f;
+    if (key == "frequency" || key == "tuner_bandwidth")
+        return DeviceSettings::parseUnsigned(value, unsignedValue);
+    if (key == "gain")
+        return DeviceSettings::parseFloat(value, gain);
+    if (key == "ppm" || key == "lna_gain" || key == "mixer_gain"
+            || key == "vga_gain")
+        return DeviceSettings::parseInt(value, integer);
+    return key == "agc" || key == "bias_tee" || key == "offset_tuning";
+}
 
-void RtlSdrDevice::applyConfigPreOpen(const IniConfig::Section& cfg) {
+
+// ----------------------
+// Configuration validation
+// ----------------------
+//
+// The rule: a configuration the device would not apply in full is an error,
+// not a warning. Whoever wrote it believes they are measuring one thing while
+// they are measuring another, and the wrong measurement is indistinguishable
+// from the right one.
+//
+// A note on ordering. Settings are applied by iterating over
+// IniConfig::Section, which is a std::map, so the order is ALPHABETICAL and
+// not the order of the file. "gain" therefore always comes before lna_gain,
+// mixer_gain and vga_gain, and the per-stage values overwrite the combined one
+// however the user wrote them. Measured on the bench: "gain = 49.6" on its own
+// leaves the signal at 5.88 LSB RMS; with "vga_gain = 0" next to it the signal
+// drops to 0.46, whichever of the two is written first.
+
+namespace {
+
+bool hasKey(const IniConfig::Section& cfg, const char* key) {
+    return cfg.find(key) != cfg.end();
+}
+
+std::string joinQuoted(const std::vector<std::string>& keys) {
+    std::string out;
+    for (std::size_t i = 0; i < keys.size(); i++) {
+        if (i)
+            out += (i + 1 == keys.size()) ? " and " : ", ";
+        out += "'" + keys[i] + "'";
+    }
+    return out;
+}
+
+const char* verb(const std::vector<std::string>& keys, const char* one,
+                 const char* many) {
+    return keys.size() == 1 ? one : many;
+}
+
+constexpr const char* kPerStageKeys[] = { "lna_gain", "mixer_gain", "vga_gain" };
+
+} // namespace
+
+bool RtlSdrDevice::validateCombinations(const IniConfig::Section& cfg) {
+    std::vector<std::string> perStage;
+    for (const char* key : kPerStageKeys) {
+        if (hasKey(cfg, key))
+            perStage.push_back(key);
+    }
+
+    if (perStage.empty())
+        return true;
+
+    const std::string names = joinQuoted(perStage);
+
+#if !defined(STREAM1090_HAVE_RTLSDR_BLOG)
+    Log::error("RtlSdrDevice")
+        << "configuration rejected: " << names << " "
+        << verb(perStage, "requires", "require")
+        << " the vendored rtl-sdr-blog library, and this binary was built "
+           "without it.";
+    Log::error("RtlSdrDevice")
+        << "  The R820T per-stage gains do not exist in the system "
+           "librtlsdr, so nothing written here would ever reach the tuner.";
+    Log::error("RtlSdrDevice")
+        << "  Rebuild with -DENABLE_RTLSDR_BLOG=ON, or use 'gain = <dB>', "
+           "which goes through the standard gain table.";
+    return false;
+#else
+    if (hasKey(cfg, "gain")) {
+        Log::error("RtlSdrDevice")
+            << "configuration rejected: 'gain' cannot coexist with "
+            << names << ".";
+        Log::error("RtlSdrDevice")
+            << "  They are two alternative ways of driving the same tuner. "
+               "'gain' walks the R820T LNA and mixer step tables until it "
+               "reaches the requested figure and pins the VGA to index 8; the "
+               "per-stage keys write the three indices directly.";
+        Log::error("RtlSdrDevice")
+            << "  Used together the per-stage keys always win, silently, and "
+               "whatever their order in the file, because settings are "
+               "applied in alphabetical order.";
+        Log::error("RtlSdrDevice")
+            << "  Pick one of the two forms: 'gain = <dB>', or the three "
+               "per-stage indices.";
+        return false;
+    }
+
+    // The indices are 0-15 on all three stages: r82xx_set_lna_gain,
+    // r82xx_set_mixer_gain and r82xx_set_vga_gain_new reject anything else
+    // with -1, and without this check that reaches the user as a generic
+    // "Device configuration failed".
+    for (const char* key : kPerStageKeys) {
+        auto it = cfg.find(key);
+        if (it == cfg.end())
+            continue;
+
+        // The empty string has to be tested for on its own: std::stoi throws
+        // on it, and the "consumed != size" test below would then compare 0
+        // against 0 and let it through as if it were index 0.
+        int value = 0;
+        std::size_t consumed = 0;
+        try {
+            value = std::stoi(it->second, &consumed, 10);
+        } catch (...) {
+            consumed = 0;
+        }
+
+        if (it->second.empty() || consumed != it->second.size()
+                || value < 0 || value > 15) {
+            Log::error("RtlSdrDevice")
+                << "configuration rejected: '" << key << " = " << it->second
+                << "' is not a valid index.";
+            Log::error("RtlSdrDevice")
+                << "  The per-stage gains are integer indices from 0 to 15, "
+                   "not decibels: the value in dB is the one 'gain' takes.";
+            return false;
+        }
+    }
+
+    // All three or none. Naming only one leaves the other two on hardware AGC:
+    // the configuration is applied, but the overall gain is not the one the
+    // written values suggest, and it is not reproducible because two stages
+    // are chasing the signal on their own.
+    if (perStage.size() != std::size(kPerStageKeys)) {
+        std::vector<std::string> missing;
+        for (const char* key : kPerStageKeys) {
+            if (!hasKey(cfg, key))
+                missing.push_back(key);
+        }
+
+        Log::error("RtlSdrDevice")
+            << "configuration rejected: all three per-stage gains must be set, "
+               "and " << joinQuoted(missing) << " "
+            << verb(missing, "is", "are") << " missing here.";
+        Log::error("RtlSdrDevice")
+            << "  The stages that are not named stay on hardware AGC, so the "
+               "overall gain is not the one the written values suggest and it "
+               "drifts on its own with the signal.";
+        Log::error("RtlSdrDevice")
+            << "  Add the missing keys, or use 'gain = <dB>' to drive the "
+               "three stages together.";
+        return false;
+    }
+
+    return true;
+#endif
+}
+
+bool RtlSdrDevice::validateAgainstTuner(const IniConfig::Section& cfg) {
+    auto it = cfg.find("offset_tuning");
+    if (it == cfg.end())
+        return true;
+
+    const std::string& value = it->second;
+    if (!(value == "1" || value == "true" || value == "on"))
+        return true;
+
+    if (!m_dev)
+        return true;
+
+    const enum rtlsdr_tuner tuner = rtlsdr_get_tuner_type(m_dev);
+    if (tuner != RTLSDR_TUNER_R820T && tuner != RTLSDR_TUNER_R828D)
+        return true;
+
+    // On R820T/R828D rtlsdr_set_offset_tuning() does not do offset tuning. It
+    // returns -2 without tuning anything, so the key never had an effect on
+    // any dongle carrying one of these two tuners, which is all the common
+    // ADS-B ones.
+    Log::error("RtlSdrDevice")
+        << "configuration rejected: 'offset_tuning' is not supported by the "
+           "R820T/R828D tuner fitted to this dongle.";
+#if defined(STREAM1090_HAVE_RTLSDR_BLOG)
+    // The vendored rtl-sdr-blog fork goes further than returning -2: it
+    // deliberately reuses this call as a bias tee switch, for programs that
+    // have no dedicated command for one. Whoever writes offset_tuning = true
+    // against that library ends up with 4.5 V on the antenna cable and the
+    // program dead on the generic error that follows. Rejecting the key before
+    // it is applied is what keeps that from happening. The system librtlsdr
+    // does not have the shortcut, so this warning would be wrong there.
+    Log::error("RtlSdrDevice")
+        << "  The vendored rtl-sdr-blog library reuses that call to switch the "
+           "BIAS TEE on, that is to put 4.5 V on the antenna connector, and "
+           "then reports an error anyway.";
+#endif
+    Log::error("RtlSdrDevice")
+        << "  If you wanted the bias tee, ask for it explicitly with "
+           "'bias_tee = true'. If you wanted offset tuning, this tuner does "
+           "not have it: remove the key.";
+    return false;
+}
+
+bool RtlSdrDevice::applyConfigPreOpen(const IniConfig::Section& cfg) {
+    // Before touching the device: if the configuration is not applicable in
+    // full, failing now beats failing halfway through with the tuner already
+    // half reprogrammed.
+    if (!validateCombinations(cfg))
+        return false;
+
     for (auto& [key, value] : cfg) {
 
         if (key == "serial")
             m_serialString = value;
     }
+    return true;
 }
 
 // ----------------------
 // Reload logic
 // ----------------------
-void RtlSdrDevice::applyConfigPostOpen(const IniConfig::Section& cfg) {
+bool RtlSdrDevice::validateConfigPostOpen(const IniConfig::Section& cfg) {
+    // Repeated here because this is also the SIGHUP reload hook, which does
+    // not go through applyConfigPreOpen again.
+    if (!validateCombinations(cfg))
+        return false;
+
+    if (!validateAgainstTuner(cfg))
+        return false;
+
+    // Validate the complete reload before touching hardware. In particular,
+    // an invalid value late in the map cannot leave earlier keys half-applied.
+    for (const auto& [key, value] : cfg) {
+        if (key == "serial")
+            continue;
+        if (!validateSetting(key, value)) {
+            Log::error("RtlSdrDevice") << "invalid setting '" << key
+                                       << " = " << value << "'";
+            return false;
+        }
+    }
+    return true;
+}
+
+bool RtlSdrDevice::applyConfigPostOpen(const IniConfig::Section& cfg) {
+    if (!validateConfigPostOpen(cfg))
+        return false;
     for (auto& [key, value] : cfg) {
 
         if (key == "serial")
             continue; // immutable
 
-        applySetting(key, value);
+        if (!applySettingSafely(key, value))
+            return false;
     }
+    return true;
 }

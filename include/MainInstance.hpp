@@ -105,7 +105,8 @@ public:
         
         // tell the device to read all properties required to open it
         Log::info("Stream1090","Reading initial properties from the ini file");
-        m_device->applyConfigPreOpen(cfg);
+        if (!m_device->applyConfigPreOpen(cfg))
+            return false;
 
         
         // let us try to open the device
@@ -118,10 +119,7 @@ public:
 
         // device is ready, apply all the other properties
         Log::info("Stream1090","Device is open. Reading the ini file.");
-        m_device->applyConfigPostOpen(cfg);
-        
-        // we do not care if any of the properties did not work
-        return true;
+        return m_device->applyConfigPostOpen(cfg);
    }
 
     static constexpr auto constructMessageHandler(SampleStream<SamplerType>& sampleStream) {
@@ -203,10 +201,27 @@ public:
                     ProcessSignals::clearReload();
                     Log::info("Stream1090", "Re-reading config file.");
 
+                    const auto previousConfig = m_runtimeVars.deviceConfigSection;
                     if (reloadDeviceConfig()) {
-                        Log::info("Stream1090", "Applying new configuration.");
-                        m_device->applyConfigPostOpen(m_runtimeVars.deviceConfigSection);
+                        const auto& newConfig = m_runtimeVars.deviceConfigSection;
+                        if (!m_device->validateConfigPostOpen(newConfig)) {
+                            m_runtimeVars.deviceConfigSection = previousConfig;
+                            Log::warn("Stream1090", "Reloaded device configuration "
+                                      "is invalid. Keeping old settings.");
+                        } else {
+                            Log::info("Stream1090", "Applying new configuration.");
+                            if (!m_device->applyConfigPostOpen(newConfig)) {
+                                Log::error("Stream1090", "Hardware rejected a "
+                                           "validated setting. The device may be "
+                                           "partly configured; shutting down.");
+                                m_device->shutdownWriter();
+                                ProcessSignals::handle_sigint(0);
+                                intendedShutdown = false;
+                                break;
+                            }
+                        }
                     } else {
+                        m_runtimeVars.deviceConfigSection = previousConfig;
                         Log::warn("Stream1090", "Reload failed. Keeping old settings.");
                     }
                 }
