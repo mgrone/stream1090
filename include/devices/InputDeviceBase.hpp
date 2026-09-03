@@ -9,8 +9,61 @@
 #include "Sampler.hpp"
 #include "RingBuffer.hpp"
 #include "IniConfig.hpp"
+#include "Logger.hpp"
 #include <string>
 #include <atomic>
+#include <cstdint>
+#include <exception>
+
+namespace DeviceSettings {
+
+inline bool parseInt(const std::string& value, int& out) noexcept {
+    try {
+        std::size_t consumed = 0;
+        out = std::stoi(value, &consumed);
+        return consumed == value.size();
+    } catch (...) {
+        return false;
+    }
+}
+
+inline bool parseUnsigned(const std::string& value, uint32_t& out) noexcept {
+    if (value.empty() || value.front() == '-')
+        return false;
+    try {
+        std::size_t consumed = 0;
+        const auto parsed = std::stoul(value, &consumed);
+        if (consumed != value.size() || parsed > UINT32_MAX)
+            return false;
+        out = static_cast<uint32_t>(parsed);
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+inline bool parseFloat(const std::string& value, float& out) noexcept {
+    bool hasDigit = false;
+    for (const char ch : value) {
+        if (ch >= '0' && ch <= '9') {
+            hasDigit = true;
+            continue;
+        }
+        if (ch != '+' && ch != '-' && ch != '.' && ch != 'e' && ch != 'E')
+            return false;
+    }
+    if (!hasDigit)
+        return false;
+    try {
+        std::size_t consumed = 0;
+        out = std::stof(value, &consumed);
+        return consumed == value.size();
+    } catch (...) {
+        return false;
+    }
+}
+
+} // namespace DeviceSettings
 
 template<typename T>
 class InputDeviceBase {
@@ -32,13 +85,36 @@ public:
     virtual void close() = 0;
 
     // Called before open() is called to parse things like serial, packing etc.
-    virtual void applyConfigPreOpen(const IniConfig::Section&) {
+    virtual bool applyConfigPreOpen(const IniConfig::Section&) {
         // we do not do anything as default        
+        return true;
     };
 
+    virtual bool applySetting(const std::string& key, const std::string& value) = 0;
+
+    bool applySettingSafely(const std::string& key, const std::string& value) noexcept {
+        try {
+            return applySetting(key, value);
+        } catch (const std::exception& error) {
+            Log::error("InputDevice")
+                << "invalid value for setting '" << key << "': '" << value
+                << "' (" << error.what() << ")";
+        } catch (...) {
+            Log::error("InputDevice")
+                << "invalid value for setting '" << key << "': '" << value
+                << "'";
+        }
+        return false;
+    }
+
     // Called by the watchdog after SIGHUP
-    virtual void applyConfigPostOpen(const IniConfig::Section&) {
+    virtual bool validateConfigPostOpen(const IniConfig::Section&) {
+        return true;
+    }
+
+    virtual bool applyConfigPostOpen(const IniConfig::Section&) {
         // we do not do anything as default        
+        return true;
     };
 
     // Called by device callback threads

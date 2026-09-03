@@ -314,20 +314,31 @@ bool AirspyDevice::applySetting(const std::string& key, const std::string& value
     return false;
 }
 
+bool AirspyDevice::validateSetting(const std::string& key,
+                                  const std::string& value) const {
+    int integer = 0;
+    uint32_t frequency = 0;
+    if (key == "frequency")
+        return DeviceSettings::parseUnsigned(value, frequency);
+    if (key == "linearity_gain" || key == "sensitivity_gain"
+            || key == "lna_gain" || key == "mixer_gain" || key == "vga_gain")
+        return DeviceSettings::parseInt(value, integer);
+    return key == "bias_tee";
+}
 
-void AirspyDevice::applyConfigPreOpen(const IniConfig::Section& cfg) {
+
+bool AirspyDevice::applyConfigPreOpen(const IniConfig::Section& cfg) {
     for (auto& [key, value] : cfg) {
 
         if (key == "serial") {
             try {
                 std::size_t pos = 0;
                 uint64_t serial = std::stoull(value, &pos, 0);
-                if (pos != value.size()) {
-                    m_serial = 0;
-                }
+                if (pos != value.size())
+                    return false;
                 m_serial = serial;
             } catch (...) {
-                m_serial = 0;
+                return false;
             }   
         }
 
@@ -335,13 +346,29 @@ void AirspyDevice::applyConfigPreOpen(const IniConfig::Section& cfg) {
             m_packingEnabled = (value == "1" || value == "true" || value == "on");
         }
     }
+    return true;
 }
 
 
 // ----------------------
 // Reload logic
 // ----------------------
-void AirspyDevice::applyConfigPostOpen(const IniConfig::Section& cfg) {
+bool AirspyDevice::validateConfigPostOpen(const IniConfig::Section& cfg) {
+    for (const auto& [key, value] : cfg) {
+        if (key == "serial" || key == "packing")
+            continue;
+        if (!validateSetting(key, value)) {
+            Log::error("AirspyDevice") << "invalid setting '" << key
+                                       << " = " << value << "'";
+            return false;
+        }
+    }
+    return true;
+}
+
+bool AirspyDevice::applyConfigPostOpen(const IniConfig::Section& cfg) {
+    if (!validateConfigPostOpen(cfg))
+        return false;
     for (auto& [key, value] : cfg) {
 
         if (key == "serial")
@@ -349,8 +376,8 @@ void AirspyDevice::applyConfigPostOpen(const IniConfig::Section& cfg) {
         if (key == "packing")
             continue; // immutable
 
-        applySetting(key, value);
+        if (!applySettingSafely(key, value))
+            return false;
     }
+    return true;
 }
-
-
