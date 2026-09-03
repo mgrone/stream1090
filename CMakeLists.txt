@@ -22,6 +22,7 @@ set(MIN_SNR               2.5 CACHE STRING "Reject address-parity frames below t
 option(ENABLE_RTLSDR_BLOG    "Enable vendored RTL-SDR Blog fork" OFF)
 option(ENABLE_TOO_MUCH_CPU   "Unlocks the 40 and 48 Msps speeds" OFF)
 option(BUILD_TESTING         "Build tests" OFF)
+set(INTERPOLATION_KERNEL "6" CACHE STRING "RTL-SDR interpolation kernel (1 linear, 6 sharpening cubic)")
 
 set(STATS_DEF        STATS_ENABLED=$<BOOL:${ENABLE_STATS}>)
 set(STATS_END_DEF    STATS_END_ONLY=$<BOOL:${END_STATS}>)
@@ -31,6 +32,7 @@ set(PREAMBLE_GATE_DEF STREAM1090_PREAMBLE_GATE=$<BOOL:${ENABLE_PREAMBLE_GATE}>)
 set(PREAMBLE_THRESHOLD_DEF STREAM1090_PREAMBLE_THRESHOLD=${PREAMBLE_GATE_THRESHOLD})
 set(MIN_SNR_DEF         STREAM1090_MIN_SNR=${MIN_SNR})
 set(TOO_MUCH_CPU_DEF STREAM1090_TOO_MUCH_CPU=$<BOOL:${ENABLE_TOO_MUCH_CPU}>)
+set(INTERPOLATION_DEF STREAM1090_INTERP=${INTERPOLATION_KERNEL})
 
 # ------------------------------------------------------------
 # Compiler settings
@@ -143,6 +145,7 @@ target_compile_definitions(stream1090 PRIVATE
     ${PREAMBLE_GATE_DEF}
     ${PREAMBLE_THRESHOLD_DEF}
     ${MIN_SNR_DEF}
+    ${INTERPOLATION_DEF}
     ${DEVICE_DEFINITIONS}
 )
 
@@ -167,6 +170,8 @@ if(BUILD_TESTING)
     stream1090_add_test(sampler_test tests/SamplerTest.cpp)
     stream1090_add_test(mode_s_altitude_test tests/ModeSAltitudeTest.cpp)
     stream1090_add_test(mode_s_position_test tests/ModeSPositionTest.cpp)
+    stream1090_add_test(sampler_interp_sharpening_test tests/SamplerInterpolationTest.cpp)
+    target_compile_definitions(sampler_interp_sharpening_test PRIVATE STREAM1090_INTERP=6)
 endif()
 
 # ------------------------------------------------------------

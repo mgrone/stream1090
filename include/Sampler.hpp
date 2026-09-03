@@ -226,22 +226,6 @@ inline void SamplerBase<Rate_2_4_Mhz, Rate_8_0_Mhz>::sample(const int32_t* __res
     } 
 }
 
-// 2.56 Mhz to 8.0 Mhz (8 streams) upsampling function
-template<>
-inline void SamplerBase<Rate_2_56_Mhz, Rate_8_0_Mhz>::sample(const int32_t* __restrict in, int32_t* __restrict out) noexcept {
-    for (size_t i = 0; i < NumBlocks; i++) {
-            for (int j = 0; j < 25; j++) {
-                const auto offset = 8 * j;
-                const auto k = offset / 25;
-                const auto l = 25 - (offset % 25);
-                const auto r = 25 - l;
-                out[j] = SamplerMix::mix((int32_t)l, in[k], (int32_t)r, in[k+1], 25);
-            }
-            in += 8;
-            out += 25;
-        }
-}
-
 // 6.0 Mhz to 16.0 Mhz (16 streams) upsampling function
 template<>
 inline void SamplerBase<Rate_6_0_Mhz, Rate_16_0_Mhz>::sample(const int32_t* __restrict in, int32_t* __restrict out) noexcept {

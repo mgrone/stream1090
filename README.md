@@ -166,6 +166,10 @@ In a much nicer table, they look like this:
 |  10  |  10 | uint16 IQ | Airspy |
 |  10  |  24 | uint16 IQ | Airspy |
 
+The 2.4 → 12, 2.56 → 8 and 2.56 → 12 MHz RTL-SDR paths use a sharpening cubic
+interpolation kernel by default. Configure with `-DINTERPOLATION_KERNEL=1` to
+restore linear interpolation. Other rate combinations are unaffected.
+
 The rule of thumb here is simple: The higher the upsample rate, the more messages will be found, but at the cost of higher CPU usage.
 If you do not care about CPU usage, then use the highest upsample rate. For RTL-SDR this would be something like
 ```
@@ -179,6 +183,10 @@ or if your hardware supports 10 Msps sample rate
 ```
 ./build/stream1090 -s 10 -u 24 -d ./configs/airspy.ini > /dev/null
 ```
+
+Airspy upsampling from 10 MHz to 40 or 48 MHz is available only when the
+project is configured with `-DENABLE_TOO_MUCH_CPU=ON`. These presets require
+substantially more CPU and are therefore excluded from default builds.
 
 #### A note on RTL-SDR devices and 2.56 MHz
 In general it is assumed that 2.4 MHz is the highest reliable sample rate for an RTL-SDR device. However, after experiments with different sticks, it turned out that at 2.56 MHz, samples are dropped only once at the beginning. Afterwards, no sample loss has been observed.
