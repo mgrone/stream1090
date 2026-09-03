@@ -34,15 +34,25 @@ public:
     bool setVgaGain(int value);
     
     // Called before opening the device to parse the serial
-    void applyConfigPreOpen(const IniConfig::Section& cfg) override;
+    bool applyConfigPreOpen(const IniConfig::Section& cfg) override;
 
     // Reload hook
-    void applyConfigPostOpen(const IniConfig::Section& cfg) override;
+    bool validateConfigPostOpen(const IniConfig::Section& cfg) override;
+    bool applyConfigPostOpen(const IniConfig::Section& cfg) override;
     
+    // Reject the combinations the device would not apply in full. Static
+    // because it does not touch the device: it can run before opening it.
+    static bool validateCombinations(const IniConfig::Section& cfg);
+
+    // Checks that need to know which tuner is inside, so they can only run
+    // once the device is open.
+    bool validateAgainstTuner(const IniConfig::Section& cfg);
+
 private:
     bool open_with_serial(uint64_t serial = 0);
     bool open_with_serial(const std::string& serial);
-    bool applySetting(const std::string& key, const std::string& value);
+    bool applySetting(const std::string& key, const std::string& value) override;
+    bool validateSetting(const std::string& key, const std::string& value) const;
 
     int nearestGain(int requested);
 
@@ -66,4 +76,3 @@ private:
     uint64_t m_actualSerial = 0;
     std::string m_serialString = "";
 };
-

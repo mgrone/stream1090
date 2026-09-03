@@ -291,6 +291,8 @@ There is now basic experimental support for the SIGHUP signal. This signal can b
 
 Clearly, there are some things you will not be able to change like serial (and sample rate which is not part of the ini anyways). The purpose is to not have to restart for adjusting gain settings. For airspy, make sure you know what you are doing when switching between manual and simple gain controls.
 
+Reloaded settings are validated as a complete set before they are sent to the device. Invalid files leave the previous settings active. If the hardware rejects a setting after validation, stream1090 shuts down because the device may already be partly reconfigured; restart it after correcting the file.
+
 ### Advanced RTL-SDR gain controls
 
 If you have an RTL-SDR device and still not happy, you can push things further. Stream1090 comes with a hacked version of the [RTL-SDR-BLOG](https://github.com/rtlsdrblog/rtl-sdr-blog) lib which in turn is a fork of librtlsdr. There are two aspects here.

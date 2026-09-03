@@ -307,41 +307,73 @@ bool AirspyDevice::applySetting(const std::string& key, const std::string& value
     if (key == "mixer_gain")       return setMixerGain(std::stoi(value));
     if (key == "vga_gain")         return setVgaGain(std::stoi(value));
     if (key == "bias_tee") {
-        bool enabled = (value == "1" || value == "true" || value == "on");
+        bool enabled = false;
+        if (!DeviceSettings::parseBooleanOrReport(key, value, enabled))
+            return false;
         return setBiasTee(enabled);
     }
 
     return false;
 }
 
+bool AirspyDevice::validateSetting(const std::string& key,
+                                  const std::string& value) const {
+    int integer = 0;
+    uint32_t frequency = 0;
+    bool boolean = false;
+    if (key == "frequency")
+        return DeviceSettings::parseUnsigned(value, frequency);
+    if (key == "linearity_gain" || key == "sensitivity_gain"
+            || key == "lna_gain" || key == "mixer_gain" || key == "vga_gain")
+        return DeviceSettings::parseInt(value, integer);
+    return key == "bias_tee"
+        && DeviceSettings::parseBoolean(value, boolean);
+}
 
-void AirspyDevice::applyConfigPreOpen(const IniConfig::Section& cfg) {
+
+bool AirspyDevice::applyConfigPreOpen(const IniConfig::Section& cfg) {
     for (auto& [key, value] : cfg) {
 
         if (key == "serial") {
             try {
                 std::size_t pos = 0;
                 uint64_t serial = std::stoull(value, &pos, 0);
-                if (pos != value.size()) {
-                    m_serial = 0;
-                }
+                if (pos != value.size())
+                    return false;
                 m_serial = serial;
             } catch (...) {
-                m_serial = 0;
+                return false;
             }   
         }
 
         if (key == "packing") {
-            m_packingEnabled = (value == "1" || value == "true" || value == "on");
+            if (!DeviceSettings::parseBooleanOrReport(key, value, m_packingEnabled))
+                return false;
         }
     }
+    return true;
 }
 
 
 // ----------------------
 // Reload logic
 // ----------------------
-void AirspyDevice::applyConfigPostOpen(const IniConfig::Section& cfg) {
+bool AirspyDevice::validateConfigPostOpen(const IniConfig::Section& cfg) {
+    for (const auto& [key, value] : cfg) {
+        if (key == "serial" || key == "packing")
+            continue;
+        if (!validateSetting(key, value)) {
+            Log::error("AirspyDevice") << "invalid setting '" << key
+                                       << " = " << value << "'";
+            return false;
+        }
+    }
+    return true;
+}
+
+bool AirspyDevice::applyConfigPostOpen(const IniConfig::Section& cfg) {
+    if (!validateConfigPostOpen(cfg))
+        return false;
     for (auto& [key, value] : cfg) {
 
         if (key == "serial")
@@ -349,8 +381,8 @@ void AirspyDevice::applyConfigPostOpen(const IniConfig::Section& cfg) {
         if (key == "packing")
             continue; // immutable
 
-        applySetting(key, value);
+        if (!applySettingSafely(key, value))
+            return false;
     }
+    return true;
 }
-
-

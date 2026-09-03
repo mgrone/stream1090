@@ -166,8 +166,23 @@ if(BUILD_TESTING)
     stream1090_add_test(low_pass_filter_test tests/LowPassFilterTest.cpp)
     stream1090_add_test(sampler_test tests/SamplerTest.cpp)
     stream1090_add_test(mode_s_altitude_test tests/ModeSAltitudeTest.cpp)
+
+    # This test compiles the device too, so it only exists where the RTL-SDR
+    # backend was built.
+    if(DEVICE_SOURCES MATCHES "RtlSdrDevice")
+        add_executable(rtlsdr_config_validation_test
+            tests/RtlSdrConfigValidationTest.cpp
+            src/devices/RtlSdrDevice.cpp)
+        target_include_directories(rtlsdr_config_validation_test PRIVATE
+            include ${DEVICE_INCLUDE_DIRS})
+        target_compile_options(rtlsdr_config_validation_test PRIVATE ${DEFAULT_COMPILE_OPTIONS})
+        target_compile_definitions(rtlsdr_config_validation_test PRIVATE ${DEVICE_DEFINITIONS})
+        target_link_libraries(rtlsdr_config_validation_test PRIVATE ${DEVICE_LIBS})
+        add_test(NAME rtlsdr_config_validation_test COMMAND rtlsdr_config_validation_test)
+    endif()
     stream1090_add_test(mode_s_position_test tests/ModeSPositionTest.cpp)
     stream1090_add_test(rtlsdr_serial_test tests/RtlSdrSerialTest.cpp)
+    stream1090_add_test(device_config_test tests/DeviceConfigTest.cpp)
 endif()
 
 # ------------------------------------------------------------

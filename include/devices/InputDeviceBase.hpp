@@ -9,8 +9,97 @@
 #include "Sampler.hpp"
 #include "RingBuffer.hpp"
 #include "IniConfig.hpp"
+#include "Logger.hpp"
 #include <string>
 #include <atomic>
+#include <cstdint>
+#include <exception>
+
+namespace DeviceSettings {
+
+inline bool parseInt(const std::string& value, int& out) noexcept {
+    try {
+        std::size_t consumed = 0;
+        out = std::stoi(value, &consumed);
+        return consumed == value.size();
+    } catch (...) {
+        return false;
+    }
+}
+
+inline bool parseUnsigned(const std::string& value, uint32_t& out) noexcept {
+    if (value.empty() || value.front() == '-')
+        return false;
+    try {
+        std::size_t consumed = 0;
+        const auto parsed = std::stoul(value, &consumed);
+        if (consumed != value.size() || parsed > UINT32_MAX)
+            return false;
+        out = static_cast<uint32_t>(parsed);
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+inline bool parseFloat(const std::string& value, float& out) noexcept {
+    bool hasDigit = false;
+    for (const char ch : value) {
+        if (ch >= '0' && ch <= '9') {
+            hasDigit = true;
+            continue;
+        }
+        if (ch != '+' && ch != '-' && ch != '.' && ch != 'e' && ch != 'E')
+            return false;
+    }
+    if (!hasDigit)
+        return false;
+    try {
+        std::size_t consumed = 0;
+        out = std::stof(value, &consumed);
+        return consumed == value.size();
+    } catch (...) {
+        return false;
+    }
+}
+
+// ------------------------------------------------------------
+// Boolean settings
+// ------------------------------------------------------------
+//
+// A boolean setting takes one of six spellings and nothing else. Every other
+// value used to fold into false, because the test was written as
+// "value == 1 || value == true || value == on": "agc = yes" therefore turned
+// the AGC off, which is the opposite of what the line says, and "agc = flase"
+// did the same without anything on the terminal to suggest it.
+inline bool parseBoolean(const std::string& value, bool& out) noexcept {
+    if (value == "1" || value == "true" || value == "on") {
+        out = true;
+        return true;
+    }
+    if (value == "0" || value == "false" || value == "off") {
+        out = false;
+        return true;
+    }
+    return false;
+}
+
+inline bool parseBooleanOrReport(const std::string& key,
+                                 const std::string& value, bool& out) {
+    if (parseBoolean(value, out))
+        return true;
+
+    Log::error("InputDevice")
+        << "configuration rejected: '" << key << " = " << value
+        << "' is not a boolean.";
+    Log::error("InputDevice")
+        << "  Accepted values are '1', 'true' and 'on' to enable, '0', "
+           "'false' and 'off' to disable. They are matched exactly, so "
+           "capitals and abbreviations are not accepted either.";
+    return false;
+}
+
+} // namespace DeviceSettings
 
 template<typename T>
 class InputDeviceBase {
@@ -32,13 +121,36 @@ public:
     virtual void close() = 0;
 
     // Called before open() is called to parse things like serial, packing etc.
-    virtual void applyConfigPreOpen(const IniConfig::Section&) {
+    virtual bool applyConfigPreOpen(const IniConfig::Section&) {
         // we do not do anything as default        
+        return true;
     };
 
+    virtual bool applySetting(const std::string& key, const std::string& value) = 0;
+
+    bool applySettingSafely(const std::string& key, const std::string& value) noexcept {
+        try {
+            return applySetting(key, value);
+        } catch (const std::exception& error) {
+            Log::error("InputDevice")
+                << "invalid value for setting '" << key << "': '" << value
+                << "' (" << error.what() << ")";
+        } catch (...) {
+            Log::error("InputDevice")
+                << "invalid value for setting '" << key << "': '" << value
+                << "'";
+        }
+        return false;
+    }
+
     // Called by the watchdog after SIGHUP
-    virtual void applyConfigPostOpen(const IniConfig::Section&) {
+    virtual bool validateConfigPostOpen(const IniConfig::Section&) {
+        return true;
+    }
+
+    virtual bool applyConfigPostOpen(const IniConfig::Section&) {
         // we do not do anything as default        
+        return true;
     };
 
     // Called by device callback threads
