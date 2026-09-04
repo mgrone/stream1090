@@ -67,6 +67,44 @@ namespace LowPassTaps {
     };
 
 
+
+    template<>
+    constexpr auto getTaps<Rate_3_2_Mhz>(){
+        // custom_filters/enrico_20260820_3_2_16_taps_27.txt
+        // 27-tap DE fit (filter_utils/filter_opt.py) against a real 3.2 Msps
+        // capture, scored by decoded message count. Fit on a 20 s training
+        // window, validated on three held-out 30 s windows the fit never saw.
+        return std::to_array<float>({
+            0.0007202076376f,
+            0.0005142849404f,
+            0.0006296405336f,
+            0.004390537273f,
+            -0.0001391760161f,
+            0.01314250939f,
+            0.00545473583f,
+            0.01257977355f,
+            0.03977450356f,
+            0.005363932811f,
+            0.08937354386f,
+            -0.01179395616f,
+            0.1154202074f,
+            0.4491385221f,
+            0.1154202074f,
+            -0.01179395616f,
+            0.08937354386f,
+            0.005363932811f,
+            0.03977450356f,
+            0.01257977355f,
+            0.00545473583f,
+            0.01314250939f,
+            -0.0001391760161f,
+            0.004390537273f,
+            0.0006296405336f,
+            0.0005142849404f,
+            0.0007202076376f
+        });
+    };
+
     template<>
     constexpr auto getTaps<Rate_6_0_Mhz>(){
         // EU_mgrone_6_12 (the sawbird)
