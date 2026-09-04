@@ -18,6 +18,9 @@
 #include "devices/IniConfig.hpp"
 #include "devices/DeviceFactory.hpp"
 #include <chrono>
+#include <deque>
+#include <cstdlib>
+#include <algorithm>
 #include <optional>
 #include <sstream>
 #include <unistd.h>
@@ -176,6 +179,30 @@ public:
         std::thread watchdog([this, &intendedShutdown] {
             using namespace std::chrono_literals;
             Log::info("Watchdog", "Started.");
+
+            // -------------------------------
+            // SAMPLE-DROP MONITOR STATE
+            //
+            // The detection runs on the device callback thread (see
+            // InputDeviceBase::writeDataToBuffer): delivered IQ pairs
+            // against the wall clock, measured at arrival. This side only
+            // warns and decides whether the run may continue. The exit
+            // policy defaults to "more than 1 drop per 60 s", overridable
+            // with STREAM1090_MAX_DROPS_PER_MIN (0 disables the exit,
+            // warnings stay on).
+            // -------------------------------
+            const uint64_t iqPairsPerSec = (uint64_t)inputRate;
+            int maxDropsPerMin = 1;
+            if (const char* env = std::getenv("STREAM1090_MAX_DROPS_PER_MIN")) {
+                try { maxDropsPerMin = std::max(0, std::stoi(env)); } catch (...) {}
+            }
+            Log::info("Watchdog") << "Sample-drop monitor active: exit after more than "
+                      << maxDropsPerMin << " drop(s) in 60 s"
+                      << (maxDropsPerMin == 1 ? " (STREAM1090_MAX_DROPS_PER_MIN to override)" : "")
+                      << ".";
+            uint64_t seenDropEvents = 0;
+            std::deque<std::chrono::steady_clock::time_point> recentDrops;
+
             while (!ProcessSignals::shutdownRequested()) {
                 if (m_device) {
                     const auto lastSign = m_device->lastSignOfLife();
@@ -211,8 +238,43 @@ public:
                     }
                 }
 
+                // 4) Sample-drop policy. The detection runs on the device
+                // callback thread; this side only warns and decides whether
+                // the run may continue.
+                if (m_device) {
+                    const auto now = std::chrono::steady_clock::now();
+                    const uint64_t events = m_device->dropEventCount();
+                    while (seenDropEvents < events) {
+                        seenDropEvents++;
+                        recentDrops.push_back(now);
+                        while (!recentDrops.empty() && now - recentDrops.front() > 60s)
+                            recentDrops.pop_front();
+                        Log::warn("Watchdog") << "Sample drop: ~"
+                                  << m_device->lastEventGrowth()
+                                  << " IQ pairs (~"
+                                  << (double)m_device->lastEventGrowth()
+                                     / (double)iqPairsPerSec * 1000.0
+                                  << " ms of stream) lost; cumulative deficit ~"
+                                  << m_device->currentDropDeficit() << " IQ pairs.";
+                        if (maxDropsPerMin > 0 && recentDrops.size() > (size_t)maxDropsPerMin) {
+                            Log::error("Watchdog") << recentDrops.size()
+                                      << " sample drops in the last 60 s (threshold: more than "
+                                      << maxDropsPerMin << "). The host cannot sustain this sample rate. "
+                                      << "Initiating shutdown.";
+                            intendedShutdown = false;
+                            m_device->shutdownWriter();
+                            ProcessSignals::handle_sigint(0);
+                            break;
+                        }
+                    }
+                }
+
                 std::this_thread::sleep_for(200ms);
             }
+            if (seenDropEvents > 0)
+                Log::warn("Watchdog") << "Sample drops during this run: "
+                          << seenDropEvents << " event(s), worst gap ~"
+                          << m_device->maxDropDeficit() << " IQ pairs.";
             Log::info("Watchdog", "Watchdog is done.");
         });
 
