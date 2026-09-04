@@ -70,38 +70,43 @@ namespace LowPassTaps {
 
     template<>
     constexpr auto getTaps<Rate_3_2_Mhz>(){
-        // custom_filters/enrico_20260820_3_2_16_taps_27.txt
+        // custom_filters/enrico_20260904_3_2_narrow_up24_taps_27.txt
         // 27-tap DE fit (filter_utils/filter_opt.py) against a real 3.2 Msps
-        // capture, scored by decoded message count. Fit on a 20 s training
-        // window, validated on three held-out 30 s windows the fit never saw.
+        // capture in the NARROW tuner state (tuner_bandwidth = 2430000),
+        // scored by decoded message count at -u 24. Fit on a 15 s training
+        // window, validated on two held-out 15 s windows the fit never saw.
+        // Pairs with tuner_bandwidth = 2430000 in the device config: at 3.2
+        // the librtlsdr auto state is the 6 MHz TV filter, and the noise it
+        // aliases across Nyquist costs ~15% of frames against the narrow
+        // state (bench/rtl32 live A/B fase5.0 vs fase5.10).
         return std::to_array<float>({
-            0.0007202076376f,
-            0.0005142849404f,
-            0.0006296405336f,
-            0.004390537273f,
-            -0.0001391760161f,
-            0.01314250939f,
-            0.00545473583f,
-            0.01257977355f,
-            0.03977450356f,
-            0.005363932811f,
-            0.08937354386f,
-            -0.01179395616f,
-            0.1154202074f,
-            0.4491385221f,
-            0.1154202074f,
-            -0.01179395616f,
-            0.08937354386f,
-            0.005363932811f,
-            0.03977450356f,
-            0.01257977355f,
-            0.00545473583f,
-            0.01314250939f,
-            -0.0001391760161f,
-            0.004390537273f,
-            0.0006296405336f,
-            0.0005142849404f,
-            0.0007202076376f
+            -0.0003397811087779701f,
+            -0.0010461800266057253f,
+            -0.0025415613781660795f,
+            -0.0008077416568994522f,
+            0.0016487882239744067f,
+            0.002140612341463566f,
+            0.011383295059204102f,
+            0.028485337272286415f,
+            0.019436953589320183f,
+            0.037336770445108414f,
+            0.07555463165044785f,
+            -0.022128969430923462f,
+            0.14068666100502014f,
+            0.4203823506832123f,
+            0.14068666100502014f,
+            -0.022128969430923462f,
+            0.07555463165044785f,
+            0.037336770445108414f,
+            0.019436953589320183f,
+            0.028485337272286415f,
+            0.011383295059204102f,
+            0.002140612341463566f,
+            0.0016487882239744067f,
+            -0.0008077416568994522f,
+            -0.0025415613781660795f,
+            -0.0010461800266057253f,
+            -0.0003397811087779701f,
         });
     };
 
