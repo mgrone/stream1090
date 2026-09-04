@@ -58,6 +58,22 @@ constexpr auto presets = std::make_tuple(
     Preset<IQ_UINT8_RTL_SDR, Sampler_2_56_to_12_0_Mhz, IQPipelineOptions::IQ_FIR_RTL_SDR>{},
     Preset<IQ_UINT8_RTL_SDR, Sampler_2_56_to_12_0_Mhz, IQPipelineOptions::IQ_FIR_RTL_SDR_FILE>{} ,
     
+    Preset<IQ_UINT8_RTL_SDR, Sampler_3_2_to_8_0_Mhz, IQPipelineOptions::NONE>{},
+    Preset<IQ_UINT8_RTL_SDR, Sampler_3_2_to_8_0_Mhz, IQPipelineOptions::IQ_FIR_RTL_SDR>{},
+    Preset<IQ_UINT8_RTL_SDR, Sampler_3_2_to_8_0_Mhz, IQPipelineOptions::IQ_FIR_RTL_SDR_FILE>{},
+
+    Preset<IQ_UINT8_RTL_SDR, Sampler_3_2_to_12_0_Mhz, IQPipelineOptions::NONE>{},
+    Preset<IQ_UINT8_RTL_SDR, Sampler_3_2_to_12_0_Mhz, IQPipelineOptions::IQ_FIR_RTL_SDR>{},
+    Preset<IQ_UINT8_RTL_SDR, Sampler_3_2_to_12_0_Mhz, IQPipelineOptions::IQ_FIR_RTL_SDR_FILE>{},
+
+    Preset<IQ_UINT8_RTL_SDR, Sampler_3_2_to_16_0_Mhz, IQPipelineOptions::NONE>{},
+    Preset<IQ_UINT8_RTL_SDR, Sampler_3_2_to_16_0_Mhz, IQPipelineOptions::IQ_FIR_RTL_SDR>{},
+    Preset<IQ_UINT8_RTL_SDR, Sampler_3_2_to_16_0_Mhz, IQPipelineOptions::IQ_FIR_RTL_SDR_FILE>{},
+
+    Preset<IQ_UINT8_RTL_SDR, Sampler_3_2_to_24_0_Mhz, IQPipelineOptions::NONE>{},
+    Preset<IQ_UINT8_RTL_SDR, Sampler_3_2_to_24_0_Mhz, IQPipelineOptions::IQ_FIR_RTL_SDR>{},
+    Preset<IQ_UINT8_RTL_SDR, Sampler_3_2_to_24_0_Mhz, IQPipelineOptions::IQ_FIR_RTL_SDR_FILE>{},
+
     // Airspy (uint16) default presets
     Preset<IQ_UINT16_RAW_AIRSPY, Sampler_6_0_to_6_0_Mhz, IQPipelineOptions::NONE>{},
     Preset<IQ_UINT16_RAW_AIRSPY, Sampler_6_0_to_6_0_Mhz, IQPipelineOptions::IQ_FIR>{},
