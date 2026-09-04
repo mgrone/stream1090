@@ -342,6 +342,12 @@ int main(int argc, char** argv) {
                 std::cerr << "[Stream1090] RTL-SDR backend: vendored rtl-sdr-blog fork" << std::endl;
             } else {
                 std::cerr << "[Stream1090] RTL-SDR backend: external librtlsdr" << std::endl;
+                if (c_vars.inputRate == Rate_3_2_Mhz) {
+                    std::cerr << "[Stream1090] WARNING: the 3.2 Msps preset is tuned against the vendored\n"
+                                 "[Stream1090] rtl-sdr-blog fork (-DENABLE_RTLSDR_BLOG=ON). With the system\n"
+                                 "[Stream1090] librtlsdr the same ini settings land in a different tuner\n"
+                                 "[Stream1090] state and the preset loses ~35% frames." << std::endl;
+                }
             }
 
         } else {
@@ -439,7 +445,6 @@ int main(int argc, char** argv) {
     }
     return *outcome ? 0 : 1;
 }
-
 
 
 
