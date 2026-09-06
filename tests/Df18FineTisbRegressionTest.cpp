@@ -1,32 +1,43 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
-// RED-PHASE REGRESSION (open bug, not yet fixed in production code).
+// REGRESSION (fixed in production code).
 //
-// handleExtSquitterLongMessage() applies Plausibility::checkDF17() to every
-// extended squitter reaching the "first sighting" branch, DF18 included. On
-// DF18, the three bits at the same position as DF17's CA (transponder
-// capability) field are CF (Control Field), a different field with
-// different values -- see readsb's mode_s.c, decodeExtendedSquitter(),
+// handleExtSquitterLongMessage() used to apply Plausibility::checkDF17() to
+// every extended squitter reaching the "first sighting" branch, DF18
+// included. On DF18, the three bits at the same position as DF17's CA
+// (transponder capability) field are CF (Control Field), a different field
+// with different values -- see readsb's mode_s.c, decodeExtendedSquitter(),
 // "Check CF on DF18" (around line 1461): CF 0/1 are ADS-B (ICAO/anonymous
 // address), CF 2 is "Fine TIS-B Message" carrying a genuine 24-bit ICAO
 // address when IMF=0, CF 3 is coarse TIS-B, CF 5 is TIS-B with a non-ICAO
 // address, CF 6 is ADS-B rebroadcast. checkDF17() rejects values 1-3
 // because, for DF17, CA 1-3 mean "no ADS-B capability" -- a check that does
 // not apply to DF18's CF at all. A legitimate, common CF=2 Fine TIS-B
-// message is therefore rejected on its first sighting, before it ever
-// reaches the trust-candidate table: it can never earn trust, no matter how
-// many times it repeats.
+// message was therefore rejected on its first sighting, before it ever
+// reached the trust-candidate table: it could never earn trust, no matter
+// how many times it repeated.
 //
-// This test drives the bug through the public bit-level entry point
+// Fixed by scoping checkDF17() to frames that are genuinely DF17-shaped
+// (native DF17, or DF19 promoted to 17) and skipping it for DF18, which
+// goes through checkICAO() alone like any other first sighting.
+//
+// Residual, unrelated limitation this test does not cover: DF18 CF=1 and
+// CF=5 reports, and CF=2/3 with IMF=1, carry a non-ICAO address (anonymous,
+// or a 12-bit Mode-A code plus track-file number), which stream1090's
+// ICAO-keyed cache does not distinguish from an ordinary ICAO address. That
+// is unchanged by this fix, in either direction.
+//
+// This test drives the fix through the public bit-level entry point
 // (DemodCore::shiftInNewBits) only -- no access to DemodCore/ICAOTable
 // internals -- and expresses the CORRECT behavior: a repeated, genuinely
 // valid DF18 CF=2 report must be able to earn trust and be emitted
 // unchanged, exactly like an equivalent DF17 report (checked here as a
 // positive control on the very same harness, to isolate the bug to DF18).
 //
-// Expected on 16075b9 (initial reference, no Plausibility.hpp yet): PASS.
-// Expected on edf006a (upstream) and this branch: FAIL (DF18 case only --
-// the DF17 positive control must still pass everywhere).
+// Passes on 16075b9 (initial reference, no Plausibility.hpp yet) and on
+// this branch since the fix. Expected to fail on edf006a (upstream,
+// unfixed; DF18 case only -- the DF17 positive control still passes
+// there).
 
 #include "DemodCore.hpp"
 

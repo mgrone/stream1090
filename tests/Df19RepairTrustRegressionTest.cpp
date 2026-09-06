@@ -1,23 +1,34 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
-// RED-PHASE REGRESSION (open bug, not yet fixed in production code).
+// REGRESSION (fixed in production code).
 //
 // Upstream (edf006a) treats every DF19 candidate as a possibly-corrupted
 // DF17: it flips bit 108 -- the DF field's second-least-significant bit,
 // exactly where 17 (10001) and 19 (10011) differ -- and XORs the CRC by
 // CRC::delta<108>() before the crc==0 check ever runs. When the flip lands
 // on a real single-bit error, the reconstructed frame's CRC becomes zero,
-// and handleExtSquitterLongMessage() treats it exactly like a genuinely
-// clean squitter: on the "not known" branch this is the same door a real
-// clean DF17 uses to earn trust for a brand-new address (confirmTrustCandidate
-// + insertWithCA), with no distinction between "this bit pattern really
-// arrived over the air" and "this bit pattern is our own guess at a
-// correction". Repeating a repair-shaped signal three times can therefore
-// create trust for an address nobody has ever cleanly received, contrary to
-// the principle stated elsewhere in this file: repairs must never seed
-// trust for a new address, only extend it for one that already has it.
+// and handleExtSquitterLongMessage() used to treat it exactly like a
+// genuinely clean squitter: on the "not known" branch this was the same
+// door a real clean DF17 uses to earn trust for a brand-new address
+// (confirmTrustCandidate + insertWithCA), with nothing distinguishing "this
+// bit pattern really arrived over the air" from "this bit pattern is our
+// own guess at a correction". Repeating a repair-shaped signal three times
+// could therefore create trust for an address nobody had ever cleanly
+// received, contrary to the principle stated elsewhere in this file:
+// repairs must never seed trust for a new address, only extend it for one
+// that already has it.
 //
-// This test drives the bug through the public bit-level entry point only.
+// Fixed by recording, before the DF19->17 promotion overwrites
+// downlinkFormat, whether the frame arrived as DF19. A frame that only
+// reaches crc==0 by way of the promotion is a repair, not a genuine clean
+// reception: for any address not already trusted it now returns early,
+// before confirmTrustCandidate() is ever called, so it neither seeds trust
+// nor leaves a trust-candidate sighting behind for a later clean reception
+// to complete. Recovery for an address already trusted through clean
+// sightings is unaffected -- it is handled by the existing
+// isTrusted()-gated branch, checked before the new guard.
+//
+// This test drives the fix through the public bit-level entry point only.
 // Two independent cases:
 //   A) a brand-new address, signal shaped so DF field flips 19->17 --
 //      nothing may ever be emitted, and trust must never appear.
@@ -27,17 +38,19 @@
 //      that is legitimate error correction for an address already vetted,
 //      not trust creation.
 //
-// Expected on edf006a (upstream) and this branch: case A fails (something
-// gets emitted / trust appears for the new address); case B passes (the
-// promotion's whole point is to let this recovery through). Case A is
-// expected to pass on 16075b9 (initial reference; the DF19->17 promotion
-// does not exist there, and the general "repairs never seed trust for
-// unknown addresses" rule already holds). Case B is asserted here exactly
-// the same way on every reference -- a fix that discarded every DF19
-// candidate unconditionally, recovery included, must fail it too -- but on
-// 16075b9 it is expected to fail for a different, unrelated reason: DF19
-// candidates reach the CRC error table there through the unmodified generic
-// repair path, and that table is not known to cover this exact single-bit
+// Passes on this branch since the fix: case A emits nothing and creates no
+// trust; case B still recovers and emits the original frame. On edf006a
+// (upstream, unfixed) case A is expected to fail (something gets emitted /
+// trust appears for the new address); case B passes there (the promotion's
+// whole point is to let this recovery through). Case A is expected to pass
+// on 16075b9 (initial reference; the DF19->17 promotion does not exist
+// there, and the general "repairs never seed trust for unknown addresses"
+// rule already holds). Case B is asserted here exactly the same way on
+// every reference -- a fix that discarded every DF19 candidate
+// unconditionally, recovery included, must fail it too -- but on 16075b9 it
+// is expected to fail for a different, unrelated reason: DF19 candidates
+// reach the CRC error table there through the unmodified generic repair
+// path, and that table is not known to cover this exact single-bit
 // syndrome. Report case A and case B separately when comparing against
 // 16075b9; a case B failure there is not evidence of anything on its own.
 //

@@ -1,11 +1,11 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
-// RED-PHASE REGRESSION (open bug, not yet fixed in production code, and
-// specific to this branch -- upstream is expected to pass this test).
+// REGRESSION (fixed in production code; was specific to this branch --
+// upstream never had this bug).
 //
 // On this branch, DF11's crc<80 (PI overlaid with an interrogator code)
-// path, once confirmDF11Candidate() confirms a second sighting, inserts
-// the address and marks it trusted directly:
+// path, once confirmDF11Candidate() confirms a second sighting, used to
+// insert the address and mark it trusted directly, with no address check:
 //
 //     const auto it = e.isValid() ? e : m_cache.insertWithCA(icaoWithCA);
 //     m_cache.markAsTrustedSeen(it);
@@ -17,8 +17,13 @@
 // calls Plausibility::checkICAO() before insertWithCA(). This one direct
 // call was introduced by this branch's own restructuring of the crc<80
 // path (it used to reach the shared helper, which upstream's version still
-// does) and does not. An address checkICAO() would reject can still gain
-// trust through repeated PI-overlaid DF11 replies alone.
+// does) and did not. An address checkICAO() would reject could gain trust
+// through repeated PI-overlaid DF11 replies alone.
+//
+// Fixed by adding the same checkICAO() guard, scoped to a fresh insert
+// only (an already-known-but-untrusted entry was already screened at its
+// own insertion, and promoting it here is unaffected), matching the other
+// three insertion points.
 //
 // This test only checks that this branch's insertion points are as
 // consistent with each other as upstream's are; it makes no claim that the
@@ -26,9 +31,9 @@
 //
 // Driven through the public bit-level entry point only.
 //
-// Expected: passes on edf006a (upstream); fails on this branch. The initial
-// reference (16075b9) predates checkICAO() entirely and is not expected to
-// enforce this policy either way.
+// Passes on edf006a (upstream, unaffected) and on this branch since the
+// fix. The initial reference (16075b9) predates checkICAO() entirely and
+// is not expected to enforce this policy either way.
 
 #include "DemodCore.hpp"
 

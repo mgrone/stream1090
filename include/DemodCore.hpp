@@ -287,6 +287,11 @@ public:
 
 		auto crc = m_shiftRegisters.getCRC_112(streamIndex);
 
+		// A frame that only reaches crc==0 by way of the DF19->17 guess below
+		// is a repair, not a genuine clean reception; captured before the guess
+		// overwrites downlinkFormat, so the two stay distinguishable.
+		const bool wasDf19 = (downlinkFormat == 19);
+
 		// This is very hacky. However, we do not know about DF-19 nor seems to be many decoders.
 		// We will give it a try as a DF-17 message since 17 and 19 have hamming distance 1
 		if (downlinkFormat==19) {
@@ -316,6 +321,15 @@ public:
 				return sendFrameLongAligned(streamIndex, downlinkFormat, crc, frame, e);
 			}
 
+			// A frame that only reads crc==0 because of the DF19->17 guess is a
+			// repair, not a genuine clean reception: for any address that is not
+			// already trusted (the case just above), it must not seed trust, nor
+			// register a trust-candidate sighting for a later clean reception to
+			// complete. Recovery for an address that already has trust is handled
+			// above and is unaffected.
+			if (wasDf19)
+				return false;
+
 			// This is the only door into the trusted set for a genuinely new
 			// address; an already-known-but-untrusted entry (e.g. from DF11)
 			// was screened at its own insertion, so only a fresh insert needs
@@ -325,7 +339,12 @@ public:
 					Log::debug("DemodCore") << "Trying to insert invalid icao from DF-17 " << std::hex << (icaoWithCA & 0xFFFFFF);
 					return false;
 				}
-				if (!Plausibility::checkDF17(frame)) {
+				// DF18's bits here are CF (Control Field), not DF17's CA: CF values
+				// 1-3 are ordinary DF18 report types (e.g. CF=2 Fine TIS-B with a
+				// real ICAO address), not "no ADS-B capability" as they would be
+				// for DF17's CA. checkDF17() applies only to DF17 (native, or a
+				// DF19 promoted above: both are DF17-shaped by this point).
+				if (downlinkFormat != 18 && !Plausibility::checkDF17(frame)) {
 					Log::debug("DemodCore") << "Trying to insert by wrong DF-17 message  " << std::hex << (icaoWithCA & 0xFFFFFF);
 					return false;
 				}
@@ -613,6 +632,12 @@ public:
 				// reply emits.
 				if (!m_cache.confirmDF11Candidate(icaoWithCA))
 					return false;
+				// only a fresh insert needs screening; an existing untrusted
+				// entry was already screened when it was first inserted
+				if (!e.isValid() && !Plausibility::checkICAO(icaoWithCA & 0xFFFFFF)) {
+					Log::debug("DemodCore") << "Trying to insert invalid icao from DF-11 " << std::hex << (icaoWithCA & 0xFFFFFF);
+					return false;
+				}
 				const auto it = e.isValid() ? e : m_cache.insertWithCA(icaoWithCA);
 				m_cache.markAsTrustedSeen(it);
 				logStats(Stats::DF11_ICAO_CA_FOUND_GOOD_CRC);
