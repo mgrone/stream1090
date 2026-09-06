@@ -286,6 +286,11 @@ public:
 
 		auto crc = m_shiftRegisters.getCRC_112(streamIndex);
 
+		// A frame that only reaches crc==0 by way of the DF19->17 guess below
+		// is a repair, not a genuine clean reception; captured before the
+		// guess overwrites downlinkFormat, so the two stay distinguishable.
+		const bool wasDf19 = (downlinkFormat == 19);
+
 		// This is very hacky. However, we do not know about DF-19 nor seems to be many decoders.
 		// We will give it a try as a DF-17 message since 17 and 19 have hamming distance 1
 		if (downlinkFormat==19) {
@@ -307,10 +312,24 @@ public:
 			
 			// if we know this plane
 			if (e.isValid()) {
+				// A repair-shaped (DF19->17) frame may only refresh trust that
+				// already exists; it must not be the thing that grants it to a
+				// known-but-not-yet-trusted entry (e.g. one still waiting on
+				// its own second sighting).
+				if (wasDf19 && !m_cache.isTrusted(e))
+					return false;
 				m_cache.markAsTrustedSeen(e);
 				// and send the 112 bit message to the output
 				return sendFrameLongAligned(streamIndex, downlinkFormat, crc, frame, e);
 			} else {
+				// A frame that only reads crc==0 because of the DF19->17 guess
+				// is a repair, not a genuine clean reception: for an address
+				// that is not already known (the case just above), it must not
+				// seed trust, nor register a trust-candidate sighting for a
+				// later clean reception to complete.
+				if (wasDf19)
+					return false;
+
 				if (!Plausibility::checkICAO(icaoWithCA & 0xFFFFFF)) {
 					Log::debug("DemodCore") << "Trying to insert invalid icao from DF-17 " << std::hex << (icaoWithCA & 0xFFFFFF);
 					return false;
@@ -319,9 +338,11 @@ public:
 				// DF18's bits here are CF (Control Field), not DF17's CA: CF
 				// values 1-3 are ordinary DF18 report types (e.g. CF=2 Fine
 				// TIS-B with a real ICAO address), not "no ADS-B capability"
-				// as they would be for DF17's CA. checkDF17() applies only to
-				// DF17 (native, or a DF19 promoted above: both are
-				// DF17-shaped by this point).
+				// as they would be for DF17's CA. Excluding DF18 here is
+				// enough to reach only native DF17: a DF19 promoted to 17
+				// never reaches this line for an address that is not
+				// already trusted -- it is accepted or rejected by the
+				// wasDf19 checks above, before this validation runs.
 				if (downlinkFormat != 18 && !Plausibility::checkDF17(frame)) {
 					Log::debug("DemodCore") << "Trying to insert by wrong DF-17 message  " << std::hex << (icaoWithCA & 0xFFFFFF);
 					return false;

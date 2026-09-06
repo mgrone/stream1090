@@ -92,12 +92,25 @@ DF18 shares the CA bit position with DF17, but that field is CF (Control
 Field) on DF18, not CA -- CF=2 ("Fine TIS-B Message") is a common, legitimate
 value that used to be rejected by the CA-specific check on first sighting, so
 it could never earn trust. `Plausibility::checkDF17()`'s CA range check now
-only applies to genuinely DF17-shaped frames (native DF17, or a DF19 message
-promoted to 17 -- see below); a native DF18 report is screened by
+excludes native DF18 explicitly; the only other frames reaching that line are
+native DF17 (a DF19 promoted to 17 never reaches it for an address that is
+not already trusted -- see below). A native DF18 report is screened by
 `checkICAO()` alone. This does not address non-ICAO addresses: DF18 CF=1/5
 reports, and CF=2/3 with IMF=1, carry an anonymous address or a Mode-A/track
 number rather than a 24-bit ICAO address, and stream1090's ICAO-keyed cache
 still does not distinguish those from an ordinary ICAO-addressed report.
+
+A DF19 candidate is treated as a possibly-corrupted DF17 (bit 108 flipped,
+CRC adjusted) before the crc==0 check runs, so a frame that only reaches
+crc==0 this way is a guessed repair, not a genuine clean reception. Such a
+frame is now accepted or rejected -- before the `checkICAO()`/`checkDF17()`
+validation a genuinely clean new DF17 goes through, and it never reaches
+either check -- based on whether the address it names is already trusted
+from an earlier clean reception: it can neither seed trust for an unknown
+address nor promote a known-but-not-yet-trusted one, and it leaves no
+trust-candidate sighting behind for a later clean reception to complete.
+Recovery of the original DF17 frame for an address already trusted is
+unaffected.
 
 Important: If you want to see the statistics for the whole file and not every 5 seconds. You can enable the a summary at the end by rebuilding stream with after the following cmake call in the build directory
 ```

@@ -175,6 +175,7 @@ if(BUILD_TESTING)
         ${MIN_SNR_DEF}
     )
     stream1090_add_test(df18_fine_tisb_regression_test tests/Df18FineTisbRegressionTest.cpp)
+    stream1090_add_test(df19_repair_trust_regression_test tests/Df19RepairTrustRegressionTest.cpp)
 endif()
 
 # ------------------------------------------------------------
