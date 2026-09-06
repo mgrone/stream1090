@@ -174,6 +174,7 @@ if(BUILD_TESTING)
         ${PREAMBLE_THRESHOLD_DEF}
         ${MIN_SNR_DEF}
     )
+    stream1090_add_test(df18_fine_tisb_regression_test tests/Df18FineTisbRegressionTest.cpp)
 endif()
 
 # ------------------------------------------------------------
