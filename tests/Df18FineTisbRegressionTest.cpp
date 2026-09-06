@@ -17,9 +17,9 @@
 // reached the trust-candidate table: it could never earn trust, no matter
 // how many times it repeated.
 //
-// Fixed by scoping checkDF17() to frames that are genuinely DF17-shaped
-// (native DF17, or DF19 promoted to 17) and skipping it for DF18, which
-// goes through checkICAO() alone like any other first sighting.
+// Fixed by applying checkDF17() to native DF17 at this insertion point
+// and skipping it for DF18, which still goes through checkICAO().
+// Converted DF19 frames are emitted or rejected before this check.
 //
 // Residual, unrelated limitation this test does not cover: DF18 CF=1 and
 // CF=5 reports, and CF=2/3 with IMF=1, carry a non-ICAO address (anonymous,

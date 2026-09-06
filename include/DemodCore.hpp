@@ -342,8 +342,8 @@ public:
 				// DF18's bits here are CF (Control Field), not DF17's CA: CF values
 				// 1-3 are ordinary DF18 report types (e.g. CF=2 Fine TIS-B with a
 				// real ICAO address), not "no ADS-B capability" as they would be
-				// for DF17's CA. checkDF17() applies only to DF17 (native, or a
-				// DF19 promoted above: both are DF17-shaped by this point).
+				// for DF17's CA. Only native DF17 reaches this check; converted
+				// DF19 frames have already been emitted or rejected above.
 				if (downlinkFormat != 18 && !Plausibility::checkDF17(frame)) {
 					Log::debug("DemodCore") << "Trying to insert by wrong DF-17 message  " << std::hex << (icaoWithCA & 0xFFFFFF);
 					return false;
