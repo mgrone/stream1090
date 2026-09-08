@@ -9,6 +9,11 @@
 #include <atomic>
 #include <csignal>
 
+// visible to every translation unit that instantiates a sampler
+#ifndef STREAM1090_VERSION
+#define STREAM1090_VERSION "260905"
+#endif
+
 struct GlobalOptions {
     #ifdef STATS_ENABLED
         static constexpr bool StatsEnabled = (STATS_ENABLED != 0);

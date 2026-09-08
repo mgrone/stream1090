@@ -13,9 +13,8 @@
 #include <chrono>
 #include <optional>
 
-#define STREAM1090_VERSION "260905"
-
 #include "MainInstance.hpp"
+#include "PresetDispatcher.hpp"
 
 
 struct RatePair {
@@ -266,6 +265,21 @@ std::vector<float> load_taps_from_file(const std::string& filename) {
     }
 
     return taps;
+}
+
+// Returns nothing when no preset matches the requested configuration, and
+// otherwise the outcome of the run. Dispatch is split per device backend so
+// the heavy MainInstance<...> instantiations compile in their own TUs.
+std::optional<bool> runInstanceFromPresets(const CompileTimeVars& c_vars, const RuntimeVars& r_vars) {
+#if defined(STREAM1090_CUSTOM_INPUT) && STREAM1090_CUSTOM_INPUT
+    return runPresetGroup(presets, c_vars, r_vars);
+#else
+    if (auto o = runRtlSdrPresets(c_vars, r_vars))
+        return o;
+    if (auto o = runAirspyPresets(c_vars, r_vars))
+        return o;
+    return std::nullopt;
+#endif
 }
 
 int main(int argc, char** argv) {
