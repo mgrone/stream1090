@@ -63,6 +63,12 @@ typedef SamplerBase<Rate_2_56_Mhz, Rate_8_0_Mhz> Sampler_2_56_to_8_0_Mhz;
 typedef SamplerBase<Rate_2_56_Mhz, Rate_12_0_Mhz> Sampler_2_56_to_12_0_Mhz;
 typedef SamplerBase<Rate_2_56_Mhz, Rate_24_0_Mhz> Sampler_2_56_to_24_0_Mhz;
 
+// 3.2 Mhz upsamplers
+typedef SamplerBase<Rate_3_2_Mhz, Rate_8_0_Mhz> Sampler_3_2_to_8_0_Mhz;
+typedef SamplerBase<Rate_3_2_Mhz, Rate_12_0_Mhz> Sampler_3_2_to_12_0_Mhz;
+typedef SamplerBase<Rate_3_2_Mhz, Rate_16_0_Mhz> Sampler_3_2_to_16_0_Mhz;
+typedef SamplerBase<Rate_3_2_Mhz, Rate_24_0_Mhz> Sampler_3_2_to_24_0_Mhz;
+
 // 6 Mhz upsamplers
 typedef SamplerBase<Rate_6_0_Mhz, Rate_12_0_Mhz> Sampler_6_0_to_12_0_Mhz;
 typedef SamplerBase<Rate_6_0_Mhz, Rate_16_0_Mhz> Sampler_6_0_to_16_0_Mhz;
