@@ -169,6 +169,12 @@ if(BUILD_TESTING)
     stream1090_add_test(mode_s_position_test tests/ModeSPositionTest.cpp)
     stream1090_add_test(rtlsdr_serial_test tests/RtlSdrSerialTest.cpp)
     stream1090_add_test(noise_false_positive_test tests/NoiseFalsePositiveTest.cpp)
+    stream1090_add_test(trust_gate_test tests/TrustGateTest.cpp)
+    stream1090_add_test(trust_separation_test tests/TrustSeparationTest.cpp)
+    # Regressions covering DF18/DF19/DF11-PI plausibility fixes. See README_ADV.md.
+    stream1090_add_test(df18_fine_tisb_regression_test tests/Df18FineTisbRegressionTest.cpp)
+    stream1090_add_test(df19_repair_trust_regression_test tests/Df19RepairTrustRegressionTest.cpp)
+    stream1090_add_test(df11_pi_icao_bypass_regression_test tests/Df11PiIcaoBypassRegressionTest.cpp)
     target_compile_definitions(noise_false_positive_test PRIVATE
         ${PREAMBLE_GATE_DEF}
         ${PREAMBLE_THRESHOLD_DEF}

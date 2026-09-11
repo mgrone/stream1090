@@ -78,7 +78,7 @@ public:
 
 	/// True when the preamble in front of this candidate is strong enough to be
 	/// a real transmission. Disabled unless STREAM1090_PREAMBLE_GATE is defined.
-	bool preambleConfirms(int streamIndex) noexcept {
+	bool preambleConfirms([[maybe_unused]] int streamIndex) noexcept {
 	#if defined(STREAM1090_PREAMBLE_GATE) && STREAM1090_PREAMBLE_GATE
 		if (m_preambleFn == nullptr)
 			return false;
@@ -114,7 +114,7 @@ public:
 		logStats(Stats::NUM_ITERATIONS);
 	}
 
-	bool sendFrameLongAligned(int streamIndex,
+	bool sendFrameLongAligned(int,
 							  const uint8_t downlinkFormat, 
 							  CRC::crc_t crc,
 							  const Bits128& frame, 
@@ -127,17 +127,14 @@ public:
     		return false;
 		}
 
-		// Address-parity frames (DF16/20/21) carry no checkable CRC, so the
-		// payload checks are all they have, and a noise frame can pass them by
-		// coincidence (a parity that matches a cached address plus a plausible
-		// altitude). Reject the ones that are ALSO at the local noise floor with
-		// no preamble in front of them: both are ratios, so the test transfers
-		// between receivers. DF17/18 reach here with a checkable CRC and are
-		// not gated.
-		if ((downlinkFormat == 16 || downlinkFormat == 20 || downlinkFormat == 21)
-				&& signalAtNoiseFloor(streamIndex) && !preambleConfirms(streamIndex)) {
+		// Address-parity frames (DF16/20/21) carry no checkable CRC: they name
+		// their address in the parity field, so a noise frame can claim any
+		// address in the table without ever clearing a CRC. Trust is
+		// repetition-based: only addresses that earned it through a second
+		// sighting may emit here. DF17/18 reach here with a checkable CRC;
+		// their address earned trust at the door or before.
+		if (!m_cache.isTrusted(it))
 			return false;
-		}
 
 		if ((downlinkFormat == 20) || (downlinkFormat == 16)) {
 			const auto alt_bits = ModeS::extractSquawkAlt_Long(frame);
@@ -158,14 +155,16 @@ public:
 				return false;
 			m_cache.markAsSeen(it);
 		}
-		
+
+		// the frame passed every check, so its address stays trusted
+		m_cache.markAsTrustedSeen(it);
 		logStatsSent(downlinkFormat);
 		e.last_time = m_currTime;		
 		m_messageHandler.handleLong(m_currTime, frame);
 		return true;
 	}
 
-	bool sendFrameShortAligned(int streamIndex, const uint8_t downlinkFormat, CRC::crc_t crc, const uint64_t& frameShort, const ICAOTable::Iterator& it) {
+	bool sendFrameShortAligned(int, const uint8_t downlinkFormat, CRC::crc_t crc, const uint64_t& frameShort, const ICAOTable::Iterator& it) {
 		auto& e = m_cache.getMsgStatEntry(it);
 		static constexpr uint64_t DUP_WINDOW_TICKS = 30 * NumStreams;
 		if ((m_currTime - e.last_time) < DUP_WINDOW_TICKS) {
@@ -174,12 +173,12 @@ public:
     		return false;
 		}
 
-		// Same rationale as the long path: DF0/4/5 recover the address from the
-		// parity, so reject frames at the noise floor with no preamble.
-		if ((downlinkFormat == 0 || downlinkFormat == 4 || downlinkFormat == 5)
-				&& signalAtNoiseFloor(streamIndex) && !preambleConfirms(streamIndex)) {
+		// DF0/4/5 recover the address from the parity and DF11 carries it in
+		// the clear, so a noise frame can claim any address in the table
+		// without ever clearing a CRC. Trust is repetition-based: only
+		// addresses that earned it through a second sighting may emit here.
+		if (!m_cache.isTrusted(it))
 			return false;
-		}
 
 		if ((downlinkFormat == 4) || (downlinkFormat == 0)) {
 			const auto alt_bits = ModeS::extractSquawkAlt_Short(frameShort);
@@ -201,6 +200,8 @@ public:
 			m_cache.markAsSeen(it);
 		}
 
+		// the frame passed every check, so its address stays trusted
+		m_cache.markAsTrustedSeen(it);
 		logStatsSent(downlinkFormat);
 		e.last_time = m_currTime;
 		m_messageHandler.handleShort(m_currTime, frameShort);
@@ -286,6 +287,11 @@ public:
 
 		auto crc = m_shiftRegisters.getCRC_112(streamIndex);
 
+		// A frame that only reaches crc==0 by way of the DF19->17 guess below
+		// is a repair, not a genuine clean reception; captured before the guess
+		// overwrites downlinkFormat, so the two stay distinguishable.
+		const bool wasDf19 = (downlinkFormat == 19);
+
 		// This is very hacky. However, we do not know about DF-19 nor seems to be many decoders.
 		// We will give it a try as a DF-17 message since 17 and 19 have hamming distance 1
 		if (downlinkFormat==19) {
@@ -303,43 +309,57 @@ public:
 			logStats(Stats::DF17_GOOD_MESSAGE);
 			// get the address including the CA field
 			const auto icaoWithCA = ModeS::extractICAOWithCA_Long(frame);
+			if ((icaoWithCA & 0xffffffu) == 0)
+				return false;
 			const auto e = m_cache.findWithCA(icaoWithCA);
-			
-			// if we know this plane
-			if (e.isValid()) {
+
+			// A trusted aircraft may renew immediately. An untrusted cache
+			// entry still needs a separate sighting before it can emit.
+			if (e.isValid() && m_cache.isTrusted(e)) {
 				m_cache.markAsTrustedSeen(e);
 				// and send the 112 bit message to the output
 				return sendFrameLongAligned(streamIndex, downlinkFormat, crc, frame, e);
-			} else {
+			}
+
+			// A frame that only reads crc==0 because of the DF19->17 guess is a
+			// repair, not a genuine clean reception: for any address that is not
+			// already trusted (the case just above), it must not seed trust, nor
+			// register a trust-candidate sighting for a later clean reception to
+			// complete. Recovery for an address that already has trust is handled
+			// above and is unaffected.
+			if (wasDf19)
+				return false;
+
+			// This is the only door into the trusted set for a genuinely new
+			// address; an already-known-but-untrusted entry (e.g. from DF11)
+			// was screened at its own insertion, so only a fresh insert needs
+			// the check here.
+			if (!e.isValid()) {
 				if (!Plausibility::checkICAO(icaoWithCA & 0xFFFFFF)) {
 					Log::debug("DemodCore") << "Trying to insert invalid icao from DF-17 " << std::hex << (icaoWithCA & 0xFFFFFF);
 					return false;
 				}
-
-				if (!Plausibility::checkDF17(frame)) {
+				// DF18's bits here are CF (Control Field), not DF17's CA: CF values
+				// 1-3 are ordinary DF18 report types (e.g. CF=2 Fine TIS-B with a
+				// real ICAO address), not "no ADS-B capability" as they would be
+				// for DF17's CA. Only native DF17 reaches this check; converted
+				// DF19 frames have already been emitted or rejected above.
+				if (downlinkFormat != 18 && !Plausibility::checkDF17(frame)) {
 					Log::debug("DemodCore") << "Trying to insert by wrong DF-17 message  " << std::hex << (icaoWithCA & 0xFFFFFF);
 					return false;
 				}
-				// This is the only door into the trusted set. The first
-				// sighting of a new address enters it untrusted: the parity
-				// routes see it (their own noise-floor gates still apply),
-				// but the error table repair, the erasure repair and the DF11
-				// parity overwrite wait for trust. Trust arrives with the
-				// second sighting, through the known branch above. Noise
-				// clears 24 bits of CRC often enough to invent an address
-				// every four seconds, but it never repeats the same random
-				// address, so the second sighting is where noise dies.
-				const bool confirmed = m_cache.confirmTrustCandidate(icaoWithCA);
-				const auto it = m_cache.insertWithCA(icaoWithCA);
-				if (confirmed) {
-					// the entry had expired since the first sighting, so the
-					// second sighting does not reach the known branch
-					m_cache.markAsTrustedSeen(it);
-					return sendFrameLongAligned(streamIndex, downlinkFormat, crc, frame, it);
-				}
-				m_cache.markAsSeen(it);
-				return false;
 			}
+
+			// The first sighting enters the cache untrusted. Promotion needs
+			// another sighting at least 100 us later, even while that entry lives.
+			const bool confirmed = m_cache.confirmTrustCandidate(icaoWithCA);
+			const auto it = e.isValid() ? e : m_cache.insertWithCA(icaoWithCA);
+			if (confirmed) {
+				m_cache.markAsTrustedSeen(it);
+				return sendFrameLongAligned(streamIndex, downlinkFormat, crc, frame, it);
+			}
+			m_cache.markAsSeen(it);
+			return false;
 		} else {
 			// the crc is not zero, so we might have a broken message
 			logStats(Stats::DF17_BAD_MESSAGE);
@@ -509,6 +529,8 @@ public:
 	/// @return returns true if a message has been send to the output
 	bool handleDF11ShortMessageWithZeroCRC(int streamIndex, const uint64_t& frameShort, bool repaired) {
 		const auto icaoWithCA = ModeS::extractICAOWithCA_Short(frameShort);
+		if ((icaoWithCA & 0xffffffu) == 0)
+			return false;
 		const auto e = m_cache.findWithCA(icaoWithCA);
 		
 		// if the plane is not in table,
@@ -558,39 +580,69 @@ public:
 			// DF17 door: noise never repeats a random address, an aircraft
 			// repeats all the time.
 			const auto icaoWithCA = ModeS::extractICAOWithCA_Short(frameShort);
-			if (!m_cache.findWithCA(icaoWithCA).isValid()) {
-				if (m_cache.confirmTrustCandidate(icaoWithCA)) {
-					if (!Plausibility::checkICAO(icaoWithCA & 0xFFFFFF)) {
-						Log::debug("DemodCore") << "Trying to insert invalid icao from DF-11 " << std::hex << (icaoWithCA & 0xFFFFFF);
-						return false;
-					}
-					// second sighting within the window: trusted, and emitted
-					const auto it = m_cache.insertWithCA(icaoWithCA);
-					m_cache.markAsTrustedSeen(it);
-					logStats(Stats::DF11_ICAO_CA_FOUND_GOOD_CRC);
-					return handleDF11ShortMessageWithZeroCRC(streamIndex, frameShort, false);
-				}
-				// first sighting: enter untrusted so the parity routes see the
-				// address, but emit nothing and leave the repairs locked
-				if (!m_cache.find(icaoWithCA & 0xFFFFFF).isValid()) {
-					if (!Plausibility::checkICAO(icaoWithCA & 0xFFFFFF)) {
-						Log::debug("DemodCore") << "Trying to insert invalid icao from DF-11 " << std::hex << (icaoWithCA & 0xFFFFFF);
-						return false;
-					}
-					const auto it = m_cache.insertWithCA(icaoWithCA);
-					m_cache.markAsSeen(it);
-				}
+			if ((icaoWithCA & 0xffffffu) == 0)
 				return false;
+			const auto e = m_cache.findWithCA(icaoWithCA);
+			if (e.isValid() && m_cache.isTrusted(e)) {
+				// A trusted address can renew immediately. An untrusted entry
+				// still has to satisfy the minimum separation below.
+				m_cache.markAsTrustedSeen(e);
+				logStats(Stats::DF11_ICAO_CA_FOUND_GOOD_CRC);
+				return handleDF11ShortMessageWithZeroCRC(streamIndex, frameShort, false);
 			}
-			logStats(Stats::DF11_ICAO_CA_FOUND_GOOD_CRC);
-			return handleDF11ShortMessageWithZeroCRC(streamIndex, frameShort, false);
+			if (m_cache.confirmTrustCandidate(icaoWithCA)) {
+				// only a fresh insert needs screening; an existing untrusted
+				// entry was already screened when it was first inserted
+				if (!e.isValid() && !Plausibility::checkICAO(icaoWithCA & 0xFFFFFF)) {
+					Log::debug("DemodCore") << "Trying to insert invalid icao from DF-11 " << std::hex << (icaoWithCA & 0xFFFFFF);
+					return false;
+				}
+				const auto it = e.isValid() ? e : m_cache.insertWithCA(icaoWithCA);
+				m_cache.markAsTrustedSeen(it);
+				logStats(Stats::DF11_ICAO_CA_FOUND_GOOD_CRC);
+				return handleDF11ShortMessageWithZeroCRC(streamIndex, frameShort, false);
+			}
+			// first sighting: enter untrusted so the parity routes see the
+			// address, but emit nothing and leave the repairs locked
+			if (e.isValid()) {
+				m_cache.markAsSeen(e);
+			} else if (!m_cache.find(icaoWithCA & 0xFFFFFF).isValid()) {
+				if (!Plausibility::checkICAO(icaoWithCA & 0xFFFFFF)) {
+					Log::debug("DemodCore") << "Trying to insert invalid icao from DF-11 " << std::hex << (icaoWithCA & 0xFFFFFF);
+					return false;
+				}
+				const auto it = m_cache.insertWithCA(icaoWithCA);
+				m_cache.markAsSeen(it);
+			}
+			return false;
 		} else if (crc < 80) {
 			// PI is parity overlaid with the interrogator code (II/SI). Require
-			// a second, separate sighting before adding a new address to the cache.
+			// a second, separate sighting before promoting an address.
 			const auto icaoWithCA = ModeS::extractICAOWithCA_Short(frameShort);
-			if (!m_cache.findWithCA(icaoWithCA).isValid()
-					&& !m_cache.confirmDF11Candidate(icaoWithCA))
+			if ((icaoWithCA & 0xffffffu) == 0)
 				return false;
+			const auto e = m_cache.findWithCA(icaoWithCA);
+			if (!e.isValid() || !m_cache.isTrusted(e)) {
+				// PI is parity overlaid with the interrogator code (II/SI): the
+				// address is in the clear behind a small syndrome. One sighting
+				// proves nothing, noise draws addresses all the time; two
+				// sightings of the same address, even from different interrogators,
+				// are an aircraft. Mark it trusted, inserting it if needed; the
+				// confirming frame stays silent, like the first one, and the next
+				// reply emits.
+				if (!m_cache.confirmDF11Candidate(icaoWithCA))
+					return false;
+				// only a fresh insert needs screening; an existing untrusted
+				// entry was already screened when it was first inserted
+				if (!e.isValid() && !Plausibility::checkICAO(icaoWithCA & 0xFFFFFF)) {
+					Log::debug("DemodCore") << "Trying to insert invalid icao from DF-11 " << std::hex << (icaoWithCA & 0xFFFFFF);
+					return false;
+				}
+				const auto it = e.isValid() ? e : m_cache.insertWithCA(icaoWithCA);
+				m_cache.markAsTrustedSeen(it);
+				logStats(Stats::DF11_ICAO_CA_FOUND_GOOD_CRC);
+				return false;
+			}
 
 			logStats(Stats::DF11_ICAO_CA_FOUND_GOOD_CRC);
 			return handleDF11ShortMessageWithZeroCRC(streamIndex, frameShort ^ crc, false);

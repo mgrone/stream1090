@@ -124,7 +124,7 @@ public:
 	Iterator findWithCA(uint32_t icaoWithCA) const noexcept {
 		const auto key = icaoWithCA & HashMask;
 		if (!isOccupied(key))
-			return (icaoWithCA == 0x0) ? Iterator(key) : Iterator();
+			return Iterator();
 
 		return (m_table[key].icao == icaoWithCA) ? Iterator(key) : Iterator();
 	}
@@ -132,7 +132,7 @@ public:
 	Iterator find(uint32_t icao) const noexcept {
 		const auto key = icao & HashMask;
 		if (!isOccupied(key))
-			return (icao == 0x0) ? Iterator(key) : Iterator();
+			return Iterator();
 
 		return ((m_table[key].icao & 0xffffffu) == icao) ? Iterator(key) : Iterator();
 	}
