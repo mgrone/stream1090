@@ -146,9 +146,15 @@ namespace ModeS {
 			std::min(1.0, std::max(-1.0, arg)))));
 	}
 
-	// Decode a globally unambiguous airborne CPR odd/even pair.
+	// Decode a globally unambiguous airborne CPR odd/even pair. The pair
+	// fixes the latitude zone, but each parity yields its own solution and
+	// the two differ by the distance flown between the frames, so the caller
+	// names the frame the fix is for: preferOdd picks the odd solution.
+	// Reporting the even solution for a newer odd frame misdates the
+	// position by the whole frame gap.
 	inline bool decodeCprGlobal(uint32_t latEven, uint32_t lonEven,
-			uint32_t latOdd, uint32_t lonOdd, double& lat, double& lon) noexcept {
+			uint32_t latOdd, uint32_t lonOdd, bool preferOdd,
+			double& lat, double& lon) noexcept {
 		const double evenLat = double(latEven) / 131072.0;
 		const double oddLat = double(latOdd) / 131072.0;
 		const int j = int(std::floor(59.0 * evenLat - 60.0 * oddLat + 0.5));
@@ -156,16 +162,25 @@ namespace ModeS {
 		double decodedOddLat = (360.0 / 59.0) * (double((j % 59 + 59) % 59) + oddLat);
 		if (decodedEvenLat >= 270.0) decodedEvenLat -= 360.0;
 		if (decodedOddLat >= 270.0) decodedOddLat -= 360.0;
+		if (decodedEvenLat < -90.0 || decodedEvenLat > 90.0
+				|| decodedOddLat < -90.0 || decodedOddLat > 90.0)
+			return false;
 		if (cprNl(decodedEvenLat) != cprNl(decodedOddLat))
 			return false;
 
-		lat = decodedEvenLat;
-		const int nl = cprNl(lat);
-		const int ni = nl > 1 ? nl : 1;
 		const double evenLon = double(lonEven) / 131072.0;
 		const double oddLon = double(lonOdd) / 131072.0;
+		const int nl = cprNl(decodedEvenLat);
 		const int m = int(std::floor(evenLon * double(nl - 1) - oddLon * double(nl) + 0.5));
-		lon = (360.0 / double(ni)) * (double((m % ni + ni) % ni) + evenLon);
+		if (preferOdd) {
+			lat = decodedOddLat;
+			const int ni = nl > 1 ? nl - 1 : 1;
+			lon = (360.0 / double(ni)) * (double((m % ni + ni) % ni) + oddLon);
+		} else {
+			lat = decodedEvenLat;
+			const int ni = nl > 1 ? nl : 1;
+			lon = (360.0 / double(ni)) * (double((m % ni + ni) % ni) + evenLon);
+		}
 		if (lon > 180.0) lon -= 360.0;
 		return true;
 	}

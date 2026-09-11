@@ -12,6 +12,8 @@
 #include <limits>
 #include <memory>
 
+#include "ModeS.hpp"
+
 class ICAOTable {
 public:
 	static constexpr auto TTL_not_trusted { 10 };
@@ -62,6 +64,24 @@ public:
 		int16_t altitude_25ft;
 	};
 
+	struct PositionState {
+		uint32_t cpr_even_lat { 0 };
+		uint32_t cpr_even_lon { 0 };
+		uint32_t cpr_odd_lat { 0 };
+		uint32_t cpr_odd_lon { 0 };
+		uint64_t cpr_even_time { 0 };
+		uint64_t cpr_odd_time { 0 };
+		uint32_t output_even_lat { 0 };
+		uint32_t output_even_lon { 0 };
+		uint32_t output_odd_lat { 0 };
+		uint32_t output_odd_lon { 0 };
+		uint64_t output_even_time { 0 };
+		uint64_t output_odd_time { 0 };
+		int32_t last_lat_e5 { 0 };
+		int32_t last_lon_e5 { 0 };
+		uint64_t position_time { 0 };
+	};
+
     // simple struct keeping an index
 	struct Iterator {
         // index in the table
@@ -86,6 +106,8 @@ public:
 		m_squawkAlt = std::make_unique<SquawkAlt[]>(Size);
 		std::fill(m_squawkAlt.get(), m_squawkAlt.get() + Size,
 			SquawkAlt{0, 0, 0, AltitudeUnset});
+
+		m_positionState = std::make_unique<PositionState[]>(Size);
 
 		m_msgStatTable = std::make_unique<MsgStatEntry[]>(Size);
 		std::fill(m_msgStatTable.get(), m_msgStatTable.get() + Size, MsgStatEntry{0});
@@ -115,8 +137,9 @@ public:
 	 * 1.4 MB against 1 MB of L2, so the probe usually goes to DRAM, and with a
 	 * few hundred live aircraft in 65536 slots it almost always says "no".
 	 *
-	 * m_occupiedBits mirrors "this slot holds an entry" in 8 KB, which stays in
-	 * L1. An empty slot has icao == 0, so a clear bit already settles the
+	 * CPR history lives in a separate cold table so the hot trio stays at that
+	 * size. m_occupiedBits mirrors "this slot holds an entry" in 8 KB, which
+	 * stays in L1. An empty slot has icao == 0, so a clear bit already settles the
 	 * comparison: it matches only a zero query. That makes this an exact
 	 * short circuit rather than a heuristic, and the table is never touched on
 	 * the rejecting path.
@@ -287,6 +310,82 @@ public:
 		return false;
 	}
 
+	// Seed the per-aircraft CPR pair from a CRC-clean airborne position frame.
+	// When an odd/even pair within fitWindow lands close in time, the decoded
+	// position becomes the reference the repair gate checks against.
+	void noteCprClean(const Iterator& entry, bool odd, uint32_t latCpr,
+			uint32_t lonCpr, uint64_t now, uint64_t pairWindow) noexcept {
+		auto& state = m_positionState[entry.key];
+		if (odd) {
+			state.cpr_odd_lat = latCpr;
+			state.cpr_odd_lon = lonCpr;
+			state.cpr_odd_time = now;
+		} else {
+			state.cpr_even_lat = latCpr;
+			state.cpr_even_lon = lonCpr;
+			state.cpr_even_time = now;
+		}
+
+		const uint64_t otherTime = odd ? state.cpr_even_time : state.cpr_odd_time;
+		if (otherTime == 0 || now - otherTime > pairWindow)
+			return;
+
+		double lat = 0.0;
+		double lon = 0.0;
+		// the frame that just arrived is the more recent one, so the fix is
+		// recorded for its parity's solution; recording the older parity's
+		// solution would stamp a past position with the current time
+		if (!ModeS::decodeCprGlobal(state.cpr_even_lat, state.cpr_even_lon,
+				state.cpr_odd_lat, state.cpr_odd_lon, odd, lat, lon))
+			return;
+		state.last_lat_e5 = int32_t(lat * 1e5);
+		state.last_lon_e5 = int32_t(lon * 1e5);
+		state.position_time = now;
+	}
+
+	// Track what a downstream decoder actually received. Repaired positions
+	// can be safe individually but incompatible with one another as a global
+	// pair, so they must participate in the next opposite-parity check too.
+	void noteCprOutput(const Iterator& entry, bool odd, uint32_t latCpr,
+			uint32_t lonCpr, uint64_t now) noexcept {
+		auto& state = m_positionState[entry.key];
+		if (odd) {
+			state.output_odd_lat = latCpr;
+			state.output_odd_lon = lonCpr;
+			state.output_odd_time = now;
+		} else {
+			state.output_even_lat = latCpr;
+			state.output_even_lon = lonCpr;
+			state.output_even_time = now;
+		}
+	}
+
+	bool cachedPosition(const Iterator& entry, int32_t& latE5, int32_t& lonE5,
+			uint64_t now, uint64_t maxAge) const noexcept {
+		const auto& state = m_positionState[entry.key];
+		if (state.position_time == 0 || now - state.position_time > maxAge)
+			return false;
+		latE5 = state.last_lat_e5;
+		lonE5 = state.last_lon_e5;
+		return true;
+	}
+
+	// The last emitted CPR bits of the opposite parity, when they are fresh
+	// enough to pair globally with a frame that just arrived. This is the pair
+	// a downstream receiver would form, so a repaired frame must be validated
+	// against exactly it: its raw CPR bits go out unchanged.
+	bool cachedOppositeCpr(const Iterator& entry, bool odd, uint32_t& latCpr,
+			uint32_t& lonCpr, uint64_t now, uint64_t maxAge) const noexcept {
+		const auto& state = m_positionState[entry.key];
+		const uint64_t otherTime = odd
+			? state.output_even_time : state.output_odd_time;
+		if (otherTime == 0 || now - otherTime > maxAge)
+			return false;
+		latCpr = odd ? state.output_even_lat : state.output_odd_lat;
+		lonCpr = odd ? state.output_even_lon : state.output_odd_lon;
+		return true;
+	}
+
 	MsgStatEntry& getMsgStatEntry(const Iterator& it) noexcept {
 		return m_msgStatTable[it.key];
 	}
@@ -398,6 +497,7 @@ private:
 		clearOccupiedBit(index);
 		m_msgStatTable[index].last_time = 0;
 		m_squawkAlt[index] = SquawkAlt{0, 0, 0, AltitudeUnset};
+		m_positionState[index] = PositionState{};
 	}
 
 	
@@ -413,6 +513,9 @@ private:
 
 	// the table for the squawk and altitude data  
 	std::unique_ptr<SquawkAlt[]> m_squawkAlt;
+
+	// CPR history is cold state; keep it out of the hot squawk/altitude table.
+	std::unique_ptr<PositionState[]> m_positionState;
 
 	// the table with the msg timestamps
 	std::unique_ptr<MsgStatEntry[]> m_msgStatTable;

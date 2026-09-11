@@ -8,7 +8,7 @@ situations, a higher overall message rate can be achieved compared to a preamble
 
 ## Features
 - CRC-based message framing: Cannot miss a message, because it missed the preamble.
-- Error correction: The CRC sum is computed regardless of the data, so why not use it for error correction whenever possible.
+- Error correction: The CRC sum is computed regardless of the data, so why not use it for error correction whenever possible. Repaired airborne positions require a recent clean position reference and a plausible global CPR pair with a recently emitted opposite-parity frame; see [Advanced Usage](./README_ADV.md).
 - Not output sensitive: The majority of the computational work does not depend on the message rate.
 - MLAT support.
 - Support for Airspy and RTL-SDR dongles.

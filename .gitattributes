@@ -8,3 +8,7 @@ debian/copyright      text eol=lf
 debian/install        text eol=lf
 debian/*.service      text eol=lf
 debian/*.conf         text eol=lf
+
+# These headers are stored with CRLF; do not report their line endings as whitespace.
+include/DemodCore.hpp  whitespace=cr-at-eol
+include/ModeS.hpp      whitespace=cr-at-eol

@@ -168,6 +168,7 @@ if(BUILD_TESTING)
     stream1090_add_test(mode_s_altitude_test tests/ModeSAltitudeTest.cpp)
     stream1090_add_test(mode_s_position_test tests/ModeSPositionTest.cpp)
     stream1090_add_test(rtlsdr_serial_test tests/RtlSdrSerialTest.cpp)
+    stream1090_add_test(position_repair_test tests/PositionRepairTest.cpp)
     stream1090_add_test(noise_false_positive_test tests/NoiseFalsePositiveTest.cpp)
     target_compile_definitions(noise_false_positive_test PRIVATE
         ${PREAMBLE_GATE_DEF}

@@ -158,9 +158,16 @@ public:
 				return false;
 			m_cache.markAsSeen(it);
 		}
-		
+
 		logStatsSent(downlinkFormat);
-		e.last_time = m_currTime;		
+		e.last_time = m_currTime;
+		if ((downlinkFormat == 17 || downlinkFormat == 18)
+				&& isAirbornePosition(ModeS::extractMEType(frame))) {
+			m_cache.noteCprOutput(it,
+				ModeS::extractAirbornePositionCprOdd(frame),
+				ModeS::extractAirbornePositionCprLat(frame),
+				ModeS::extractAirbornePositionCprLon(frame), m_currTime);
+		}
 		m_messageHandler.handleLong(m_currTime, frame);
 		return true;
 	}
@@ -307,6 +314,7 @@ public:
 			
 			// if we know this plane
 			if (e.isValid()) {
+				noteCleanPosition(e, frame, m_currTime);
 				m_cache.markAsTrustedSeen(e);
 				// and send the 112 bit message to the output
 				return sendFrameLongAligned(streamIndex, downlinkFormat, crc, frame, e);
@@ -335,9 +343,11 @@ public:
 					// the entry had expired since the first sighting, so the
 					// second sighting does not reach the known branch
 					m_cache.markAsTrustedSeen(it);
+					noteCleanPosition(it, frame, m_currTime);
 					return sendFrameLongAligned(streamIndex, downlinkFormat, crc, frame, it);
 				}
 				m_cache.markAsSeen(it);
+				noteCleanPosition(it, frame, m_currTime);
 				return false;
 			}
 		} else {
@@ -361,7 +371,7 @@ public:
 				if (!e.isValid())
 					return false;
 
-				if (m_cache.isTrusted(e)) {
+				if (m_cache.isTrusted(e) && repairPositionPlausible(e, toRepair)) {
 					// log that fixing the message was a success
 					logStats(Stats::DF17_REPAIR_SUCCESS);
 					// and keep the trusted entry alive
@@ -440,6 +450,8 @@ public:
 		const auto icaoWithCA = ModeS::extractICAOWithCA_Long(repaired);
 		const auto e = m_cache.findWithCA(icaoWithCA);
 		if (!e.isValid() || !m_cache.isTrusted(e))
+			return false;
+		if (!repairPositionPlausible(e, repaired))
 			return false;
 
 		logStats(Stats::DF17_REPAIR_SUCCESS);
@@ -625,6 +637,83 @@ public:
 
 
 private:
+	static constexpr uint64_t CprPairWindowTicks { 10'000'000ull * NumStreams };
+	static constexpr uint64_t PositionMaxAgeTicks { 60'000'000ull * NumStreams };
+	static constexpr double RepairDistanceLimitKm { 100.0 };
+
+	static bool isAirbornePosition(uint8_t typeCode) noexcept {
+		return (typeCode >= 9 && typeCode <= 18)
+			|| (typeCode >= 20 && typeCode <= 22);
+	}
+
+	void noteCleanPosition(const ICAOTable::Iterator& entry, const Bits128& frame,
+			uint64_t sampleTime) noexcept {
+		if (!isAirbornePosition(ModeS::extractMEType(frame)))
+			return;
+		m_cache.noteCprClean(entry,
+			ModeS::extractAirbornePositionCprOdd(frame),
+			ModeS::extractAirbornePositionCprLat(frame),
+			ModeS::extractAirbornePositionCprLon(frame), sampleTime,
+			CprPairWindowTicks);
+	}
+
+	static double distanceKm(double lat1, double lon1, double lat2, double lon2) noexcept {
+		constexpr double EarthRadiusKm = 6371.0;
+		constexpr double DegreesToRadians = 3.14159265358979323846 / 180.0;
+		const double deltaLat = (lat2 - lat1) * DegreesToRadians;
+		const double deltaLon = (lon2 - lon1) * DegreesToRadians;
+		const double a = std::sin(deltaLat * 0.5) * std::sin(deltaLat * 0.5)
+			+ std::cos(lat1 * DegreesToRadians) * std::cos(lat2 * DegreesToRadians)
+			* std::sin(deltaLon * 0.5) * std::sin(deltaLon * 0.5);
+		return 2.0 * EarthRadiusKm * std::asin(std::sqrt(a));
+	}
+
+	bool repairPositionPlausible(const ICAOTable::Iterator& entry,
+			const Bits128& frame) const noexcept {
+		if (!isAirbornePosition(ModeS::extractMEType(frame)))
+			return true;
+
+		int32_t refLatE5 = 0;
+		int32_t refLonE5 = 0;
+		// fail closed: without a clean-pair reference there is nothing the
+		// frame can be near, so the promise "only near a clean-pair position"
+		// means the repair is rejected, not waved through
+		if (!m_cache.cachedPosition(entry, refLatE5, refLonE5,
+				m_currTime, PositionMaxAgeTicks))
+			return false;
+
+		const double refLat = refLatE5 * 1e-5;
+		const double refLon = refLonE5 * 1e-5;
+		const bool odd = ModeS::extractAirbornePositionCprOdd(frame);
+		const uint32_t latCpr = ModeS::extractAirbornePositionCprLat(frame);
+		const uint32_t lonCpr = ModeS::extractAirbornePositionCprLon(frame);
+
+		// The frame goes out with its raw CPR bits, and a receiver downstream
+		// pairs them with the most recently emitted opposite parity for a
+		// global decode. A
+		// flipped bit can decode locally within the gate yet move that global
+		// solution to another latitude zone, so the pair a receiver will
+		// actually form is what has to pass here. The repaired frame is the
+		// more recent one, so its parity's solution is the fix to check.
+		uint32_t otherLatCpr = 0;
+		uint32_t otherLonCpr = 0;
+		if (m_cache.cachedOppositeCpr(entry, odd, otherLatCpr, otherLonCpr,
+				m_currTime, CprPairWindowTicks)) {
+			double lat = 0.0;
+			double lon = 0.0;
+			if (!ModeS::decodeCprGlobal(odd ? otherLatCpr : latCpr,
+					odd ? otherLonCpr : lonCpr,
+					odd ? latCpr : otherLatCpr,
+					odd ? lonCpr : otherLonCpr, odd, lat, lon))
+				return false;
+			return distanceKm(refLat, refLon, lat, lon) <= RepairDistanceLimitKm;
+		}
+
+		// A local fix cannot validate the pair a later clean frame will form.
+		// Withhold the repair until an emitted opposite parity is pairable.
+		return false;
+	}
+
 	const void* m_confidenceCtx = nullptr;
 	ConfidenceFn m_confidenceFn = nullptr;
 	const void* m_preambleCtx = nullptr;
