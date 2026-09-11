@@ -360,33 +360,3 @@ private:
     DevicePtr m_device = nullptr;
     RuntimeVars m_runtimeVars;
 };
-
-template<typename Tuple, typename F>
-constexpr bool for_each_in_tuple(const Tuple& t, F&& f) {
-    bool done = false;
-    std::apply([&](auto const&... elems) {
-        (( !done && f(elems) ? done = true : false ), ...);
-    }, t);
-    return done;
-}
-
-// Returns nothing when no preset matches the requested configuration, and
-// otherwise the outcome of the run: true when the instance ran and shut down
-// normally, false when it gave up (for example because the device never came up).
-std::optional<bool> runInstanceFromPresets(const CompileTimeVars& compileTimeVars, const RuntimeVars& runtimeVars) {
-    std::optional<bool> outcome;
-    for_each_in_tuple(presets, [&](auto const& p) {
-        using P = std::decay_t<decltype(p)>;
-
-        if (P::RawFormatType::id  == compileTimeVars.rawFormat &&
-            P::inputRate          == compileTimeVars.inputRate &&
-            P::outputRate         == compileTimeVars.outputRate &&
-            P::pipelineOption     == compileTimeVars.pipelineOption) 
-        {
-            outcome = MainInstance<P>(runtimeVars).run();
-            return true;
-        }
-        return false;
-    });
-    return outcome;
-}
