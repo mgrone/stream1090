@@ -294,6 +294,18 @@ cmake .. -DENABLE_STATS=OFF && cmake --build .
 ```
 
 ## Experimental Features
+
+### FIR filter optimiser
+
+`filter_utils/filter_opt.py` searches for FIR taps by replaying an IQ capture
+through `stream1090`. Run it from `filter_utils` after installing
+`filter_utils/requirements.txt`; `--data`, `--fs`, and `--fs-up` are
+required. Evaluations run serially by default. Use `--workers N` for N
+parallel decoder processes or `--workers -1` for all CPU cores.
+`--patience N` stops after N runs without improvement (default 3, zero
+disables it), while `--max-runs N` sets a hard cap. See `--help` for the
+remaining search and resume options.
+
 ### SIGHUP support
 
 There is now basic experimental support for the SIGHUP signal. This signal can be send via ```kill -HUP <process id of stream1090>``` telling stream1090 to reload the device specific ini file. You can figure out the PID via ```ps```or ```pidof stream1090``` when it is running.
