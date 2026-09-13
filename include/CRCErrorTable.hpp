@@ -18,7 +18,7 @@ namespace CRC {
 	template<size_t size, bool resolveCollisions = false>
 	class BaseErrorTable {
 	public:
-		constexpr BaseErrorTable() : m_keys(), m_ops() {
+		constexpr BaseErrorTable() : m_keys(), m_ops(), m_occupied() {
 			for (size_t i = 0; i < size; i++) {
 				m_keys[i] = 0x0;
 				m_ops[i] = fixop_t({0,0});
@@ -27,6 +27,14 @@ namespace CRC {
 		
 		constexpr fixop_t lookup(crc_t crc) const noexcept {
 			size_t index = crc % size;
+			// The tables live on the bad-message path, which in practice is fed
+			// noise syndromes: the overwhelming majority of lookups are misses
+			// and have to touch nothing but a miss filter. The home slot of a
+			// bucket can only hold an entry the moment something lands in that
+			// bucket (a collision chains off the home slot), so a clear bit
+			// settles the lookup without reading m_keys at all.
+			if (!isOccupied(index))
+				return fixop_t({0,0});
 			if constexpr (!resolveCollisions) {
 				if (m_keys[index] == crc) {
 					return m_ops[index];
@@ -60,11 +68,13 @@ namespace CRC {
 				if (m_keys[index] == 0) {
 					m_keys[index] = crc;
 					m_ops[index] = op;
+					setOccupied(index);
 				}
 			} else {
 				if (m_keys[index] == 0) {
 					m_keys[index] = crc;
 					m_ops[index] = op;
+					setOccupied(index);
 					return;
 				}
 				if ((m_keys[index] & ~collisionFlag) == crc) {
@@ -77,6 +87,7 @@ namespace CRC {
 					if (m_keys[index] == 0) {
 						m_keys[index] = crc;
 						m_ops[index] = op;
+						setOccupied(index);
 						return;
 					}
 					if ((m_keys[index] & ~collisionFlag) == crc) {
@@ -91,6 +102,20 @@ namespace CRC {
 		static constexpr crc_t collisionFlag = crc_t{1} << 31;
 		std::array<crc_t, size> m_keys;	
 		std::array<fixop_t, size> m_ops;
+
+		// One bit per slot mirroring "a key lives here", so a miss never has to
+		// touch m_keys. The DF17 table is 6790 slots, so this is under a
+		// kilobyte and stays in L1.
+		static constexpr size_t wordCount = (size + 63) / 64;
+		std::array<uint64_t, wordCount> m_occupied;
+
+		constexpr bool isOccupied(size_t index) const noexcept {
+			return (m_occupied[index >> 6] >> (index & 63)) & 0x1;
+		}
+
+		constexpr void setOccupied(size_t index) noexcept {
+			m_occupied[index >> 6] |= (uint64_t(1) << (index & 63));
+		}
 	};
 
 	// Error correction table used for extended squitter messages
