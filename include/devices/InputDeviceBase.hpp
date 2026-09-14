@@ -9,6 +9,7 @@
 #include "Sampler.hpp"
 #include "RingBuffer.hpp"
 #include "IniConfig.hpp"
+#include "devices/SampleDropEventGate.hpp"
 #include <string>
 #include <atomic>
 #include <chrono>
@@ -23,7 +24,8 @@ public:
         : m_sampleRate(sampleRate), m_bufferWriter(bufferWriter),
           // a drop event must cost at least 2 ms of stream: far above the
           // +-100 ppm crystal drift, far below one 256 KB USB transfer
-          m_dropEventThreshold((uint64_t)sampleRate / 500)
+          m_dropEventThreshold((uint64_t)sampleRate / 500),
+          m_dropEventGate(m_dropEventThreshold)
     {
         m_lastSignOfLife.store(std::chrono::steady_clock::now(),
                              std::memory_order_relaxed);
@@ -63,7 +65,7 @@ public:
     // callback thread; the sample-drop accounting happens here because
     // only at arrival time is the wall clock comparable to the delivered
     // count without paying the quantization of the USB transfer queue
-    // (one 256 KB transfer = 131072 IQ pairs = ~110 ms at 2.4 Msps).
+    // (one 256 KB transfer = 131072 IQ pairs = ~55 ms at 2.4 Msps).
     void writeDataToBuffer(const T* data, size_t n) {
         const auto now = std::chrono::steady_clock::now();
         const uint64_t pairs = m_iqPairsDelivered.fetch_add(n / 2, std::memory_order_relaxed)
@@ -83,6 +85,7 @@ public:
             m_accT0 = now;
             m_accPairs0 = pairs;
             m_histCount = 0;
+            m_dropEventGate.reset();
             m_dropDeficit.store(0, std::memory_order_relaxed);
         } else {
             const double secs = std::chrono::duration<double>(now - m_accT0).count();
@@ -111,28 +114,32 @@ public:
                 // crystal offset makes the cumulative deficit drift at up
                 // to ~150 ppm (under 500 pairs per second, far below the
                 // event threshold). Comparing the deficit against ~1 s ago
-                // keeps both out: real loss arrives in whole USB transfers
-                // (131072 pairs) and dwarfs the drift.
+                // finds a candidate; SampleDropEventGate then gives the 15
+                // librtlsdr transfer buffers a full second to catch up before
+                // it confirms a loss.
                 m_deficitHist[m_histHead] = {now, deficit};
                 m_histHead = (m_histHead + 1) % kDeficitHistory;
                 if (m_histCount < kDeficitHistory)
                     m_histCount++;
 
-                // find the oldest sample that is at least 900 ms old
+                // Find the newest sample that is at least 900 ms old. head
+                // points at the next insertion slot; before the ring is full,
+                // starting at head would inspect zero-initialised entries.
                 int64_t past = -1;
+                const size_t oldest = (m_histHead + kDeficitHistory - m_histCount) % kDeficitHistory;
                 for (size_t i = 0; i < m_histCount; i++) {
-                    const auto& s = m_deficitHist[(m_histHead + i) % kDeficitHistory];
+                    const auto& s = m_deficitHist[(oldest + i) % kDeficitHistory];
                     if (now - s.t >= std::chrono::milliseconds(900)) {
                         past = s.deficit;
                     } else {
                         break;
                     }
                 }
-                if (past >= 0 && deficit - past > (int64_t)m_dropEventThreshold &&
-                    now - m_lastEventTime > std::chrono::milliseconds(500)) {
-                    m_lastEventGrowth = deficit - past;
-                    m_lastEventTime = now;
-                    m_dropEvents.fetch_add(1, std::memory_order_relaxed);
+                if (past >= 0) {
+                    if (const auto growth = m_dropEventGate.observe(now, deficit, past)) {
+                        m_lastEventGrowth = *growth;
+                        m_dropEvents.fetch_add(1, std::memory_order_relaxed);
+                    }
                 }
             }
         }
@@ -188,8 +195,8 @@ protected:
     std::atomic<std::chrono::steady_clock::time_point> m_lastSignOfLife;
 
     // ---- sample-drop accounting, callback thread only ----
-    // deficit history: 32 samples cover well over 1 s of callbacks (one
-    // callback per 256 KB transfer = ~82-110 ms)
+    // Deficit history: at the fastest RTL-SDR preset, 32 default 256 KB
+    // transfers cover about 1.3 seconds (one transfer is 131072 IQ pairs).
     static constexpr size_t kDeficitHistory = 32;
     struct DeficitSample {
         std::chrono::steady_clock::time_point t;
@@ -198,12 +205,12 @@ protected:
     DeficitSample m_deficitHist[kDeficitHistory]{};
     size_t m_histHead = 0;
     size_t m_histCount = 0;
-    std::chrono::steady_clock::time_point m_lastEventTime{};
     std::chrono::steady_clock::time_point m_lastAccounting{};
     std::chrono::steady_clock::time_point m_firstCallback{};
     std::chrono::steady_clock::time_point m_accT0{};
     uint64_t m_accPairs0 = 0;
     const uint64_t m_dropEventThreshold;
+    SampleDropEventGate m_dropEventGate;
     std::atomic<int64_t> m_dropDeficit{0};
     std::atomic<int64_t> m_lastEventGrowth{0};
     std::atomic<uint64_t> m_dropEvents{0};
