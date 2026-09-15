@@ -34,10 +34,9 @@ struct Preset {
 #if defined(STREAM1090_CUSTOM_INPUT) && STREAM1090_CUSTOM_INPUT
 constexpr auto presets = std::make_tuple(
     // Custom Input
-    Preset<IQ_FLOAT32, Sampler_2_0_to_2_0_Mhz, IQPipelineOptions::NONE>{},
-    Preset<IQ_FLOAT32, Sampler_2_0_to_4_0_Mhz, IQPipelineOptions::NONE>{},
-    Preset<IQ_FLOAT32, Sampler_2_0_to_8_0_Mhz, IQPipelineOptions::NONE>{},
-    Preset<IQ_FLOAT32, Sampler_4_0_to_4_0_Mhz, IQPipelineOptions::NONE>{}
+    Preset<IQ_INT16_ANTSDR, Sampler_4_0_to_4_0_Mhz, IQPipelineOptions::NONE>{},
+    Preset<IQ_INT16_ANTSDR, Sampler_8_0_to_8_0_Mhz, IQPipelineOptions::NONE>{},
+    Preset<IQ_INT16_ANTSDR, Sampler_20_0_to_20_0_Mhz, IQPipelineOptions::NONE>{}
 );
 #else 
 // One tuple per device backend. They are combined into `presets` below for

@@ -20,9 +20,10 @@ inline constexpr int SampleFracBits = 14;
 inline constexpr int SampleOne      = 1 << SampleFracBits;
 
 enum class InputFormatType {
-    IQ_UINT8_RTL_SDR,
-    IQ_UINT16_RAW_AIRSPY,
-    IQ_FLOAT32
+    IQ_UINT8_RTL_SDR, // 8 bit
+    IQ_UINT16_RAW_AIRSPY, // 12 bit
+    IQ_INT16_ANTSDR, // 12 bit
+    IQ_FLOAT32 // float
 };
 
 struct IQ_UINT8_RTL_SDR {
@@ -61,6 +62,26 @@ struct IQ_UINT16_RAW_AIRSPY {
         return int16_t((int32_t(v) * 2 - 4095) * (SampleOne / 4096));
     }
 };
+
+struct IQ_INT16_ANTSDR {
+    using RawType = int16_t;
+    static constexpr InputFormatType id = InputFormatType::IQ_INT16_ANTSDR;
+
+    // 12-bit signed integer centered at 0 (-2048 to +2047).
+    // Scales to floating-point range [-1.0, 1.0].
+    static inline float convertScalar(int16_t v) noexcept {
+        constexpr float scale = 1.0f / 2048.0f;
+        return float(v) * scale;
+    }
+
+    // 12-bit signed integer centered at 0, scaled exactly to Q14.
+    // Since full scale for the 12-bit ADC is 2048, and full scale for Q14 
+    // is SampleOne (16384), we shift the value left by exactly 3 bits (16384 / 2048 = 8).
+    static inline int16_t convertFixed(int16_t v) noexcept {
+        return int16_t(int32_t(v) * (SampleOne / 2048)); 
+    }
+};
+
 
 struct IQ_FLOAT32 {
     using RawType = float;
