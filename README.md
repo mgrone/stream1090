@@ -339,6 +339,12 @@ I would like to thank several people that provided sample data, tried it in thei
 
 rhodan76, wiedehopf, caius, abcd567, cnuver, jrg1956, jimmerk2. 
 
-I would also thank Airspy and Nooelec for their support!
+I would also thank 
+
+- [Airspy](https://airspy.com/)
+- [Nooelec](https://www.nooelec.com/)
+- [MicroPhase](https://www.crowdsupply.com/microphase-technology)
+
+for their support and provided us with hardware samples!
 
 Thank you all very much!
