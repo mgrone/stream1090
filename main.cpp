@@ -69,7 +69,7 @@ void print_rate_pairs() {
     std::cout << "Supported sample rate combinations:\n";
     for (auto& p : pairs) {
 #if defined(STREAM1090_CUSTOM_INPUT) && STREAM1090_CUSTOM_INPUT
-        std::string fmt = "float32 IQ";
+        std::string fmt = " custom";
 #else 
         std::string fmt = (p.in < 6'000'000) ? "uint8 IQ" : "uint16 IQ";
 #endif
@@ -419,8 +419,13 @@ int main(int argc, char** argv) {
     // Format and pipeline
     // ------------------------
     if (GlobalOptions::CustomInputMode) {
-        c_vars.rawFormat = InputFormatType::IQ_FLOAT32;
-        c_vars.pipelineOption = IQPipelineOptions::NONE;
+        // this needs fixing!!!
+        c_vars.rawFormat = InputFormatType::IQ_INT16_ANTSDR;
+        if (args.iq_filter) {
+            c_vars.pipelineOption = IQPipelineOptions::IQ_FIR_RTL_SDR;
+        } else {
+            c_vars.pipelineOption = IQPipelineOptions::NONE;
+        }
     } else {
         // the default behaviour
         c_vars.rawFormat = (c_vars.inputRate < Rate_6_0_Mhz)
