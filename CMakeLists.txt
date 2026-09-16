@@ -75,7 +75,7 @@ if(ENABLE_RTLSDR_BLOG)
     add_subdirectory(thirdparty/rtl-sdr-blog)
 
     list(APPEND DEVICE_SOURCES       src/devices/RtlSdrDevice.cpp)
-    list(APPEND DEVICE_LIBS          rtlsdr)
+    list(APPEND DEVICE_LIBS          rtlsdr_static)
     list(APPEND DEVICE_INCLUDE_DIRS  thirdparty/rtl-sdr-blog/include)
     list(APPEND DEVICE_DEFINITIONS   STREAM1090_HAVE_RTLSDR)
     list(APPEND DEVICE_DEFINITIONS   STREAM1090_HAVE_RTLSDR_BLOG)
