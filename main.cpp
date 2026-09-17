@@ -192,6 +192,7 @@ bool parse_cli(int argc, char** argv, CliArgs& out) {
     return true;
 }
 
+// This needs plenty of work. It is is basically going to be a free for all.
 SampleRate parse_sample_rate(const std::string& raw) {
     // Strip optional trailing 'M' or 'm'
     std::string s = raw;
