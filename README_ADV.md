@@ -43,7 +43,53 @@ This functionality is still present in stream1090 and will not be deprecated for
     ```
     **Important:** We use here ```-t 4``` which tells ```airspy_rx``` to output a single U16_REAL sample at 12Msps. Stream1090 works usually on an IQ pair basis. So an input sample rate of ```-s 6``` means, it is expecting pairs not single values. That is why we use ```-a 12000000```, because 2 x 6 Msps = 12 Msps. You also want to replace the gain setting with your own.  
 
-TODO: insert socat example
+3. The libiio way (AntSDR / PlutoSDR):
+    Devices running on the `libiio` framework bring an agile RF frontend capable of setting almost any arbitrary sampling rate. However, `stream1090` requires its sample rates and upsample rates to be **known at compile time** to maintain its hyper-optimized DSP performance loops. 
+    
+    Using the `stdin` pipeline allows us to program the remote hardware over network URIs while keeping the processing host-side. The following wrapper script programs the remote registers, sets the optional filter flag (default is off), and forwards the decoded stream via `socat`:
+
+    ```bash
+    #!/bin/bash
+
+    # Check if a sampling speed argument was provided
+    if [ -z "$1" ] || [ -z "$3" ]; then
+        echo "Usage: ./start_with.sh <sampling_rate_in_mhz> <upsampling_factor> <hardware_gain_db> [enable_filter=0/1]"
+        echo "Example: ./start_with.sh 4 1 60"
+        exit 1
+    fi
+
+    SPEED_MHZ=$1
+    SPEED_UP=$2
+    GAIN_DB=$3
+
+    # Optional filter flag configuration (Default: off)
+    ENABLE_FILTER=${4:-0}
+    FILTER_FLAG=""
+    if [ "$ENABLE_FILTER" -eq 1 ]; then
+        FILTER_FLAG="-q"
+    fi
+
+    SPEED_HZ=$((SPEED_MHZ * 1000000))
+    ANT_IP="192.168.178.35"
+    PI_IP="raspberrypi"
+
+    echo "[Local Wrapper] Configuring AntSDR ($ANT_IP) to ${SPEED_MHZ} MHz..."
+
+    # Remotely program the AD9361 registers over network URI
+    iio_attr -u "ip:$ANT_IP" -i -c ad9361-phy voltage0 sampling_frequency $SPEED_HZ
+    iio_attr -u "ip:$ANT_IP" -o -c ad9361-phy altvoltage0 frequency 1090000000
+    iio_attr -u "ip:$ANT_IP" -i -c ad9361-phy voltage0 gain_control_mode manual
+    iio_attr -u "ip:$ANT_IP" -i -c ad9361-phy voltage0 hardwaregain $GAIN_DB
+
+    echo "[Local Wrapper] Starting streaming pipeline to local stream1090..."
+
+    # Pull remote network bytes -> parse on local host -> socket out via socat to Pi
+    iio_readdev -u "ip:$ANT_IP" -b 15360 cf-ad9361-lpc voltage0 voltage1 | \
+      ./build/stream1090 -v -s $SPEED_MHZ -u $SPEED_UP $FILTER_FLAG | \
+      socat -u - TCP4:$PI_IP:30001
+    ```
+
+    **Important:** Because your sample rates and upsample rates are locked down at compile time, passing a `-s` parameter that does not match what your binary was compiled for will fail to process properly. The wrapper script ensures that your agile hardware is always locked into your exact binary specifications before processing begins.
 
 ## Recording Sample Datasets
 Using stdin to feed stream1090 with device data has one big advantage when it comes to benchmarking: You can easily capture data once and feed it multiple times with different parameters into stream1090 just by using standard unix tools. We only provide here an example for RTL-SDR. Both ```rtl_sdr``` and ```airspy_rx``` have an option where you can specify the number of samples to capture and where to put them. We are not going to use this. We will just use pipes and the timeout tool.
