@@ -212,7 +212,7 @@ SampleRate parse_sample_rate(const std::string& raw) {
     int hz = static_cast<int>(mhz * 1'000'000.0f + 0.5f);
 
     // Match directly against enum values
-    switch (hz) {
+    /*switch (hz) {
         case Rate_1_0_Mhz:  return Rate_1_0_Mhz;
         case Rate_2_0_Mhz:  return Rate_2_0_Mhz;
         case Rate_2_4_Mhz:  return Rate_2_4_Mhz;
@@ -229,7 +229,8 @@ SampleRate parse_sample_rate(const std::string& raw) {
         case Rate_24_0_Mhz: return Rate_24_0_Mhz;
         case Rate_40_0_Mhz: return Rate_40_0_Mhz;
         case Rate_48_0_Mhz: return Rate_48_0_Mhz;
-    }
+    }*/
+    return static_cast<SampleRate>(hz);
 
     std::cerr << "Unsupported sample rate: " << raw << "\n";
     std::exit(1);

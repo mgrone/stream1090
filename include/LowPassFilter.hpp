@@ -58,9 +58,25 @@ namespace FirDetail {
     // tap sum still fits an int32 as long as the taps sum to about one
     inline constexpr int TapFracBits = 15;
 
-    constexpr int16_t toQ15(float t) noexcept {
+    /*constexpr int16_t toQ15(float t) noexcept {
         const float x = t * float(1 << TapFracBits);
         return int16_t(x >= 0.0f ? x + 0.5f : x - 0.5f);
+    }*/
+    constexpr int16_t toQ15(float t) noexcept
+    {
+        constexpr float scale = float(1 << TapFracBits);
+
+        const float x = t * scale;
+
+        if (x >= 32767.0f)
+            return 32767;
+
+        if (x <= -32768.0f)
+            return -32768;
+
+        return static_cast<int16_t>(
+            x >= 0.0f ? x + 0.5f : x - 0.5f
+        );
     }
 
     /// Filters one contiguous block. w* hold history followed by the new
@@ -169,6 +185,9 @@ public:
 
     /// Filters a whole block in place. This is the path the input reader takes.
     void applyBlock(int16_t* __restrict I, int16_t* __restrict Q, size_t n) noexcept {
+        if (isIdentityFallback)
+            return;
+
         alignas(32) int16_t workI[WorkSize];
         alignas(32) int16_t workQ[WorkSize];
 
@@ -205,6 +224,7 @@ private:
     static constexpr auto bufferSize = std::bit_ceil(numTaps);
     static constexpr bool areTapsOdd = LowPassTaps::areCustomTapsOdd<inputRate, outputRate>();
     static constexpr bool areTapsSymmetric = LowPassTaps::areCustomTapsSymmetric<inputRate, outputRate>();
+    static constexpr bool isIdentityFallback = LowPassTaps::isIdentityFallback<inputRate, outputRate>();
 
     static constexpr size_t numPaddedTaps = FirDetail::padTapCount(numTaps);
 

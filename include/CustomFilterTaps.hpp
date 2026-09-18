@@ -41,4 +41,11 @@ constexpr bool areCustomTapsOdd() {
     return (getCustomTaps<inputRate, outputRate>().size() % 2) != 0;
 }
 
+// checks if this is the fallback
+template<SampleRate inputRate, SampleRate outputRate>
+constexpr bool isIdentityFallback() {
+    const auto taps = getCustomTaps<inputRate, outputRate>();
+    return (taps.size() == 1) && (taps[0] == 1.0f);
+}
+
 } // namespace LowPassTaps

@@ -19,17 +19,23 @@ enum SampleRate {
     Rate_3_0_Mhz  =  3000000,
     Rate_3_2_Mhz  =  3200000,
     Rate_4_0_Mhz  =  4000000,
+    Rate_5_0_Mhz  =  5000000,
     Rate_6_0_Mhz  =  6000000,
+    Rate_7_0_Mhz  =  7000000,
     Rate_8_0_Mhz  =  8000000,
+    Rate_9_0_Mhz  =  9000000,
     Rate_10_0_Mhz = 10000000,
+    Rate_11_0_Mhz = 11000000,
     Rate_12_0_Mhz = 12000000,
     Rate_16_0_Mhz = 16000000,
     Rate_20_0_Mhz = 20000000,
     Rate_24_0_Mhz = 24000000,
     Rate_30_0_Mhz = 30000000,
+    Rate_32_0_Mhz = 32000000,
     Rate_36_0_Mhz = 36000000,
     Rate_40_0_Mhz = 40000000,
-    Rate_48_0_Mhz = 48000000
+    Rate_48_0_Mhz = 48000000,
+    Rate_56_0_Mhz = 56000000
 };
 
 template<SampleRate _InputSampleRate, 

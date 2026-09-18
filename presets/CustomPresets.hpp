@@ -11,7 +11,19 @@ ADD_PRESET(Signed_12bit, 6, 12, Internal)
 ADD_PRESET(Signed_12bit, 6, 24, None)
 ADD_PRESET(Signed_12bit, 6, 24, Internal)
 
-ADD_PRESET(Airspy, 8, 12, None)
+ADD_PRESET(Signed_12bit, 8, 24, None)
+ADD_PRESET(Signed_12bit, 8, 24, Internal)
+ADD_PRESET(Signed_12bit, 8, 24, File)
+
+ADD_PRESET(Signed_12bit, 12, 24, None)
+ADD_PRESET(Signed_12bit, 12, 24, Internal)
+ADD_PRESET(Signed_12bit, 12, 24, File)
+
+ADD_PRESET(Signed_12bit, 24, 24, None)
+ADD_PRESET(Signed_12bit, 24, 24, Internal)
+ADD_PRESET(Signed_12bit, 24, 24, File)
+
+
 /*ADD_PRESET(Signed_12bit, 8, 12, Internal)
 ADD_PRESET(RtlSdr, 2.56, 16, File)*/
-ADD_PRESET(RtlSdr, 2.33, 16, None)
+ADD_PRESET(Signed_12bit, 2.33, 16, None)
