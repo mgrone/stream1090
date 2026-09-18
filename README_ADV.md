@@ -84,7 +84,7 @@ This functionality is still present in stream1090 and will not be deprecated for
     echo "[Local Wrapper] Starting streaming pipeline to local stream1090..."
 
     # Pull remote network bytes -> parse on local host -> socket out via socat to Pi
-    iio_readdev -u "ip:$ANT_IP" -b 15360 cf-ad9361-lpc voltage0 voltage1 | \
+    iio_readdev -u "ip:$ANT_IP" -b 8388608 cf-ad9361-lpc voltage0 voltage1 | \
       ./build/stream1090 -v -s $SPEED_MHZ -u $SPEED_UP $FILTER_FLAG | \
       socat -u - TCP4:$PI_IP:30001
     ```
