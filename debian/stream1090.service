@@ -2,12 +2,20 @@
 Description=stream1090 Mode-S demodulator
 After=network.target
 ConditionPathExists=/etc/stream1090/stream1090.conf
+# Restart=always below must not be rate-limited into a permanent stop.
+StartLimitIntervalSec=0
 
 [Service]
 EnvironmentFile=/etc/stream1090/stream1090.conf
+# The pipeline's exit status is socat's, not stream1090's (dash has no
+# pipefail): when the sample-drop watchdog stops stream1090 with exit 1,
+# socat sees EOF and exits 0, and Restart=on-failure would never fire.
+# Restart in every case: watchdog stop, device loss, decoder restart.
 ExecStart=/bin/sh -c '/usr/bin/stream1090 $STREAM1090_OPTS | socat -u - TCP4:localhost:${READSB_PORT:-30001}'
-Restart=on-failure
+Restart=always
 RestartSec=5
+# The rtl-sdr udev rules expose the dongle as MODE 0666; nothing here needs root.
+DynamicUser=yes
 StandardOutput=null
 StandardError=journal
 
