@@ -244,7 +244,9 @@ bool RtlSdrDevice::setFrequency(uint32_t hz) {
 }
 
 bool RtlSdrDevice::setGain(float gainDb) {
-    if (m_state.gain_db == gainDb)
+    // m_state.gain_db starts at 0 dB, so a configured "gain = 0" must still
+    // switch the tuner into manual mode the first time around.
+    if (m_gainApplied && m_state.gain_db == gainDb)
         return true;
 
     rtlsdr_set_tuner_gain_mode(m_dev, 1);
@@ -257,6 +259,7 @@ bool RtlSdrDevice::setGain(float gainDb) {
                   << m_state.gain_db << " dB -> " << gainDb << " dB"
                   << " (nearest step = " << nearest/10.0f << " dB)";
         m_state.gain_db = gainDb;
+        m_gainApplied = true;
         return true;
     }
     return false;
@@ -270,6 +273,12 @@ bool RtlSdrDevice::setAgc(bool enabled) {
         Log::info("RtlSdrDevice") << "agc: "
                   << (m_state.agc ? "on" : "off")
                   << " -> " << (enabled ? "on" : "off");
+        if (enabled) {
+            Log::warn("RtlSdrDevice")
+                << "agc=true enables the RTL2832U digital AGC, not the tuner AGC. "
+                   "It lifts the noise floor between pulses and usually lowers the "
+                   "Mode-S message rate; prefer agc=false with an explicit gain.";
+        }
         m_state.agc = enabled;
         return true;
     }
@@ -442,6 +451,22 @@ void RtlSdrDevice::applyConfigPostOpen(const IniConfig::Section& cfg) {
                    "automatic IF filter selection depends on the sample rate and "
                    "librtlsdr implementation. Set it explicitly (for example, "
                    "3000000 at 2.4 or 2.56 Msps) to make the tuner state reproducible.";
+        }
+
+        if (!cfg.count("gain")) {
+            // Without an explicit gain the tuner stays in whatever mode
+            // librtlsdr left after open (observed: a low fixed gain on an
+            // R828D, ~5x fewer messages). Ask for hardware automatic gain so
+            // the default behaves like other Mode-S receivers' "gain auto".
+            if (rtlsdr_set_tuner_gain_mode(m_dev, 0) == 0) {
+                Log::info("RtlSdrDevice")
+                    << "gain: not configured, tuner set to automatic gain "
+                       "(set gain=<dB> in the ini for a fixed value)";
+            } else {
+                Log::warn("RtlSdrDevice")
+                    << "gain: not configured and switching the tuner to automatic "
+                       "gain failed; the tuner is in an undefined gain state";
+            }
         }
     }
 

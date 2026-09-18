@@ -60,6 +60,7 @@ private:
     };
 
     ShadowState m_state;
+    bool m_gainApplied = false;
     bool m_initialConfigApplied = false;
     bool m_stateReported = false;
 

@@ -151,6 +151,14 @@ DF 21 : 251
 If stream1090 does not start up, you may want to add the ```-v``` flag which enables verbose output.
 If it works, your statistics will probably show a much lower message rate. However, the goal was to get stream1090 up and running. Now it is time to make use of its features.
 
+### RTL-SDR gain: two knobs, one of them a trap
+`configs/rtlsdr.ini` has two gain-related settings that are easy to confuse:
+
+- `gain = <dB>` sets the **tuner** gain (manual mode). If you leave it out, stream1090 now puts the tuner into hardware automatic gain, which is what `--gain auto` means in readsb/dump1090.
+- `agc = true|false` toggles the **RTL2832U digital AGC** after the tuner. It rescales the 8-bit samples and lifts the noise floor between Mode-S pulses. On an RTL-SDR Blog V4 the shipped `agc = true` without a `gain` line decoded about five times fewer messages than `gain = 49.6` with `agc = false`.
+
+Start with `gain = 49.6` and `agc = false`, and lower the gain only if strong nearby aircraft overload the receiver.
+
 ## Upsampling
 Stream1090 is build around the idea to take the samples from the SDR that come in at a rate specified via
 ```
