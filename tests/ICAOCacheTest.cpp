@@ -98,8 +98,8 @@ bool emptySlotsRejectUnknownAddresses() {
 
     return !table.findWithCA(unknownWithCA).isValid()
         && !table.find(unknownWithCA & 0xffffffu).isValid()
-        && table.findWithCA(0).isValid()
-        && table.find(0).isValid();
+        && !table.findWithCA(0).isValid()
+        && !table.find(0).isValid();
 }
 
 bool insertedAndReplacementEntriesAreFound() {
