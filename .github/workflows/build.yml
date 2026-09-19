@@ -88,3 +88,30 @@ jobs:
 
       - name: Test
         run: ctest --test-dir build --output-on-failure
+
+  # macOS with Apple Clang, and warnings fatal. Two things nothing else covers:
+  # Apple Clang is a different compiler from the gcc and Clang the Ubuntu jobs
+  # run, with a different warning set and a different standard library, and no
+  # job builds on macOS at all. -Werror is set here rather than in
+  # CMakeLists.txt so a warning fails the pipeline without failing the build
+  # for anyone compiling by hand.
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: brew install pkg-config libusb airspy librtlsdr
+
+      - name: Configure
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=Release
+          -DBUILD_TESTING=ON
+          -DCMAKE_CXX_FLAGS=-Werror
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
