@@ -1,0 +1,46 @@
+# ================================================================
+# Time: 2026-08-20 12:26:09
+# Instance: 20 s window @ offset 30 s, 5-min 3.2 Msps RTL-SDR capture
+#           (macmini-rtlsdr-3200-300s.cu8, 1090 MHz, AGC)
+# FS: 3.2 MHz -> FS_UP: 16.0 MHz
+# Number of taps: 27
+# Best score (training): 3532 (2801 messages, 355 DF17)
+# Held-out validation (3 separate 30 s windows the fit never saw,
+# same capture, offsets 120/220/260 s), messages vs the previous
+# 15-tap filter (which was an unmodified copy of the 2.56 Msps taps):
+#   @120s: 3108 vs 2923 (+6.3%)
+#   @220s: 4360 vs 4216 (+3.4%)
+#   @260s: 4225 vs 4032 (+4.8%)
+#   aggregate: 11693 vs 11171 (+4.7%)
+# CPU: +9% (2.41s vs 2.21s user time per 30 s window) for the +4.7%.
+# This is the filter compiled into getTaps<Rate_3_2_Mhz>() in
+# include/LowPassFilterTaps.hpp; kept here for reproducibility per the
+# convention of the other rates' custom_filters/*.txt files.
+# Best taps:
+0.0007202076376415789
+0.0005142849404364824
+0.0006296405335888267
+0.0043905372731387615
+-0.0001391760160913691
+0.013142509385943413
+0.005454735830426216
+0.012579773552715778
+0.03977450355887413
+0.005363932810723782
+0.08937354385852814
+-0.011793956160545349
+0.11542020738124847
+0.4491385221481323
+0.11542020738124847
+-0.011793956160545349
+0.08937354385852814
+0.005363932810723782
+0.03977450355887413
+0.012579773552715778
+0.005454735830426216
+0.013142509385943413
+-0.0001391760160913691
+0.0043905372731387615
+0.0006296405335888267
+0.0005142849404364824
+0.0007202076376415789

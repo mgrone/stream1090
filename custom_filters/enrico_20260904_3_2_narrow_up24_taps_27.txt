@@ -1,0 +1,57 @@
+# ================================================================
+# Time: 2026-09-04 13:50
+# Instance: DE resume-DE fit, t4 15 s window of the 3x15 s narrow-state
+#           dual capture (dev0 @ 3.2 Msps with tuner_bandwidth = 2430000,
+#           dev1 @ 2.4 Msps reference, 1090 MHz, gain 49.6, no LNA)
+# FS: 3.2 MHz -> FS_UP: 24.0 MHz
+# Number of taps: 27
+# Fit protocol: differential evolution (filter_utils/filter_opt.py,
+#   workers=-1, maxiter=20, popsize=10, K=13 gain points), resumed from
+#   the response of the previous 27-tap filter sampled on the firwin2
+#   grid, margin 0.25, 14 DE runs with patience 3.
+# Training window: t4 (bench/rtl32/captures/t4_3200k_narrow_30s.cu8)
+#   score 13135 (9932 msgs) vs built-in-at-up24 12868 (9734), +2.1%
+# Held-out validation (t5/t6, same capture session, fit never saw them;
+#   vs the previous 27-tap filter at the same up):
+#   t5 @up24: 9501 vs 9480 (+0.2%)
+#   t6 @up24: 9804 vs 9759 (+0.5%)
+# Live A/B (bench/rtl32/ab.py, build with ENABLE_RTLSDR_BLOG=ON, both
+#   dongles narrow state, 3x120 s with dongle swap; the swap cancels the
+#   0.2% dongle asymmetry measured in fase0):
+#   vs 2.4 -> 12  (narrow, built-in taps): +1.9% frames, +1.8% unique
+#   vs 2.56 -> 12 (6 MHz state, built-in): +2.3% frames, +2.3% unique
+#   vs 2.56 -> 12 narrow:                 +10.3% frames, +9.7% unique
+#   CPU: ~16% of a core (vs 11-12% for the 2.4/2.56 references)
+# The narrow state is essential: at 3.2 the librtlsdr auto state is the
+# 6 MHz TV filter, and its aliased noise costs ~15% of frames (fase5.0).
+# This file documents the taps compiled into getTaps<Rate_3_2_Mhz>() in
+# include/LowPassFilterTaps.hpp; kept here for reproducibility per the
+# convention of the other rates' custom_filters/*.txt files.
+# Best taps:
+-0.0003397811087779701
+-0.0010461800266057253
+-0.0025415613781660795
+-0.0008077416568994522
+0.0016487882239744067
+0.002140612341463566
+0.011383295059204102
+0.028485337272286415
+0.019436953589320183
+0.037336770445108414
+0.07555463165044785
+-0.022128969430923462
+0.14068666100502014
+0.4203823506832123
+0.14068666100502014
+-0.022128969430923462
+0.07555463165044785
+0.037336770445108414
+0.019436953589320183
+0.028485337272286415
+0.011383295059204102
+0.002140612341463566
+0.0016487882239744067
+-0.0008077416568994522
+-0.0025415613781660795
+-0.0010461800266057253
+-0.0003397811087779701
