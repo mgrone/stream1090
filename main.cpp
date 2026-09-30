@@ -423,7 +423,9 @@ int main(int argc, char** argv) {
     if (GlobalOptions::CustomInputMode) {
         // this needs fixing!!!
         c_vars.rawFormat = InputFormatType::IQ_INT16_ANTSDR;
-        if (args.iq_filter) {
+        if (!r_vars.filterTaps.empty()) {
+            c_vars.pipelineOption = IQPipelineOptions::IQ_FIR_RTL_SDR_FILE;
+        } else if (args.iq_filter) {
             c_vars.pipelineOption = IQPipelineOptions::IQ_FIR_RTL_SDR;
         } else {
             c_vars.pipelineOption = IQPipelineOptions::NONE;
