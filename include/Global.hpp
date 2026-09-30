@@ -11,7 +11,7 @@
 
 // visible to every translation unit that instantiates a sampler
 #ifndef STREAM1090_VERSION
-#define STREAM1090_VERSION "260918"
+#define STREAM1090_VERSION "260930_happy_birthday"
 #endif
 
 struct GlobalOptions {
