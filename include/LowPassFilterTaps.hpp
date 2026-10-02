@@ -67,6 +67,49 @@ namespace LowPassTaps {
     };
 
 
+
+    template<>
+    constexpr auto getTaps<Rate_3_2_Mhz>(){
+        // custom_filters/enrico_20260904_3_2_narrow_up24_taps_27.txt
+        // 27-tap DE fit (filter_utils/filter_opt.py) against a real 3.2 Msps
+        // capture in the NARROW tuner state (tuner_bandwidth = 2430000),
+        // scored by decoded message count at -u 24. Fit on a 15 s training
+        // window, validated on two held-out 15 s windows the fit never saw.
+        // Pairs with tuner_bandwidth = 2430000 in the device config: at 3.2
+        // the librtlsdr auto state is the 6 MHz TV filter, and the noise it
+        // aliases across Nyquist costs ~15% of frames against the narrow
+        // state (bench/rtl32 live A/B fase5.0 vs fase5.10).
+        return std::to_array<float>({
+            -0.0003397811087779701f,
+            -0.0010461800266057253f,
+            -0.0025415613781660795f,
+            -0.0008077416568994522f,
+            0.0016487882239744067f,
+            0.002140612341463566f,
+            0.011383295059204102f,
+            0.028485337272286415f,
+            0.019436953589320183f,
+            0.037336770445108414f,
+            0.07555463165044785f,
+            -0.022128969430923462f,
+            0.14068666100502014f,
+            0.4203823506832123f,
+            0.14068666100502014f,
+            -0.022128969430923462f,
+            0.07555463165044785f,
+            0.037336770445108414f,
+            0.019436953589320183f,
+            0.028485337272286415f,
+            0.011383295059204102f,
+            0.002140612341463566f,
+            0.0016487882239744067f,
+            -0.0008077416568994522f,
+            -0.0025415613781660795f,
+            -0.0010461800266057253f,
+            -0.0003397811087779701f,
+        });
+    };
+
     template<>
     constexpr auto getTaps<Rate_6_0_Mhz>(){
         // EU_mgrone_6_12 (the sawbird)
