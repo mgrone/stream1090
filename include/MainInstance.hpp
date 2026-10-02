@@ -17,10 +17,13 @@
 #include "LowPassFilter.hpp"
 #include "devices/IniConfig.hpp"
 #include "devices/DeviceFactory.hpp"
+#include "TcpOutputServer.hpp"
+#include "TcpOutputSupervision.hpp"
 #include <chrono>
 #include <deque>
 #include <cstdlib>
 #include <algorithm>
+#include <memory>
 #include <optional>
 #include <sstream>
 #include <unistd.h>
@@ -50,6 +53,8 @@ struct RuntimeVars {
     IniConfig::Section deviceConfigSection;
     std::vector<float> filterTaps;
     bool verbose = true;
+    bool stdoutEnabled = true;
+    TcpOutputConfig tcpOutput;
 };
 
  // this class serves to hold all compile and runtime information
@@ -127,15 +132,41 @@ public:
         return true;
    }
 
-    static constexpr auto constructMessageHandler(SampleStream<SamplerType>& sampleStream) {
+    auto constructMessageHandler(SampleStream<SamplerType>& sampleStream, TcpOutputServer* tcpServer) {
         if constexpr(GlobalOptions::RSSIEnabled) {
-            return RssiStdOutMessageHandler<SamplerType, SampleStream<SamplerType> >(sampleStream);
+            return RssiStdOutMessageHandler<SamplerType, SampleStream<SamplerType> >(
+                sampleStream, m_runtimeVars.stdoutEnabled, tcpServer);
         } else {
-            return StdOutMessageHandler<SamplerType>();
+            return StdOutMessageHandler<SamplerType>(m_runtimeVars.stdoutEnabled, tcpServer);
         }
     }
 
+    // Starts the optional TCP outputs before any SDR acquisition. The server is
+    // allocated only when a listener is enabled, so the stdout-only path keeps
+    // its old footprint. Returns false without acquiring the device if a
+    // listener cannot start.
+    bool startTcpOutput(std::unique_ptr<TcpOutputServer>& server) {
+        if (!m_runtimeVars.tcpOutput.enableAvr)
+            return true;
+        server = std::make_unique<TcpOutputServer>(m_runtimeVars.tcpOutput);
+        std::string error;
+        if (!server->start(error)) {
+            Log::error("TCP", error);
+            server.reset();
+            return false;
+        }
+        // Log the endpoint that was really bound, not the one that was asked
+        // for: a bind address such as 'localhost' resolves to a single family,
+        // and a consumer pointed at the other one gets a silent refusal.
+        Log::info("TCP") << "AVR server listening on " << server->avrEndpoint();
+        return true;
+    }
+
     bool run_async_device(auto& iqPipeline) {
+        std::unique_ptr<TcpOutputServer> tcpServer;
+        if (!startTcpOutput(tcpServer))
+            return false;
+
         RingBuffer ringBuffer;
         Writer writer(ringBuffer);
 
@@ -176,7 +207,9 @@ public:
         // -------------------------------
         // WATCHDOG THREAD
         // -------------------------------
-        std::thread watchdog([this, &intendedShutdown] {
+        // The watchdog outlives neither the server nor this scope: it is joined
+        // below, before tcpServer is destroyed.
+        std::thread watchdog([this, &intendedShutdown, tcp = tcpServer.get()] {
             using namespace std::chrono_literals;
             Log::info("Watchdog", "Started.");
 
@@ -204,6 +237,13 @@ public:
             std::deque<std::chrono::steady_clock::time_point> recentDrops;
 
             while (!ProcessSignals::shutdownRequested()) {
+                // 0) An output the user asked for that failed for good. The
+                // run cannot continue: the reader is woken here and the exit
+                // status is decided by the owner after the join, so nothing
+                // writes intendedShutdown from two threads.
+                if (m_device && superviseTcpOutput(tcp, *m_device))
+                    break;
+
                 if (m_device) {
                     const auto lastSign = m_device->lastSignOfLife();
                     if (lastSign > 1000ms) {
@@ -294,8 +334,8 @@ public:
             > inputReader(iqPipeline, ringBuffer);
 
             SampleStream<SamplerType> sampleStream;
-            auto messageHandler = constructMessageHandler(sampleStream);
-            
+            auto messageHandler = constructMessageHandler(sampleStream, tcpServer.get());
+
             sampleStream.read(inputReader, messageHandler);
         }
 
@@ -314,13 +354,23 @@ public:
             Log::info("Stream1090", "Watchdog joined.");
         }
         Log::info("Stream1090", "Shutdown completed.");
+        // The producer has quiesced with the DSP scope above, so the outputs
+        // can drain what is left and release their sockets. The state is read
+        // back after that join: a failure concurrent with a normal shutdown
+        // still has to fail the run.
+        const bool tcpOk = finishTcpOutput(tcpServer);
         Log::msg("Stream1090") << "Finished. (" << dur_wct_secs/1000.0 << "s)";
-        // return if this shutdown was intended or not (lost device)
-        return intendedShutdown;
+        // return if this shutdown was intended or not (lost device), and
+        // whether the requested TCP output survived the run
+        return intendedShutdown && tcpOk;
     }
 
 
     bool run_sync_stdin(auto& iqPipeline) {
+        std::unique_ptr<TcpOutputServer> tcpServer;
+        if (!startTcpOutput(tcpServer))
+            return false;
+
         Log::info("Stream1090", "Reading from stdin");
         auto start_wct = std::chrono::steady_clock::now();
 
@@ -330,15 +380,26 @@ public:
             decltype(iqPipeline)
         > inputReader(iqPipeline, STDIN_FILENO);
 
-        
+        // With a listener there is a second way for this run to end: the output
+        // fails while stdin stays open and idle, and a plain blocking read()
+        // would never come back. The reader is destroyed before the server, so
+        // the captured pointer cannot outlive it.
+        if (tcpServer)
+            inputReader.setCancellation([server = tcpServer.get()] { return server->failed(); });
+
         SampleStream<SamplerType> sampleStream;
-        auto messageHandler = constructMessageHandler(sampleStream);
+        auto messageHandler = constructMessageHandler(sampleStream, tcpServer.get());
         sampleStream.read(inputReader, messageHandler);
+
+        // EOF on stdin, or a failed output: the producer is done, so drain the
+        // TCP outputs before the process ends and read the state back after
+        // the worker has been joined.
+        const bool tcpOk = finishTcpOutput(tcpServer);
 
         auto end_wct = std::chrono::steady_clock::now();
         auto dur_wct_secs = std::chrono::duration_cast<std::chrono::milliseconds>(end_wct - start_wct).count();
         Log::msg("Stream1090") << "Finished. (" << dur_wct_secs/1000.0 << "s)";
-        return true;
+        return tcpOk;
     }
 
     bool run() {

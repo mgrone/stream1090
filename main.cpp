@@ -120,6 +120,9 @@ void print_help() {
     "  -f <taps file>       Taps to load that are used for the IQ FIR filter\n"
     "  -v  --verbose        Verbose output\n"
     "  --debug              Debug output (implies verbose)\n"
+    "  --net-bind-address <address>  TCP bind address (default: 127.0.0.1)\n"
+    "  --net-avr-port <port>          Enable AVR/raw TCP output (1..65535)\n"
+    "  --no-stdout                    Disable the legacy AVR stdout output\n"
     "  -h, --help           Show this help message\n\n";
 
     print_rate_pairs();
@@ -127,7 +130,11 @@ void print_help() {
     std::cout <<
     "Examples:\n"
     "  ./build/stream1090 -s 2.4 -u 8 -q -d ./configs/rtlsdr.ini\n"
-    "  ./build/stream1090 -s 6 -u 12 -q -d ./configs/airspy.ini\n\n";
+    "  ./build/stream1090 -s 6 -u 12 -q -d ./configs/airspy.ini\n\n"
+    "Optional: let readsb connect over TCP instead of using a stdout+socat pipeline:\n"
+    "  # AVR/raw listener\n"
+    "  ./build/stream1090 -s 2.4 -d ./configs/rtlsdr.ini --net-avr-port 30006 --no-stdout\n"
+    "  readsb --net-only --net-connector=127.0.0.1,30006,raw_in --interactive\n\n";
 }
 
 
@@ -139,7 +146,30 @@ struct CliArgs {
     bool iq_filter = false;
     bool verbose = false;
     bool debug = false;
+    std::string netBindAddress = "127.0.0.1";
+    uint16_t netAvrPort = 0;
+    bool stdoutEnabled = true;
 };
+
+// Accepts only a decimal port with no sign, no spaces, no fraction and no
+// prefix. Accumulates digit by digit and stops as soon as the value leaves
+// 1..65535, so an overlong number cannot overflow.
+bool parse_tcp_port(const std::string& value, uint16_t& port) {
+    if (value.empty())
+        return false;
+    uint32_t parsed = 0;
+    for (char c : value) {
+        if (c < '0' || c > '9')
+            return false;
+        parsed = parsed * 10 + uint32_t(c - '0');
+        if (parsed > 65535)
+            return false;
+    }
+    if (parsed == 0)
+        return false;
+    port = static_cast<uint16_t>(parsed);
+    return true;
+}
 
 bool parse_cli(int argc, char** argv, CliArgs& out) {
     for (int i = 1; i < argc; i++) {
@@ -182,6 +212,24 @@ bool parse_cli(int argc, char** argv, CliArgs& out) {
 
         if (arg == "--debug") {
             out.debug = true;
+            continue;
+        }
+
+        if (arg == "--net-bind-address" && i + 1 < argc) {
+            out.netBindAddress = argv[++i];
+            continue;
+        }
+
+        if (arg == "--net-avr-port" && i + 1 < argc) {
+            if (!parse_tcp_port(argv[++i], out.netAvrPort)) {
+                std::cerr << "Invalid AVR TCP port: " << argv[i] << "\n";
+                return false;
+            }
+            continue;
+        }
+
+        if (arg == "--no-stdout") {
+            out.stdoutEnabled = false;
             continue;
         }
 
@@ -304,6 +352,27 @@ int main(int argc, char** argv) {
         print_help();
         return 1;
     }
+
+    // Validate the TCP output options before the device configuration is read,
+    // so a bad option is reported even when the INI path does not exist.
+    if (args.netBindAddress.empty()) {
+        std::cerr << "TCP bind address must not be empty.\n";
+        return 1;
+    }
+    if (!args.stdoutEnabled && args.netAvrPort == 0) {
+        std::cerr << "--no-stdout requires --net-avr-port.\n";
+        return 1;
+    }
+    // A bind address on its own starts nothing. Saying so beats leaving the
+    // user to wonder why the port they think they opened refuses connections.
+    if (args.netBindAddress != "127.0.0.1" && args.netAvrPort == 0) {
+        std::cerr << "--net-bind-address has no effect without --net-avr-port.\n";
+        return 1;
+    }
+    r_vars.stdoutEnabled = args.stdoutEnabled;
+    r_vars.tcpOutput.bindAddress = args.netBindAddress;
+    r_vars.tcpOutput.avrPort = args.netAvrPort;
+    r_vars.tcpOutput.enableAvr = args.netAvrPort != 0;
 
     if (args.verbose)
         Log::setLevel(Log::Level::INFO);
@@ -462,7 +531,6 @@ int main(int argc, char** argv) {
     }
     return *outcome ? 0 : 1;
 }
-
 
 
 
