@@ -89,6 +89,8 @@ GAIN_MAX = args.bounds_max
 
 LOGFILE = args.log
 
+MAX_TOTAL_CALLS = (args.maxiter + 1) * args.popsize * K
+
 # ============================================================
 #  Resume helpers
 # ============================================================
@@ -237,7 +239,7 @@ best_total = -np.inf
 best_df17 = -np.inf
 best_params = None
 best_taps = None
-
+num_calls = 0
 # ============================================================
 #  DE objective
 # ============================================================
@@ -285,7 +287,7 @@ def evaluate_builtin_filter():
 
 
 def evaluate_filter(params):
-    global best_score, best_params, best_taps, best_total, best_df17, bounds
+    global best_score, best_params, best_taps, best_total, best_df17, bounds, num_calls
 
     h, freq, gain = build_lowpass_firwin2(params, K)
 
@@ -320,7 +322,7 @@ def evaluate_filter(params):
     score = total + long_count
     # score = total + df_counts.get(17, 0)
     #score = df_counts.get(17, 0) + df_counts.get(11, 0) * 0.25
-    
+    num_calls = num_calls + 1
     print(score)
 
     if score > best_score:
@@ -353,7 +355,7 @@ def evaluate_filter(params):
     print(f"Eval params={np.round(params, 4)} → total={total}, df17={df17}, score={score}")
     print(f"Eval bounds={np.round(bounds, 4)}")
     print(f"| Best so far: score={best_score}, total={best_total}, df17={best_df17} @ {np.round(best_params, 4) if best_params is not None else None}")
-
+    print(f"| {num_calls} of {MAX_TOTAL_CALLS} completed in this run")
     return -score
 
 # ============================================================
@@ -394,6 +396,7 @@ with open(LOGFILE, "a") as f:
     f.write("\n")
 
 while True:
+    num_calls = 0
     print("Starting Differential Evolution...")
 
     result = differential_evolution(
