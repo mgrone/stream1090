@@ -1,6 +1,7 @@
 #include <array>
 #include <cstdint>
 #include <iostream>
+#include <vector>
 
 #include "LowPassFilter.hpp"
 
@@ -44,9 +45,36 @@ bool builtInSymmetricMatchesPlain() {
     return symmetricMatchesPlain(taps);
 }
 
+// A tap set that does not fit Q15 must keep its shape: {0.25, 1.25, 0.25}
+// used to run with the middle tap saturated at 1.0, as {0.25, 1.0, 0.25}.
+bool oversizedTapsKeepTheirShape() {
+    IQLowPassDynamic<> fir(std::vector<float>{0.25f, 1.25f, 0.25f});
+    constexpr size_t N = 16;
+    std::array<int16_t, N> I{}, Q{};
+    I[0] = 8192;
+    fir.applyBlock(I.data(), Q.data(), N);
+    int16_t peak = 0, side = 0;
+    for (size_t i = 0; i < N; ++i)
+        if (I[i] > peak) peak = I[i];
+    for (size_t i = 0; i < N; ++i)
+        if (I[i] > side && I[i] < peak) side = I[i];
+    const double ratio = double(side) / double(peak);
+    if (ratio < 0.195 || ratio > 0.205) {
+        std::cerr << "oversized taps changed shape: side/peak = " << ratio << " (want 0.2)\n";
+        return false;
+    }
+    return true;
+}
+
+static_assert(FirDetail::tapsFitQ15(LowPassTaps::getCustomTaps<Rate_2_4_Mhz, Rate_8_0_Mhz>()));
+static_assert(!FirDetail::tapsFitQ15(std::array<float, 3>{0.25f, 1.25f, 0.25f}));
+
 } // namespace
 
 int main() {
+    if (!oversizedTapsKeepTheirShape())
+        return 1;
+
     constexpr std::array<int16_t, 15> oddTaps{
         -81, -66, 781, 1019, 1741, 3178, 1865, 15891,
         1865, 3178, 1741, 1019, 781, -66, -81

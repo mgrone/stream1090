@@ -15,6 +15,7 @@
 #include <fstream>
 #include <sstream>
 #include <vector>
+#include <iostream>
 #if defined(__ARM_NEON)
 #include <arm_neon.h>
 #endif
@@ -62,6 +63,28 @@ namespace FirDetail {
         const float x = t * float(1 << TapFracBits);
         return int16_t(x >= 0.0f ? x + 0.5f : x - 0.5f);
     }*/
+    /// Largest tap magnitude Q15 holds.
+    inline constexpr float MaxTap = float((1 << TapFracBits) - 1) / float(1 << TapFracBits);
+
+    /// True when every tap fits Q15 without saturating.
+    template<size_t N>
+    constexpr bool tapsFitQ15(const std::array<float, N>& taps) noexcept {
+        for (float t : taps)
+            if (t > MaxTap || t < -1.0f)
+                return false;
+        return true;
+    }
+
+    /// Factor that brings a set of taps into Q15 as a whole. Saturating the
+    /// one tap that does not fit would change the filter's shape; scaling
+    /// the set only changes its gain.
+    inline float q15Scale(const std::vector<float>& taps) noexcept {
+        float peak = 0.0f;
+        for (float t : taps)
+            peak = std::max(peak, t < 0.0f ? -t : t);
+        return (peak > MaxTap) ? MaxTap / peak : 1.0f;
+    }
+
     constexpr int16_t toQ15(float t) noexcept
     {
         constexpr float scale = float(1 << TapFracBits);
@@ -220,6 +243,7 @@ public:
 
 private:
     static constexpr auto taps = LowPassTaps::getCustomTaps<inputRate, outputRate>();
+    static_assert(FirDetail::tapsFitQ15(taps), "built-in FIR taps must fit Q15 (|tap| < 1)");
     static constexpr auto numTaps = taps.size();
     static constexpr auto bufferSize = std::bit_ceil(numTaps);
     static constexpr bool areTapsOdd = LowPassTaps::areCustomTapsOdd<inputRate, outputRate>();
@@ -297,10 +321,15 @@ public:
             return false;
 
         if (newTaps.size() <= maxNumTaps()) {
+            // Q15 holds taps in [-1, 1); a set that does not fit is scaled down
+            // as a whole, which keeps the filter's shape
+            const float scale = FirDetail::q15Scale(newTaps);
+            if (scale != 1.0f)
+                std::cerr << "[IQLowPass] taps exceed the Q15 range, scaled by " << scale << std::endl;
             // copy the new values, in Q15, and clear whatever the previous taps left behind
             std::fill(m_taps.begin(), m_taps.end(), int16_t(0));
             for (size_t i = 0; i < newTaps.size(); i++)
-                m_taps[i] = FirDetail::toQ15(newTaps[i]);
+                m_taps[i] = FirDetail::toQ15(newTaps[i] * scale);
             // get the new number of tabs
             m_numTaps = newTaps.size();
             m_bufferSize = std::bit_ceil(m_numTaps);
