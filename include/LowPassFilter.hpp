@@ -63,7 +63,7 @@ namespace FirDetail {
         const float x = t * float(1 << TapFracBits);
         return int16_t(x >= 0.0f ? x + 0.5f : x - 0.5f);
     }*/
-    /// Largest tap magnitude Q15 holds.
+    /// Largest positive tap Q15 holds; the negative limit is -1.
     inline constexpr float MaxTap = float((1 << TapFracBits) - 1) / float(1 << TapFracBits);
 
     /// True when every tap fits Q15 without saturating.
@@ -79,10 +79,14 @@ namespace FirDetail {
     /// one tap that does not fit would change the filter's shape; scaling
     /// the set only changes its gain.
     inline float q15Scale(const std::vector<float>& taps) noexcept {
-        float peak = 0.0f;
-        for (float t : taps)
-            peak = std::max(peak, t < 0.0f ? -t : t);
-        return (peak > MaxTap) ? MaxTap / peak : 1.0f;
+        float scale = 1.0f;
+        for (float t : taps) {
+            if (t > MaxTap)
+                scale = std::min(scale, MaxTap / t);
+            else if (t < -1.0f)
+                scale = std::min(scale, -1.0f / t);
+        }
+        return scale;
     }
 
     constexpr int16_t toQ15(float t) noexcept
@@ -243,7 +247,10 @@ public:
 
 private:
     static constexpr auto taps = LowPassTaps::getCustomTaps<inputRate, outputRate>();
-    static_assert(FirDetail::tapsFitQ15(taps), "built-in FIR taps must fit Q15 (|tap| < 1)");
+    // The identity fallback bypasses the FIR and never uses its quantized tap.
+    static_assert(LowPassTaps::isIdentityFallback<inputRate, outputRate>() ||
+                  FirDetail::tapsFitQ15(taps),
+                  "built-in FIR taps must fit Q15 ([-1, 32767/32768])");
     static constexpr auto numTaps = taps.size();
     static constexpr auto bufferSize = std::bit_ceil(numTaps);
     static constexpr bool areTapsOdd = LowPassTaps::areCustomTapsOdd<inputRate, outputRate>();

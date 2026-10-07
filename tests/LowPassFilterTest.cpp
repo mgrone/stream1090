@@ -58,6 +58,10 @@ bool oversizedTapsKeepTheirShape() {
         if (I[i] > peak) peak = I[i];
     for (size_t i = 0; i < N; ++i)
         if (I[i] > side && I[i] < peak) side = I[i];
+    if (peak <= 0) {
+        std::cerr << "oversized taps produced no positive impulse response\n";
+        return false;
+    }
     const double ratio = double(side) / double(peak);
     if (ratio < 0.195 || ratio > 0.205) {
         std::cerr << "oversized taps changed shape: side/peak = " << ratio << " (want 0.2)\n";
@@ -66,13 +70,68 @@ bool oversizedTapsKeepTheirShape() {
     return true;
 }
 
+bool identityFallbackPreservesSamples() {
+    IQLowPass<Rate_8_0_Mhz, Rate_8_0_Mhz> fir;
+    constexpr size_t N = 257;
+    std::array<int16_t, N> I{}, Q{};
+    for (size_t i = 0; i < N; ++i) {
+        I[i] = int16_t(int(i) * 127 - 16384);
+        Q[i] = int16_t(16383 - int(i) * 127);
+    }
+    const auto expectedI = I, expectedQ = Q;
+    fir.applyBlock(I.data(), Q.data(), N);
+    if (I != expectedI || Q != expectedQ) {
+        std::cerr << "identity fallback changed samples\n";
+        return false;
+    }
+    return true;
+}
+
+bool negativeLimitPreservesSamples() {
+    const std::vector<float> taps{0.25f, -1.0f, 0.25f};
+    if (FirDetail::q15Scale(taps) != 1.0f) {
+        std::cerr << "representable negative limit was scaled\n";
+        return false;
+    }
+    IQLowPassDynamic<> fir(taps);
+    std::array<int16_t, 16> I{}, Q{};
+    I[0] = 8192;
+    Q[0] = -8192;
+    fir.applyBlock(I.data(), Q.data(), I.size());
+    std::array<int16_t, 16> expectedI{}, expectedQ{};
+    expectedI[1] = 2048;
+    expectedI[2] = -8192;
+    expectedI[3] = 2048;
+    expectedQ[1] = -2048;
+    expectedQ[2] = 8192;
+    expectedQ[3] = -2048;
+    if (I != expectedI || Q != expectedQ) {
+        std::cerr << "negative limit changed impulse response\n";
+        return false;
+    }
+    return true;
+}
+
+bool oversizedNegativeTapsFitQ15() {
+    const std::vector<float> taps{0.25f, -1.25f, 0.25f};
+    const float scale = FirDetail::q15Scale(taps);
+    if (scale != 0.8f || FirDetail::toQ15(taps[1] * scale) != -32768) {
+        std::cerr << "oversized negative taps did not use the full Q15 range\n";
+        return false;
+    }
+    return true;
+}
+
 static_assert(FirDetail::tapsFitQ15(LowPassTaps::getCustomTaps<Rate_2_4_Mhz, Rate_8_0_Mhz>()));
 static_assert(!FirDetail::tapsFitQ15(std::array<float, 3>{0.25f, 1.25f, 0.25f}));
+static_assert(FirDetail::tapsFitQ15(std::array<float, 1>{-1.0f}));
+static_assert(!FirDetail::tapsFitQ15(std::array<float, 1>{1.0f}));
 
 } // namespace
 
 int main() {
-    if (!oversizedTapsKeepTheirShape())
+    if (!oversizedTapsKeepTheirShape() || !identityFallbackPreservesSamples() ||
+        !negativeLimitPreservesSamples() || !oversizedNegativeTapsFitQ15())
         return 1;
 
     constexpr std::array<int16_t, 15> oddTaps{
