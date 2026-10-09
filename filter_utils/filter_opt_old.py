@@ -1,0 +1,462 @@
+#!/usr/bin/env python3
+
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright 2026 Martin Gronemann
+#
+# This file is part of stream1090 and is licensed under the GNU General
+# Public License v3.0. See the top-level LICENSE file for details.
+#
+
+import argparse
+import numpy as np
+from scipy.optimize import differential_evolution
+from scipy.signal import firwin2
+import subprocess
+from datetime import datetime
+import re
+
+# ============================================================
+#  CLI
+# ============================================================
+
+def parse_args():
+    p = argparse.ArgumentParser(
+        description="Differential Evolution FIR optimizer for stream1090"
+    )
+
+    p.add_argument("--data", required=True,
+                   help="Path to raw IQ sample file")
+
+    p.add_argument("--fs", type=int, required=True,
+                   help="Input sample rate (Hz)")
+
+    p.add_argument("--fs-up", type=int, required=True,
+                   help="Upsampled rate (Hz)")
+
+    p.add_argument("--num-taps", type=int, default=15,
+                   help="Number of FIR taps")
+
+    p.add_argument("--num-gain-points", type=int, default=7,
+                   help="Number of interior gain points")
+
+    p.add_argument("--margin", type=float, default=0.5,
+                   help="Margin around center seed or resume vector")
+
+    p.add_argument("--log", default="de_log.txt",
+                   help="Log file path")
+
+    p.add_argument("--maxiter", type=int, default=20)
+    p.add_argument("--popsize", type=int, default=10)
+    p.add_argument("--alpha", type=float, default=2.0)
+
+    p.add_argument("--bounds-min", type=float, default=-2.0)
+    p.add_argument("--bounds-max", type=float, default=2.0)
+
+    p.add_argument("--resume",
+                   help="Path to previous log file to resume from (uses best_params as new center)")
+    p.add_argument("--resume-bounds", action="store_true",
+                   help="When resuming, also reuse bounds from the log instead of recomputing from margin")
+
+    p.add_argument("--df17-weight", type=float, default=1.0,
+                   help="Weight for DF17 messages in the objective function")
+
+    return p.parse_args()
+
+
+args = parse_args()
+
+# ============================================================
+#  Config
+# ============================================================
+
+STREAM1090_EXE = "../build/stream1090"
+DATA_PATH = args.data
+FILTER_PATH = "./diff_evolve_fir_temp.txt"
+FS = args.fs
+FS_UP = args.fs_up
+NUMTAPS = args.num_taps
+K = args.num_gain_points
+
+# Dynamic center seed: smooth low-pass shape
+CENTER_SEED = np.linspace(1.0, 0.0, K + 2)[1:-1].astype(np.float64)
+CENTER_SEED_MARGIN = args.margin
+
+G_DC = 1.0
+G_NYQ = 0.0
+
+GAIN_MIN = args.bounds_min
+GAIN_MAX = args.bounds_max
+
+LOGFILE = args.log
+
+MAX_TOTAL_CALLS = (args.maxiter + 1) * args.popsize * K
+
+# ============================================================
+#  Resume helpers
+# ============================================================
+
+PARAMS_RE = re.compile(r"# Best params:\s*\[(.*)\]")
+BOUNDS_RE = re.compile(r"# \[([0-9eE+\-\.]+),\s*([0-9eE+\-\.]+)\]")
+
+def _parse_float_list(s: str):
+    return [float(x.strip()) for x in s.split(",") if x.strip()]
+
+def load_best_params_and_bounds_from_log(path: str):
+    best_params = None
+    bounds = []
+
+    with open(path, "r") as f:
+        lines = f.readlines()
+
+    for i, line in enumerate(lines):
+        m = PARAMS_RE.match(line)
+        if m:
+            best_params = _parse_float_list(m.group(1))
+            bounds = []
+            j = i + 1
+            while j < len(lines):
+                bm = BOUNDS_RE.match(lines[j])
+                if not bm:
+                    break
+                lo = float(bm.group(1))
+                hi = float(bm.group(2))
+                bounds.append((lo, hi))
+                j += 1
+
+    if best_params is None:
+        raise ValueError(f"No 'Best params' found in log {path}")
+
+    if bounds and len(bounds) != len(best_params):
+        bounds = []
+
+    return np.array(best_params, dtype=np.float64), bounds
+
+
+def make_bounds_around_center(center: np.ndarray, margin: float):
+    bounds = []
+    for c in center:
+        lo = max(GAIN_MIN, c - margin)
+        hi = min(GAIN_MAX, c + margin)
+        bounds.append((lo, hi))
+    return bounds
+
+# ============================================================
+#  FIR builder
+# ============================================================
+
+def build_lowpass_firwin2(params, K, g_dc=G_DC, g_nyq=G_NYQ):
+    params = np.asarray(params, dtype=np.float64)
+    g_interior = params[:K]
+
+    freq = np.linspace(0.0, 1.0, K + 2)
+    g = np.concatenate(([g_dc], g_interior, [g_nyq]))
+
+    h = firwin2(NUMTAPS, freq, g).astype(np.float32)
+    h /= np.sum(h)
+
+    return h, freq, g
+
+# ============================================================
+#  Low-pass sanity check
+# ============================================================
+
+def is_lowpass(h, min_dc=0.1, max_hf_ratio=0.7):
+    h = np.asarray(h, dtype=np.float32)
+    N = len(h)
+
+    H0 = float(np.sum(h))
+    if H0 <= min_dc:
+        return False
+
+    signs = np.power(-1.0, np.arange(N, dtype=np.float32))
+    Hpi = float(np.sum(h * signs))
+
+    if abs(Hpi) >= max_hf_ratio * H0:
+        return False
+
+    return True
+
+# ============================================================
+#  Output parsing (unified one-pass parser)
+# ============================================================
+
+HEX = set(b"0123456789ABCDEFabcdef")
+
+def is_hex(s: bytes) -> bool:
+    return all(c in HEX for c in s)
+
+
+def parse_frames(out: bytes):
+    """
+    One-pass parser:
+    - total messages
+    - long_count: number of 112-bit frames
+    - df_counts: dict DF -> count
+    """
+    total = 0
+    long_count = 0
+    df_counts = {}
+
+    for line in out.splitlines():
+        if not line or line[0] not in (ord('@'), ord('<')) or not line.endswith(b";"):
+            continue
+
+        payload = line[1:-1]
+
+        # Strip MLAT prefix
+        if line[0] == ord('<'):
+            frame_hex = payload[14:]
+        else:
+            frame_hex = payload[12:]
+
+        # Validate hex
+        if not is_hex(frame_hex):
+            continue
+
+        total += 1
+
+        # Long frame = 112 bits = 28 hex chars
+        if len(frame_hex) == 28:
+            long_count += 1
+
+        # Extract DF (first 5 bits)
+        try:
+            bits = bin(int(frame_hex, 16))[2:].zfill(len(frame_hex) * 4)
+            df = int(bits[:5], 2)
+            df_counts[df] = df_counts.get(df, 0) + 1
+        except Exception:
+            pass
+
+    return total, long_count, df_counts
+
+
+# ============================================================
+#  Best-so-far tracking
+# ============================================================
+
+best_score = -np.inf
+best_total = -np.inf
+best_df17 = -np.inf
+best_params = None
+best_taps = None
+num_calls = 0
+# ============================================================
+#  DE objective
+# ============================================================
+
+DEFAULT_RATE_PAIRS = [
+    (2.4, 8.0),
+    (6.0, 6.0),
+    (10.0, 10.0),
+]
+
+def default_output_rate(input_mhz: float) -> float:
+    for (inp, out) in DEFAULT_RATE_PAIRS:
+        if inp == input_mhz:
+            return out
+    raise ValueError(f"No default output rate for input rate {input_mhz}")
+
+
+def evaluate_builtin_filter():
+    input_mhz = FS / 1_000_000.0
+
+    if FS_UP is not None:
+        output_mhz = FS_UP / 1_000_000.0
+    else:
+        output_mhz = default_output_rate(input_mhz)
+
+    cmd = [
+        "bash", "-c",
+        f"cat {DATA_PATH} | {STREAM1090_EXE} "
+        f"-s {input_mhz} "
+        f"-u {output_mhz} "
+        f"-q"
+    ]
+
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
+    out, _ = proc.communicate()
+
+    total, long_count, df_counts = parse_frames(out)
+    df17 = df_counts.get(17, 0)
+    # score = total + args.df17_weight * df17
+    score = total + long_count
+    # score = total + df_counts.get(17, 0)
+    #score = df_counts.get(17, 0) + df_counts.get(11, 0) * 0.25
+
+    return score, total, df17
+
+
+def evaluate_filter(params):
+    global best_score, best_params, best_taps, best_total, best_df17, bounds, num_calls
+
+    h, freq, gain = build_lowpass_firwin2(params, K)
+
+    if not is_lowpass(h):
+        return 1e9
+
+    with open(FILTER_PATH, "w") as f:
+        for t in h:
+            f.write(f"{t}\n")
+
+    input_mhz = FS / 1_000_000.0
+
+    if FS_UP is not None:
+        output_mhz = FS_UP / 1_000_000.0
+    else:
+        output_mhz = default_output_rate(input_mhz)
+
+    cmd = [
+        "bash", "-c",
+        f"cat {DATA_PATH} | {STREAM1090_EXE} "
+        f"-s {input_mhz} "
+        f"-u {output_mhz} "
+        f"-f {FILTER_PATH}"
+    ]
+
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
+    out, _ = proc.communicate()
+
+    total, long_count, df_counts = parse_frames(out)
+    df17 = df_counts.get(17, 0)
+    # score = total + args.df17_weight * df17
+    score = total + long_count
+    # score = total + df_counts.get(17, 0)
+    #score = df_counts.get(17, 0) + df_counts.get(11, 0) * 0.25
+    num_calls = num_calls + 1
+    print(score)
+
+    if score > best_score:
+        best_score = score
+        best_total = total
+        best_df17 = df17
+        best_params = params.copy()
+        best_taps = h.copy()
+
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        with open(LOGFILE, "a") as f:
+            f.write("# ================================================================\n")
+            f.write(f"# Instance: {DATA_PATH}\n")
+            f.write(f"# Time: {timestamp}\n")
+            f.write(f"# FS: {FS/1_000_000} MHz → FS_UP: {FS_UP/1_000_000} MHz\n")
+            f.write(f"# Number of taps: {NUMTAPS}\n")
+            f.write(f"# Best score: {best_score}\n")
+            f.write(f"# Best message count: {best_total}\n")
+            f.write(f"# Best DF17 count: {best_df17}\n")
+            f.write(f"# Best params: {best_params.tolist()}\n")
+            f.write("# Current bounds:\n")
+            for lo, hi in bounds:
+                f.write(f"# [{lo:.6f}, {hi:.6f}]\n")
+            f.write("# Best taps:\n")
+            for t in best_taps:
+                f.write(f"{t}\n")
+            f.write("\n")
+
+    print(f"Eval params={np.round(params, 4)} → total={total}, df17={df17}, score={score}")
+    print(f"Eval bounds={np.round(bounds, 4)}")
+    print(f"| Best so far: score={best_score}, total={best_total}, df17={best_df17} @ {np.round(best_params, 4) if best_params is not None else None}")
+    print(f"| {num_calls} of {MAX_TOTAL_CALLS} completed in this run")
+    return -score
+
+# ============================================================
+#  DE loop
+# ============================================================
+
+if args.resume:
+    resume_center, resume_bounds = load_best_params_and_bounds_from_log(args.resume)
+
+    if args.resume_bounds and resume_bounds:
+        center = resume_center
+        bounds = resume_bounds
+    else:
+        center = resume_center
+        bounds = make_bounds_around_center(center, args.margin)
+else:
+    center = CENTER_SEED.copy()
+    bounds = make_bounds_around_center(center, CENTER_SEED_MARGIN)
+
+baseline_score, baseline_total, baseline_df17 = evaluate_builtin_filter()
+# best_score = baseline_score
+# best_total = baseline_total
+# best_df17 = baseline_df17
+best_params = None
+best_taps = None
+
+timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+with open(LOGFILE, "a") as f:
+    f.write("# ==================== BASELINE ====================\n")
+    f.write(f"# Time: {timestamp}\n")
+    f.write(f"# Instance: {DATA_PATH}\n")
+    f.write(f"# FS: {FS/1_000_000} MHz → FS_UP: {FS_UP/1_000_000} MHz\n")
+    f.write(f"# Number of taps: {NUMTAPS}\n")
+    f.write(f"# Built-in score: {baseline_score}\n")
+    f.write(f"# Built-in message count: {baseline_total}\n")
+    f.write(f"# Built-in DF17 count: {baseline_df17}\n")
+    f.write("\n")
+
+while True:
+    num_calls = 0
+    print("Starting Differential Evolution...")
+
+    result = differential_evolution(
+        evaluate_filter,
+        bounds,
+        maxiter=args.maxiter,
+        popsize=args.popsize,
+        mutation=(0.5, 1.0),
+        recombination=0.7,
+        polish=False,
+        workers=1,
+        x0=center,
+    )
+
+    print("\n================ END OF RUN ====================")
+    print(f"Best params: {np.round(best_params, 6)}")
+    print(f"Best score: {best_score}")
+    print(f"Best message count: {best_total}")
+    print(f"Best DF17 count: {best_df17}")
+    print("Best taps:")
+    print(np.round(best_taps, 8))
+    print("===============================================\n")
+
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    with open(LOGFILE, "a") as f:
+        f.write("# ==================== END OF RUN ====================\n")
+        f.write(f"# Time: {timestamp}\n")
+        f.write(f"# Instance: {DATA_PATH}\n")
+        f.write(f"# FS: {FS/1_000_000} MHz → FS_UP: {FS_UP/1_000_000} MHz\n")
+        f.write(f"# Number of taps: {NUMTAPS}\n")
+        f.write(f"# Best params: {best_params.tolist()}\n")
+        f.write(f"# Best score: {best_score}\n")
+        f.write(f"# Best message count: {best_total}\n")
+        f.write(f"# Best DF17 count: {best_df17}\n")
+        f.write("# Current bounds:\n")
+        for lo, hi in bounds:
+            f.write(f"# [{lo:.6f}, {hi:.6f}]\n")
+        f.write("# Best taps:\n")
+        for t in best_taps:
+            f.write(f"{t}\n")
+        f.write("\n")
+
+    energies = result.population_energies
+    pop = result.population
+    idx_sorted = np.argsort(energies)
+
+    best = pop[idx_sorted[0]]
+    second = pop[idx_sorted[1]]
+
+    alpha = args.alpha
+    margins = alpha * np.abs(best - second)
+    margins = np.clip(margins, 0.025, 0.5)
+
+    bounds = []
+    for i in range(K):
+        low = max(GAIN_MIN, best[i] - margins[i])
+        high = min(GAIN_MAX, best[i] + margins[i])
+        bounds.append((low, high))
+
+    print("# Per-parameter margins:", margins)
+
+    center = best_params.copy()
