@@ -10,9 +10,12 @@ from scipy.signal import firwin2, freqz
 
 import json
 from PySide6 import QtCore, QtWidgets
-import pyqtgraph as pg
+from PySide6.QtWidgets import QInputDialog
 
+import pyqtgraph as pg
 import copy
+
+import taps2gainpoints as taps2gp
 
 MIN_DB = -100.0
 MAX_DB = 5.0
@@ -69,6 +72,12 @@ class FilterEditor(QtWidgets.QMainWindow):
         export_action.triggered.connect(
             self._export_optimizer_log
         )
+
+        inport_taps_action = file_menu.addAction("Create Gain Points from Taps...")
+        inport_taps_action.triggered.connect(
+            self._import_from_taps
+        )
+        
 
         file_menu.addSeparator()
 
@@ -651,7 +660,49 @@ class FilterEditor(QtWidgets.QMainWindow):
                 "Export Optimizer Log",
                 str(e),
             )
+
             
+    def _import_from_taps(self):
+        filename, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self,
+            "Import Taps",
+            "",
+            "Tap Files (*.txt);;All Files (*)",
+        )
+
+        if not filename:
+            return
+
+        try:
+            taps = taps2gp.load_filter(filename)
+            desired_gp, ok = QInputDialog.getInt(self, "Convert taps to gain points", "Number of gain points:", minValue=3, value=9)
+            if (not ok):
+                return
+            gp = taps2gp.fit_gain_points(taps, desired_gp, "boxcar")            
+            
+            self.points = [
+                [
+                    float(f),
+                    float(20.0 * np.log10(max(g, 1e-12)))
+                ]
+                for f, g in zip(gp.freq, gp.gains)
+            ]
+
+            self.numtaps_spin.setValue(len(gp.taps))
+            
+            self.window = "boxcar"
+            self.window_combo.setCurrentText(self.window)
+
+            self._rebuild_targets()
+            self._recompute()
+            
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Import Optimizer Log",
+                str(e),
+            )
+
     def _run_stream1090(self):
         if not hasattr(self, "current_taps"):
             return
