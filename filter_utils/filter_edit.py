@@ -1,27 +1,8 @@
 #!/usr/bin/env python3
-"""
-filter_editor.py — interactive FIR filter designer.
-
-Drag control points to shape a target frequency response; the tool runs
-scipy.signal.firwin2 against your points live and overlays the ACTUAL
-achievable response for the given tap count, so you can see directly how
-much a low tap count (e.g. 15 for stream1090's software filter, 32 for the
-AD9361 hardware FIR) forces a wide transition band / ripple versus what
-you asked for.
-
-No export — this is purely a design/exploration tool. Read tap values off
-the table (standard copy/paste works) if you need them elsewhere.
-
-Requires: PySide6, pyqtgraph, numpy, scipy
-    pip install PySide6 pyqtgraph numpy scipy
-
-Performance note: filter design (firwin2) and response computation (freqz)
-on 15-128 taps is sub-millisecond, so there is no need to debounce drag
-events — the cost here is entirely in redraw, which is why this uses
-pyqtgraph (fast, built for live-updating plots) rather than matplotlib.
-"""
 
 import sys
+from datetime import datetime
+import ast
 
 import numpy as np
 import subprocess
@@ -31,8 +12,9 @@ import json
 from PySide6 import QtCore, QtWidgets
 import pyqtgraph as pg
 
+import copy
 
-MIN_DB = -80.0
+MIN_DB = -100.0
 MAX_DB = 5.0
 
 
@@ -41,6 +23,9 @@ class FilterEditor(QtWidgets.QMainWindow):
         super().__init__()
         self.setWindowTitle("FIR Filter Editor")
         self.resize(1100, 650)
+
+        self.undo_stack = []
+        self.redo_stack = []
 
         # Control points: list of [freq_norm (0..1, 1 = Nyquist), gain_db]
         # Sorted by freq_norm at all times.
@@ -52,6 +37,7 @@ class FilterEditor(QtWidgets.QMainWindow):
             [1.0, -60.0],
         ]
         self.target_items = []  # parallel list of pg.TargetItem
+        self.points_backup = None
 
         self.fs = 8_000_000.0
         self.numtaps = 24
@@ -74,8 +60,29 @@ class FilterEditor(QtWidgets.QMainWindow):
 
         file_menu.addSeparator()
 
+        import_action = file_menu.addAction("Import Optimizer Log...")
+        import_action.triggered.connect(
+            self._import_optimizer_log
+        )
+
+        export_action = file_menu.addAction("Export Optimizer Log...")
+        export_action.triggered.connect(
+            self._export_optimizer_log
+        )
+
+        file_menu.addSeparator()
+
         exit_action = file_menu.addAction("Exit")
         exit_action.triggered.connect(self.close)
+
+        edit_menu = self.menuBar().addMenu("&Edit")
+        undo_action = edit_menu.addAction("Undo")
+        undo_action.setShortcut("Ctrl+Z")
+        undo_action.triggered.connect(self._undo)
+
+        redo_action = edit_menu.addAction("Redo")
+        redo_action.setShortcut("Ctrl+Y")
+        redo_action.triggered.connect(self._redo)
     # ------------------------------------------------------------------ UI
 
     def _build_ui(self):
@@ -138,11 +145,11 @@ class FilterEditor(QtWidgets.QMainWindow):
         self.numtaps_spin.valueChanged.connect(self._on_numtaps_changed)
         grid.addRow("Taps:", self.numtaps_spin)
 
-        self.make_even_checkbox = QtWidgets.QCheckBox(
-            "Make symmetric even (AntSDR)"
-        )
-        self.make_even_checkbox.toggled.connect(self._recompute)
-        grid.addRow(self.make_even_checkbox)
+        #self.make_even_checkbox = QtWidgets.QCheckBox(
+        #    "Make symmetric even (AntSDR)"
+        #)
+        #self.make_even_checkbox.toggled.connect(self._recompute)
+        #grid.addRow(self.make_even_checkbox)
 
         self.fs_spin = QtWidgets.QDoubleSpinBox()
         self.fs_spin.setRange(1_000, 200_000_000)
@@ -195,12 +202,18 @@ class FilterEditor(QtWidgets.QMainWindow):
                 movable=True,
             )
             item.sigPositionChanged.connect(self._on_point_moved)
+            item.sigPositionChangeFinished.connect(self._on_point_move_finished)
             self.plot.addItem(item)
             self.target_items.append(item)
 
         self.plot.setXRange(0, self.fs / 2.0)
 
     def _on_point_moved(self, item):
+        #print("_on_point_moved")
+        if self.points_backup is None:
+            #print("_on_point_move_Started")
+            self.points_backup = copy.deepcopy(self.points)
+
         idx = self.target_items.index(item)
         x, y = item.pos().x(), item.pos().y()
 
@@ -256,9 +269,11 @@ class FilterEditor(QtWidgets.QMainWindow):
                 if 0 < nearest_idx < len(self.points) - 1:
                     # endpoints (0 and last) are kept so firwin2 always has
                     # a full 0..Nyquist definition
+                    self.points_backup = copy.deepcopy(self.points)
                     del self.points[nearest_idx]
                     self._rebuild_targets()
                     self._recompute()
+                    self._push_undo()
             return
 
         if ev.double() and ev.button() == QtCore.Qt.LeftButton:
@@ -266,49 +281,113 @@ class FilterEditor(QtWidgets.QMainWindow):
                 return  # double-click landed on an existing point, ignore
             fnorm = max(0.0, min(1.0, x / (self.fs / 2.0)))
             gain = max(MIN_DB, min(MAX_DB, y))
+            self.points_backup = copy.deepcopy(self.points)
             self.points.append([fnorm, gain])
             self.points.sort(key=lambda p: p[0])
             self._rebuild_targets()
             self._recompute()
+            self._push_undo()
 
-    # ------------------------------------------------------------ options
+    def _capture_state(self, points):
+        return {
+            "points": points,
+            "numtaps": self.numtaps,
+            "fs": self.fs,
+            "window": self.window
+        }
+    
+    def _restore_state(self, state):
+        self.points = copy.deepcopy(state["points"])
+        self.numtaps = state["numtaps"]
+        self.fs = state["fs"]
+        self.window = state["window"]
+
+        self.fs_spin.blockSignals(True)
+        self.fs_spin.setValue(self.fs)
+        self.fs_spin.blockSignals(False)
+
+
+        self.numtaps_spin.blockSignals(True)
+        self.numtaps_spin.setValue(self.numtaps)
+        self.numtaps_spin.blockSignals(False)
+
+        self.window_combo.blockSignals(True)
+        self.window_combo.setCurrentText(self.window)
+        self.window_combo.blockSignals(False)
+
+        self._rebuild_targets()
+        self._recompute()
+
+    def _push_undo(self):
+        if (self.points_backup is None):
+            self.undo_stack.append(self._capture_state(copy.deepcopy(self.points)))
+        else:
+            self.undo_stack.append(self._capture_state(copy.deepcopy(self.points_backup)))
+            self.points_backup = None
+        # once we make a new edit,
+        # the redo chain becomes invalid
+        self.redo_stack.clear()
+
+        # avoid unbounded memory growth
+        if len(self.undo_stack) > 100:
+            self.undo_stack.pop(0)
+
+    def _undo(self):
+        if not self.undo_stack:
+            return
+
+        self.redo_stack.append(
+            self._capture_state(copy.deepcopy(self.points))
+        )
+
+        state = self.undo_stack.pop()
+        self._restore_state(state)
+        
+    def _redo(self):
+        if not self.redo_stack:
+            return
+        
+        self.undo_stack.append(
+            self._capture_state(copy.deepcopy(self.points))
+        )
+
+        state = self.redo_stack.pop()
+        self._restore_state(state)  
 
     def _on_numtaps_changed(self, value):
+        self._push_undo()
         self.numtaps = value
         self._recompute()
 
     def _on_fs_changed(self, value):
+        self._push_undo()
         self.fs = value
         self._rebuild_targets()
         self._recompute()
-
+        
     def _on_window_changed(self, text):
+        self._push_undo()
         self.window = text
         self._recompute()
-
+    
+    def _on_point_move_finished(self, item):
+        self._push_undo()
+        self._rebuild_targets()
+        self._recompute()
+            
     # --------------------------------------------------------- computation
-    def make_symmetric_even(taps):
-        n = len(taps)
-
-        if n % 2 == 1:
-            center = n // 2
-            taps = np.insert(taps, center + 1, taps[center])
-
+    def make_fixed_point(self, taps):
+        q_rx = np.clip(np.round(taps * 32767).astype(int),
+            -32768,
+            32767
+        )
+        taps = (q_rx / 32767).astype(float)
         return taps
     
     def _recompute(self):
         freqs = np.array([p[0] for p in self.points])
         gains_db = np.array([p[1] for p in self.points])
         gains_lin = 10 ** (gains_db / 20.0)
-
-        # firwin2 requires freq[0] == 0 and freq[-1] == 1
-        if freqs[0] != 0.0:
-            freqs = np.concatenate(([0.0], freqs))
-            gains_lin = np.concatenate(([gains_lin[0]], gains_lin))
-
-        if freqs[-1] != 1.0:
-            freqs = np.concatenate((freqs, [1.0]))
-            gains_lin = np.concatenate((gains_lin, [gains_lin[-1]]))
 
         numtaps = self.numtaps
 
@@ -345,13 +424,6 @@ class FilterEditor(QtWidgets.QMainWindow):
                     gains_lin,
                     window=self.window,
                 )
-
-        # AntSDR upload behaviour:
-        # duplicate centre tap to force even-length symmetry
-        if self.make_even_checkbox.isChecked():
-            if len(taps) % 2 == 1:
-                center = len(taps) // 2
-                taps = np.insert(taps, center + 1, taps[center])
 
         w, h = freqz(taps, worN=2048)
 
@@ -392,7 +464,6 @@ class FilterEditor(QtWidgets.QMainWindow):
             "numtaps": self.numtaps,
             "window": self.window,
             "command": self.command_edit.text(),
-            "make_symmetric_even": self.make_even_checkbox.isChecked(),
             "points": self.points,
         }
 
@@ -421,13 +492,165 @@ class FilterEditor(QtWidgets.QMainWindow):
         self.points = data["points"]
 
         self.command_edit.setText(data.get("command", ""))
-        self.make_even_checkbox.setChecked(data.get("make_symmetric_even"))
         self.fs_spin.setValue(self.fs)
         self.numtaps_spin.setValue(self.numtaps)
         self.window_combo.setCurrentText(self.window)
 
         self._rebuild_targets()
         self._recompute()
+            
+    def _import_optimizer_log(self):
+        filename, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self,
+            "Import Optimizer Log",
+            "",
+            "Log Files (*.log *.txt);;All Files (*)",
+        )
+
+        if not filename:
+            return
+
+        try:
+            with open(filename, "r") as f:
+                lines = f.readlines()
+
+                best_params = None
+                best_freq = None
+                numtaps = None
+                window_mode = None
+
+                # last occurrence wins
+                for line in lines:
+                    line = line.strip()
+
+                    if line.startswith("# Number of taps:"):
+                        numtaps = int(
+                            line.split(":", 1)[1].strip()
+                        )
+
+                    elif line.startswith("# Best params:"):
+                        best_params = ast.literal_eval(
+                            line.split(":", 1)[1].strip()
+                        )
+
+                    elif line.startswith("# Window mode:"):
+                        window_mode = line.split(":", 1)[1].strip()
+
+                    elif line.startswith("# Best freq:"):
+                        best_freq = ast.literal_eval(
+                            line.split(":", 1)[1].strip()
+                        )
+
+                    elif line.startswith("# FS:"):
+                        try:
+                            fs_str = (
+                                line.split(":", 1)[1]
+                                .split("MHz")[0]
+                                .strip()
+                            )
+
+                            fs = float(fs_str) * 1_000_000.0
+
+                        except Exception:
+                            pass
+
+            if best_params is None:
+                raise ValueError("No optimizer result found.")
+            
+            #print(best_freq)
+            #print(best_params)
+
+            gains = [x for x in best_params]
+
+            if best_freq is not None:
+                freqs = best_freq
+            else:    
+                freqs = np.linspace(0.0, 1.0, len(gains))
+            
+            self.points = [
+                [
+                    float(f),
+                    float(20.0 * np.log10(max(g, 1e-12)))
+                ]
+                for f, g in zip(freqs, gains)
+            ]
+
+            if numtaps is not None:
+                self.numtaps_spin.setValue(numtaps)
+
+            if fs is not None:
+                self.fs_spin.setValue(fs)
+
+            if (window_mode is not None) and (window_mode in ["hamming", "hann", "blackman", "boxcar", "bartlett", "kaiser"]):
+                self.window = window_mode
+                self.window_combo.setCurrentText(self.window)
+
+            self._rebuild_targets()
+            self._recompute()
+            
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Import Optimizer Log",
+                str(e),
+            )
+
+    def _export_optimizer_log(self):
+        filename, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self,
+            "Export Optimizer Log",
+            "",
+            "Log file (*.log);;"
+            "Textfile (*.txt);;"  
+            "All Files (*)"
+        )
+
+        if not filename:
+            return
+        
+        if not hasattr(self, "current_taps"):
+            return
+        try:
+            with open(filename, "w") as f:
+                # ==================================================
+                # Time: 2026-10-07 20:27:15
+                # Number of taps: 25
+                # Best freq: [0.04, 0.08, 0.12, 0.16, 0.2, 0.24, 0.28, 0.32, 0.36, 0.6]
+                # Best params: [1.1185295127882027, 0.6131723496894245, 0.31016966818849057, 0.45603607875140273, 0.8012869731106671, 0.4734760342045161, 0.8115908113732938, 0.762818126251737, 0.9944024170204648, 0.0027044149909824858]
+                # Best taps:
+                #data = {
+                #    "sample_rate": self.fs,
+                #    "numtaps": self.numtaps,
+                #    "window": self.window,
+                #    "command": self.command_edit.text(),
+                #    "points": self.points,
+                #}
+                f.write("# ==================== EDITOR ====================\n")
+                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                f.write(f"# Time: {timestamp}\n")
+                f.write(f"# Number of taps: {self.numtaps}\n")
+                f.write(f"# Window mode: {self.window}\n")
+                
+                # convert back to linear gains
+                freqs = [p[0] for p in self.points]
+                db_values = [p[1] for p in self.points]
+                gains = [10.0 ** (db / 20.0) for db in db_values]
+                
+                f.write(f"# Best freq: {freqs}\n")
+                f.write(f"# Best params: {gains}\n")
+
+                # write the taps at the end
+                for tap in self.current_taps:
+                    f.write(f"{tap:.12f}\n")
+                
+
+            
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Export Optimizer Log",
+                str(e),
+            )
             
     def _run_stream1090(self):
         if not hasattr(self, "current_taps"):
