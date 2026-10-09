@@ -32,15 +32,17 @@ public:
     bool setBiasTee(bool enabled);
 
     // Called before opening the device to parse the serial
-    void applyConfigPreOpen(const IniConfig::Section& cfg) override;
+    bool applyConfigPreOpen(const IniConfig::Section& cfg) override;
 
     // Reload hook
-    void applyConfigPostOpen(const IniConfig::Section& cfg) override;
+    bool validateConfigPostOpen(const IniConfig::Section& cfg) override;
+    bool applyConfigPostOpen(const IniConfig::Section& cfg) override;
 
 private:
     bool open_with_serial(uint64_t serial);
     bool tryEnablingPacking();
-    bool applySetting(const std::string& key, const std::string& value);
+    bool applySetting(const std::string& key, const std::string& value) override;
+    bool validateSetting(const std::string& key, const std::string& value) const;
 
     struct ShadowState {
         uint32_t frequency = 1090000000;

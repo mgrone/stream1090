@@ -181,6 +181,7 @@ if(BUILD_TESTING)
         ${PREAMBLE_THRESHOLD_DEF}
         ${MIN_SNR_DEF}
     )
+    stream1090_add_test(device_config_test tests/DeviceConfigTest.cpp)
 endif()
 
 # ------------------------------------------------------------

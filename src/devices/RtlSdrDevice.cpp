@@ -428,19 +428,50 @@ bool RtlSdrDevice::applySetting(const std::string& key, const std::string& value
     return false;
 }
 
+bool RtlSdrDevice::validateSetting(const std::string& key,
+                                  const std::string& value) const {
+    int integer = 0;
+    uint32_t unsignedValue = 0;
+    float gain = 0.0f;
+    if (key == "frequency" || key == "tuner_bandwidth")
+        return DeviceSettings::parseUnsigned(value, unsignedValue);
+    if (key == "gain")
+        return DeviceSettings::parseFloat(value, gain);
+    if (key == "ppm" || key == "lna_gain" || key == "mixer_gain"
+            || key == "vga_gain")
+        return DeviceSettings::parseInt(value, integer);
+    return key == "agc" || key == "bias_tee" || key == "offset_tuning";
+}
 
-void RtlSdrDevice::applyConfigPreOpen(const IniConfig::Section& cfg) {
+
+bool RtlSdrDevice::applyConfigPreOpen(const IniConfig::Section& cfg) {
     for (auto& [key, value] : cfg) {
 
         if (key == "serial")
             m_serialString = value;
     }
+    return true;
 }
 
 // ----------------------
 // Reload logic
 // ----------------------
-void RtlSdrDevice::applyConfigPostOpen(const IniConfig::Section& cfg) {
+bool RtlSdrDevice::validateConfigPostOpen(const IniConfig::Section& cfg) {
+    for (const auto& [key, value] : cfg) {
+        if (key == "serial")
+            continue;
+        if (!validateSetting(key, value)) {
+            Log::error("RtlSdrDevice") << "invalid setting '" << key
+                                       << " = " << value << "'";
+            return false;
+        }
+    }
+    return true;
+}
+
+bool RtlSdrDevice::applyConfigPostOpen(const IniConfig::Section& cfg) {
+    if (!validateConfigPostOpen(cfg))
+        return false;
     if (!m_initialConfigApplied) {
         m_initialConfigApplied = true;
 
@@ -475,7 +506,8 @@ void RtlSdrDevice::applyConfigPostOpen(const IniConfig::Section& cfg) {
         if (key == "serial")
             continue; // immutable
 
-        applySetting(key, value);
+        if (!applySettingSafely(key, value))
+            return false;
     }
 
     // Report the bandwidth setting once. librtlsdr has no read-back API for
@@ -488,4 +520,5 @@ void RtlSdrDevice::applyConfigPostOpen(const IniConfig::Section& cfg) {
                           : std::string("auto (derived by librtlsdr from sample rate)"))
                   << std::endl;
     }
+    return true;
 }
