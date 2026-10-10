@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.10)
 project(stream1090 VERSION 1.0.0)
+find_package(Threads REQUIRED)
 
 # ------------------------------------------------------------
 # Build type
@@ -146,7 +147,7 @@ target_compile_definitions(stream1090 PRIVATE
     ${DEVICE_DEFINITIONS}
 )
 
-target_link_libraries(stream1090 PRIVATE ${DEVICE_LIBS})
+target_link_libraries(stream1090 PRIVATE ${DEVICE_LIBS} Threads::Threads)
 
 include(CTest)
 
@@ -181,6 +182,38 @@ if(BUILD_TESTING)
         ${PREAMBLE_THRESHOLD_DEF}
         ${MIN_SNR_DEF}
     )
+
+    # TCP output tests. The frame/queue test and the server test are plain C++
+    # binaries; the CLI test is a black-box CMake script with no framework.
+    stream1090_add_test(tcp_frame_test tests/TcpFrameTest.cpp)
+    target_link_libraries(tcp_frame_test PRIVATE Threads::Threads)
+    stream1090_add_test(tcp_output_server_test tests/TcpOutputServerTest.cpp)
+    target_sources(tcp_output_server_test PRIVATE src/TcpOutputServer.cpp)
+    target_link_libraries(tcp_output_server_test PRIVATE Threads::Threads)
+    target_compile_definitions(tcp_output_server_test PRIVATE STREAM1090_TCP_TEST_SEAM)
+    # Joins the DSP-side handlers to the server: the server test alone cannot
+    # tell a correct wiring from a handler that never publishes.
+    stream1090_add_test(tcp_message_handler_test tests/TcpMessageHandlerTest.cpp)
+    target_sources(tcp_message_handler_test PRIVATE src/TcpOutputServer.cpp)
+    target_link_libraries(tcp_message_handler_test PRIVATE Threads::Threads)
+    # The watchdog and completion logic the device path runs, exercised with a
+    # fake device: no dongle can be assumed on a build machine.
+    stream1090_add_test(tcp_supervision_test tests/TcpSupervisionTest.cpp)
+    target_sources(tcp_supervision_test PRIVATE src/TcpOutputServer.cpp)
+    target_link_libraries(tcp_supervision_test PRIVATE Threads::Threads)
+    target_compile_definitions(tcp_supervision_test PRIVATE STREAM1090_TCP_TEST_SEAM)
+    # The parsing and --help cases stay a CMake script, which needs nothing but
+    # the binary.
+    add_test(NAME tcp_cli_test
+        COMMAND ${CMAKE_COMMAND}
+            -DSTREAM1090_EXECUTABLE=$<TARGET_FILE:stream1090>
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/TcpCliTest.cmake
+    )
+    set_tests_properties(tcp_frame_test PROPERTIES TIMEOUT 30)
+    set_tests_properties(tcp_output_server_test PROPERTIES TIMEOUT 60)
+    set_tests_properties(tcp_message_handler_test PROPERTIES TIMEOUT 60)
+    set_tests_properties(tcp_supervision_test PROPERTIES TIMEOUT 60)
+    set_tests_properties(tcp_cli_test PROPERTIES TIMEOUT 60)
 endif()
 
 # ------------------------------------------------------------
@@ -215,7 +248,8 @@ set(CPACK_PACKAGE_DESCRIPTION_SUMMARY
 set(CPACK_PACKAGE_DESCRIPTION
     "stream1090 reads IQ samples from an Airspy or RTL-SDR dongle and outputs\n"
     "raw Mode-S message frames to stdout using CRC-based message framing.\n"
-    "It is designed to feed a decoder such as readsb or dump1090-fa via socat.")
+    "It is designed to feed a decoder such as readsb or dump1090-fa via socat,\n"
+    "or through the optional built-in AVR/raw TCP listener.")
 set(CPACK_GENERATOR "DEB")
 set(CPACK_DEBIAN_PACKAGE_SECTION "hamradio")
 set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)

@@ -271,6 +271,75 @@ For testing you may now proceed in two steps:
 
 You should now see the readsb table filling up with planes.
 
+#### Feeding readsb without socat (optional)
+
+stream1090 can also listen on a TCP port itself and let readsb connect to it,
+which removes `socat` from the picture. This is opt-in: without the
+`--net-*` options below nothing changes and stdout behaves exactly as above.
+
+```
+  Native device
+        |
+        v
+    stream1090  --- AVR TCP --->  readsb
+                                   |
+                                   v
+                           bells and whistles
+```
+
+For RTL-SDR over AVR/raw, the same format the stdout pipeline sends:
+```
+./build/stream1090 -s 2.4 -d ./configs/rtlsdr.ini \
+  --net-bind-address 127.0.0.1 --net-avr-port 30006 --no-stdout
+```
+```
+readsb --net-only --net-connector=127.0.0.1,30006,raw_in --interactive
+```
+For Airspy, use the same AVR/raw connector:
+```
+./build/stream1090 -s 6 -d ./configs/airspy.ini \
+  --net-bind-address 127.0.0.1 --net-avr-port 30006 --no-stdout
+```
+```
+readsb --net-only --net-connector=127.0.0.1,30006,raw_in --interactive
+```
+
+Notes:
+- The two commands above are alternatives, not two processes on the same
+  dongle.
+- `--no-stdout` disables the stdout stream and requires `--net-avr-port`.
+  It is optional: leave it out and stdout keeps working alongside the
+  listener.
+- `30006` is an example, not a default and not guaranteed to be free.
+- The listener has no authentication and no TLS. The default bind is loopback
+  (`127.0.0.1`); for a remote consumer bind explicitly, for example
+  `--net-bind-address 0.0.0.0` (all interfaces, restrict it with a firewall) or
+  a specific LAN address such as `--net-bind-address 192.168.1.50`, and point
+  the readsb connector at that host.
+- A bind address that resolves to both IPv4 and IPv6, such as `localhost`,
+  binds only one of them, and which one is not fixed. When the bound address
+  differs from the one you asked for, stream1090 says so at the normal log
+  level (`bind address 'localhost' resolved to [::1]:30006`) — point the
+  connector at that address, not at the name you passed. With `-v` the
+  listening address is logged in every case. Passing a literal `127.0.0.1` or
+  `0.0.0.0` selects IPv4 explicitly; `::1` selects IPv6 loopback. Binding to
+  `::` listens on IPv6 wildcard, but accepting IPv4 connections on that socket
+  depends on the system default: stream1090 does not set `IPV6_V6ONLY` or open
+  separate IPv4 and IPv6 listeners.
+- Frames are only sent while a client is connected; there is no replay of
+  what happened before it connected. A client too slow to keep up is
+  disconnected rather than allowed to stall the decoder, and the counts are
+  reported in the log.
+- A consumer that closes the connection frees its slot immediately, whether or
+  not frames are flowing.
+- If a listener that was asked for fails for good while running, the run stops
+  with exit status 1 instead of decoding into nothing -- also when stdout is
+  still enabled, so a service manager sees the failure. A slow client, a
+  refused client or a full queue is not such a failure: those are counted and
+  logged, and the run continues.
+- Without RSSI compiled in (`-DENABLE_RSSI=OFF`), AVR frames use the `@`
+  prefix, without a signal-level field.
+
 ### Readsb as a service
 If you have readsb running as a service by for example using the install script. 
 You may have to edit the config file ```/etc/default/readsb```. Especially when readsb has been compiled with native RTL-SDR support. So if you want readsb to not use the dongle, you have to get rid of this
@@ -282,6 +351,13 @@ by setting it to nothing
 RECEIVER_OPTIONS=""
 ```
 Make sure that ```NET_OPTIONS="..."``` contains ```--net-ri-port 30001```
+
+If you use the native listener instead of socat, readsb has to connect out
+rather than listen: replace the raw-input port with a connector, for example
+```
+NET_OPTIONS="--net-only --net --net-ro-port 30002 --net-bo-port 30005 --net-connector=127.0.0.1,30006,raw_in"
+```
+Merge this with the connectors and outputs you already have.
 
 
 ### Dump1090-fa

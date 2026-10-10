@@ -118,7 +118,46 @@ Configure your decoder to accept raw input on port 30001 — see
 [README.md](./README.md#stack-integration) for readsb and dump1090-fa
 instructions.
 
-Enable and start the service:
+### Optional: the native TCP listener instead of socat
+
+stream1090 can listen on a TCP port itself and let readsb connect to it, which
+takes socat out of the pipeline. The packaged unit keeps socat, so this is a
+local decision and nothing changes on upgrade. See the "Feeding readsb without
+socat" section of the main README for what the options do.
+
+Three files change, and the rollback is the same three in reverse. Back them up
+first, and note the current `READSB_PORT` and `NET_OPTIONS` values:
+
+```bash
+sudo cp /etc/stream1090/stream1090.conf /etc/stream1090/stream1090.conf.bak
+sudo cp /etc/default/readsb /etc/default/readsb.bak
+systemctl cat stream1090   # check for drop-ins that already set ExecStart
+```
+
+1. Add the listener options to `STREAM1090_OPTS` in
+   `/etc/stream1090/stream1090.conf`, keeping your own hardware and rate
+   options: `--net-bind-address 127.0.0.1 --net-avr-port 30006`.
+   Leave `READSB_PORT` alone; it is only used by the socat pipeline, and
+   leaving it is what keeps the rollback trivial.
+2. Replace the piped `ExecStart` with a drop-in of its own, so the rollback is
+   one file: `/etc/systemd/system/stream1090.service.d/avr-tcp.conf` with an
+   empty `ExecStart=` followed by the stream1090 command alone. If that
+   directory already holds an override that sets `ExecStart`, merge by hand
+   rather than overwriting it.
+3. In `/etc/default/readsb`, replace the raw-input port with a connector:
+   `--net-connector=127.0.0.1,30006,raw_in`, merged with the connectors and
+   outputs you already have.
+
+Then `sudo systemctl daemon-reload && sudo systemctl restart stream1090 readsb`
+and check `systemctl status stream1090` and the readsb message rate.
+
+To go back, restore the two `.bak` files, delete
+`/etc/systemd/system/stream1090.service.d/avr-tcp.conf`, and reload and restart
+the same way.
+
+### Starting the service
+
+Whichever of the two paths above you use, enable and start the unit:
 
 ```bash
 sudo systemctl enable stream1090
