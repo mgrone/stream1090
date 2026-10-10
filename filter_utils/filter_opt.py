@@ -512,8 +512,8 @@ def run_stream1090(
     return parse_frames(proc.stdout)
 
 
-def score_of(total: int, long_count: int) -> int:
-    return total + long_count
+def score_of(total: int, long_count: int, df17: int) -> int:
+    return total + long_count + df17
 
 
 # ============================================================
@@ -635,7 +635,7 @@ def make_objective(cfg: Config, state: OptimizerState, bounds_ref: list):
 
         total, long_count, df_counts = run_stream1090(cfg, filter_path=FILTER_PATH)
         df17 = df_counts.get(17, 0)
-        score = score_of(total, long_count)
+        score = score_of(total, long_count, df17)
 
         state.num_calls += 1
         improved = state.maybe_record(cfg, score, total, df17, params, taps, bounds_ref[0])
@@ -687,7 +687,7 @@ def main() -> None:
     baseline_total, baseline_long, baseline_df = run_stream1090(
         cfg, use_builtin_filter=True
     )
-    baseline_score = score_of(baseline_total, baseline_long)
+    baseline_score = score_of(baseline_total, baseline_long, baseline_df.get(17, 0))
     write_log_entry(
         cfg, "BASELINE",
         score=baseline_score, total=baseline_total, df17=baseline_df.get(17, 0),
