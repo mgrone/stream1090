@@ -1,0 +1,12 @@
+ADD_PRESET(RtlSdr, 2.4, 8)
+ADD_PRESET(RtlSdr, 2.4, 12)
+ADD_PRESET(RtlSdr, 2.56, 8)
+ADD_PRESET(RtlSdr, 2.56, 12)
+
+ADD_PRESET(Airspy, 6, 6)
+ADD_PRESET(Airspy, 6, 12)
+ADD_PRESET(Airspy, 6, 24)
+ADD_PRESET(Airspy, 10, 10)
+ADD_PRESET(Airspy, 10, 24)
+
+

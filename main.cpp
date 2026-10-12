@@ -14,18 +14,17 @@
 #include <optional>
 
 #include "MainInstance.hpp"
-#include "PresetDispatcher.hpp"
-
 
 struct RatePair {
     SampleRate in;
     SampleRate out;
+    InputFormatType type;
 };
 
 std::vector<RatePair> collect_rate_pairs() {
     std::vector<RatePair> pairs;
     std::apply([&](auto... p) {
-        ((pairs.push_back({ decltype(p)::inputRate, decltype(p)::outputRate })), ...);
+        ((pairs.push_back({ decltype(p)::inputRate, decltype(p)::outputRate, decltype(p)::RawFormatType::id })), ...);
     }, presets);
 
     // Sort by input, then output
@@ -62,17 +61,25 @@ bool is_valid_rate_pair(SampleRate in, SampleRate out) {
     return false;
 }
 
+std::string inputFormatName(InputFormatType inputFormatType) {
+    switch (inputFormatType) {
+            case InputFormatType::IQ_UINT8_RTL_SDR:
+                return "RTL-SDR IQ uint8";
+            case InputFormatType::IQ_UINT16_RAW_AIRSPY:
+                return "Airspy Raw uint16";
+            case InputFormatType::IQ_INT16_ANTSDR:
+                return "Generic 12 bit IQ int16";
+        default:
+            return "Unknown";
+        }
+}
 
 void print_rate_pairs() {
     auto pairs = collect_rate_pairs();
 
     std::cout << "Supported sample rate combinations:\n";
     for (auto& p : pairs) {
-#if defined(STREAM1090_CUSTOM_INPUT) && STREAM1090_CUSTOM_INPUT
-        std::string fmt = " custom";
-#else 
-        std::string fmt = (p.in < 6'000'000) ? "uint8 IQ" : "uint16 IQ";
-#endif
+        std::string fmt = inputFormatName(p.type);
         std::cout
             << "  "
             << (float(p.in) / 1'000'000.0f)
@@ -269,21 +276,6 @@ std::vector<float> load_taps_from_file(const std::string& filename) {
     return taps;
 }
 
-// Returns nothing when no preset matches the requested configuration, and
-// otherwise the outcome of the run. Dispatch is split per device backend so
-// the heavy MainInstance<...> instantiations compile in their own TUs.
-std::optional<bool> runInstanceFromPresets(const CompileTimeVars& c_vars, const RuntimeVars& r_vars) {
-#if defined(STREAM1090_CUSTOM_INPUT) && STREAM1090_CUSTOM_INPUT
-    return runPresetGroup(presets, c_vars, r_vars);
-#else
-    if (auto o = runRtlSdrPresets(c_vars, r_vars))
-        return o;
-    if (auto o = runAirspyPresets(c_vars, r_vars))
-        return o;
-    return std::nullopt;
-#endif
-}
-
 int main(int argc, char** argv) {
     // Input and logging may run beside AVR output. Their default ties must not
     // flush std::cout concurrently from another thread.
@@ -424,9 +416,9 @@ int main(int argc, char** argv) {
         // this needs fixing!!!
         c_vars.rawFormat = InputFormatType::IQ_INT16_ANTSDR;
         if (!r_vars.filterTaps.empty()) {
-            c_vars.pipelineOption = IQPipelineOptions::IQ_FIR_RTL_SDR_FILE;
+            c_vars.pipelineOption = IQPipelineOptions::IQ_FIR_FILE;
         } else if (args.iq_filter) {
-            c_vars.pipelineOption = IQPipelineOptions::IQ_FIR_RTL_SDR;
+            c_vars.pipelineOption = IQPipelineOptions::IQ_FIR_INTERNAL;
         } else {
             c_vars.pipelineOption = IQPipelineOptions::NONE;
         }
@@ -439,15 +431,15 @@ int main(int argc, char** argv) {
         c_vars.pipelineOption = IQPipelineOptions::NONE;
         if (!r_vars.filterTaps.empty()) {
             if (c_vars.rawFormat == InputFormatType::IQ_UINT8_RTL_SDR) {
-                c_vars.pipelineOption = IQPipelineOptions::IQ_FIR_RTL_SDR_FILE;
+                c_vars.pipelineOption = IQPipelineOptions::IQ_FIR_FILE;
             } else {
                 c_vars.pipelineOption = IQPipelineOptions::IQ_FIR_FILE;
             }
         } else if (args.iq_filter) {
             if (c_vars.rawFormat == InputFormatType::IQ_UINT8_RTL_SDR) {
-                c_vars.pipelineOption = IQPipelineOptions::IQ_FIR_RTL_SDR;
+                c_vars.pipelineOption = IQPipelineOptions::IQ_FIR_INTERNAL;
             } else {
-                c_vars.pipelineOption = IQPipelineOptions::IQ_FIR;
+                c_vars.pipelineOption = IQPipelineOptions::IQ_FIR_INTERNAL;
             }        
         }
     }
@@ -455,7 +447,7 @@ int main(int argc, char** argv) {
     // ------------------------
     // Let's go
     // ------------------------
-    const auto outcome = runInstanceFromPresets(c_vars, r_vars);
+    const auto outcome = runInstanceFromPresets(presets, c_vars, r_vars);
     if (!outcome) {
         std::cerr << "[Stream1090] Configuration is not supported: "<< c_vars.inputRate << " -> " << c_vars.outputRate << std::endl;
         return 1;

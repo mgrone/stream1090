@@ -434,6 +434,7 @@ class FilterEditor(QtWidgets.QMainWindow):
                     window=self.window,
                 )
 
+        taps /= np.sum(taps)
         w, h = freqz(taps, worN=2048)
 
         freq_hz = w / np.pi * (self.fs / 2.0)

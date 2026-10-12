@@ -5,11 +5,8 @@
 #define Signed_12bit IQ_INT16_ANTSDR
 
 #define None IQPipelineOptions::NONE
-#define Internal IQPipelineOptions::IQ_FIR_RTL_SDR
-#define File IQPipelineOptions::IQ_FIR_RTL_SDR_FILE
-
-#define AirspyInternal IQPipelineOptions::IQ_FIR
-#define AirspyFile IQPipelineOptions::IQ_FIR_FILE
+#define Internal IQPipelineOptions::IQ_FIR_INTERNAL
+#define File IQPipelineOptions::IQ_FIR_FILE
 
 template<
     typename RawFormat,
@@ -35,7 +32,7 @@ constexpr auto make_preset() {
     >{};
 }
 
-#define ADD_PRESET(IN_TYPE, IN_RATE, OUT_RATE, FILTER, ...) \
+#define ADD_PRESET_EXT(IN_TYPE, IN_RATE, OUT_RATE, FILTER, ...) \
     std::make_tuple(                                        \
     make_preset<                                            \
         IN_TYPE,                                            \
@@ -44,8 +41,13 @@ constexpr auto make_preset() {
         FILTER                                              \
     >()),
 
-constexpr auto custom_presets = std::tuple_cat(
-#include "../presets/CustomPresets.hpp"
+#define ADD_PRESET(IN_TYPE, IN_RATE, OUT_RATE)          \
+ADD_PRESET_EXT(IN_TYPE, IN_RATE, OUT_RATE, None)                \
+ADD_PRESET_EXT(IN_TYPE, IN_RATE, OUT_RATE, Internal)            \
+ADD_PRESET_EXT(IN_TYPE, IN_RATE, OUT_RATE, File)                \
+
+constexpr auto loaded_presets = std::tuple_cat(
+#include PRESET_LOADER_FILENAME
 std::make_tuple()
 );
 
@@ -58,7 +60,4 @@ std::make_tuple()
 #undef None
 #undef Internal
 #undef File
-
-#undef AirspyInternal
-#undef AirspyFile
 

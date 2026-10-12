@@ -428,6 +428,7 @@ def build_lowpass_firwin2(gains: np.ndarray, freq: np.ndarray, cfg: Config) -> n
     grid[0], grid[-1] = 0.0, 1.0  # firwin2 requires exactly 0 and 1
     taps = firwin2(cfg.num_taps, grid, np.asarray(gains, dtype=np.float64),
                    window=cfg.window_mode)
+    taps /= np.sum(taps)
     return taps.astype(np.float32)
 
 
@@ -512,8 +513,9 @@ def run_stream1090(
     return parse_frames(proc.stdout)
 
 
-def score_of(total: int, long_count: int, df17: int) -> int:
+def score_of(total: int, long_count: int, df17: int, df11: int) -> int:
     return total + long_count + df17
+    #return df17 + df11
 
 
 # ============================================================
@@ -635,7 +637,8 @@ def make_objective(cfg: Config, state: OptimizerState, bounds_ref: list):
 
         total, long_count, df_counts = run_stream1090(cfg, filter_path=FILTER_PATH)
         df17 = df_counts.get(17, 0)
-        score = score_of(total, long_count, df17)
+        df11 = df_counts.get(11, 0)
+        score = score_of(total, long_count, df17, df11)
 
         state.num_calls += 1
         improved = state.maybe_record(cfg, score, total, df17, params, taps, bounds_ref[0])
@@ -687,7 +690,7 @@ def main() -> None:
     baseline_total, baseline_long, baseline_df = run_stream1090(
         cfg, use_builtin_filter=True
     )
-    baseline_score = score_of(baseline_total, baseline_long, baseline_df.get(17, 0))
+    baseline_score = score_of(baseline_total, baseline_long, baseline_df.get(17, 0), baseline_df.get(11, 0))
     write_log_entry(
         cfg, "BASELINE",
         score=baseline_score, total=baseline_total, df17=baseline_df.get(17, 0),

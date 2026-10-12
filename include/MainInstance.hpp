@@ -343,7 +343,7 @@ public:
 
     bool run() {
         // setup pipeline
-        auto iqPipeline = IQPipelineSelector<inputRate, outputRate, pipelineOption>().make(m_runtimeVars.filterTaps);
+        auto iqPipeline = IQPipelineSelector<inputRate, outputRate, RawFormatType, pipelineOption>().make(m_runtimeVars.filterTaps);
         Log::info("",iqPipeline.toString());
         // for sync read from std in we take a short cut
         if (m_runtimeVars.deviceType == InputDeviceType::STREAM) {
@@ -360,3 +360,33 @@ private:
     DevicePtr m_device = nullptr;
     RuntimeVars m_runtimeVars;
 };
+
+template<typename Tuple, typename F>
+constexpr bool for_each_in_tuple(const Tuple& t, F&& f) {
+    bool done = false;
+    std::apply([&](auto const&... elems) {
+        (( !done && f(elems) ? done = true : false ), ...);
+    }, t);
+    return done;
+}
+
+template<typename Tuple>
+std::optional<bool> runInstanceFromPresets(const Tuple& presets,
+                                           const CompileTimeVars& compileTimeVars,
+                                           const RuntimeVars& runtimeVars) {
+    std::optional<bool> outcome;
+    for_each_in_tuple(presets, [&](auto const& p) {
+        using P = std::decay_t<decltype(p)>;
+
+        if (P::RawFormatType::id  == compileTimeVars.rawFormat &&
+            P::inputRate          == compileTimeVars.inputRate &&
+            P::outputRate         == compileTimeVars.outputRate &&
+            P::pipelineOption     == compileTimeVars.pipelineOption)
+        {
+            outcome = MainInstance<P>(runtimeVars).run();
+            return true;
+        }
+        return false;
+    });
+    return outcome;
+}

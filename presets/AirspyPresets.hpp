@@ -1,0 +1,7 @@
+ADD_PRESET(Airspy, 6, 6)
+ADD_PRESET(Airspy, 6, 12)
+ADD_PRESET(Airspy, 6, 24)
+ADD_PRESET(Airspy, 10, 10)
+ADD_PRESET(Airspy, 10, 24)
+ADD_PRESET(Airspy, 10, 40)
+ADD_PRESET(Airspy, 10, 48)

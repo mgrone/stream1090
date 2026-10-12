@@ -13,10 +13,8 @@
 
 enum class IQPipelineOptions {
     NONE,
-    IQ_FIR,
-    IQ_FIR_FILE,
-    IQ_FIR_RTL_SDR,
-    IQ_FIR_RTL_SDR_FILE
+    IQ_FIR_INTERNAL,
+    IQ_FIR_FILE
 };
 
 
@@ -34,90 +32,19 @@ struct Preset {
 
 
 #if defined(STREAM1090_CUSTOM_INPUT) && STREAM1090_CUSTOM_INPUT
+#define PRESET_LOADER_FILENAME "../presets/CustomPresets.hpp"
+#elif defined(STREAM1090_TOO_MUCH_CPU) && STREAM1090_TOO_MUCH_CPU
+#define PRESET_LOADER_FILENAME "../presets/AirspyPresets.hpp"
+#else
+#define PRESET_LOADER_FILENAME "../presets/DefaultPresets.hpp"
+#endif
+
 #include "PresetsLoader.hpp"
-constexpr auto presets = custom_presets;
-/*constexpr auto presets = std::make_tuple(
-    // Custom Input
-    Preset<IQ_INT16_ANTSDR, Sampler_4_0_to_4_0_Mhz, IQPipelineOptions::NONE>{},
-    Preset<IQ_INT16_ANTSDR, Sampler_6_0_to_6_0_Mhz, IQPipelineOptions::NONE>{},
-    Preset<IQ_INT16_ANTSDR, Sampler_6_0_to_6_0_Mhz, IQPipelineOptions::IQ_FIR_RTL_SDR>{},
-    Preset<IQ_INT16_ANTSDR, Sampler_6_0_to_12_0_Mhz, IQPipelineOptions::NONE>{},
-    Preset<IQ_INT16_ANTSDR, Sampler_6_0_to_12_0_Mhz, IQPipelineOptions::IQ_FIR_RTL_SDR>{},
-    Preset<IQ_INT16_ANTSDR, Sampler_6_0_to_24_0_Mhz, IQPipelineOptions::NONE>{},
-    Preset<IQ_INT16_ANTSDR, Sampler_6_0_to_24_0_Mhz, IQPipelineOptions::IQ_FIR_RTL_SDR>{},
-    Preset<IQ_INT16_ANTSDR, Sampler_8_0_to_8_0_Mhz, IQPipelineOptions::NONE>{},
-    Preset<IQ_INT16_ANTSDR, Sampler_10_0_to_10_0_Mhz, IQPipelineOptions::NONE>{},
-    Preset<IQ_INT16_ANTSDR, Sampler_10_0_to_10_0_Mhz, IQPipelineOptions::IQ_FIR_RTL_SDR>{},
-    Preset<IQ_INT16_ANTSDR, Sampler_10_0_to_24_0_Mhz, IQPipelineOptions::NONE>{},
-    Preset<IQ_INT16_ANTSDR, Sampler_10_0_to_24_0_Mhz, IQPipelineOptions::IQ_FIR_RTL_SDR>{},
-    Preset<IQ_INT16_ANTSDR, Sampler_12_0_to_12_0_Mhz, IQPipelineOptions::NONE>{}
-);*/
-#else 
-// One tuple per device backend. They are combined into `presets` below for
-// rate-pair scanning, but dispatched from separate translation units (see
-// src/presets_rtlsdr.cpp / src/presets_airspy.cpp): each TU then compiles only
-// its own MainInstance<...> instantiations instead of all of them in main.cpp.
-constexpr auto rtlSdrPresets = std::make_tuple(
-    // RTL-SDR (uint8) default presets
-    Preset<IQ_UINT8_RTL_SDR, Sampler_2_4_to_8_0_Mhz, IQPipelineOptions::NONE>{},
-    Preset<IQ_UINT8_RTL_SDR, Sampler_2_4_to_8_0_Mhz, IQPipelineOptions::IQ_FIR_RTL_SDR>{},
-    Preset<IQ_UINT8_RTL_SDR, Sampler_2_4_to_8_0_Mhz, IQPipelineOptions::IQ_FIR_RTL_SDR_FILE>{},
-
-    Preset<IQ_UINT8_RTL_SDR, Sampler_2_4_to_12_0_Mhz, IQPipelineOptions::NONE>{},
-    Preset<IQ_UINT8_RTL_SDR, Sampler_2_4_to_12_0_Mhz, IQPipelineOptions::IQ_FIR_RTL_SDR>{},
-    Preset<IQ_UINT8_RTL_SDR, Sampler_2_4_to_12_0_Mhz, IQPipelineOptions::IQ_FIR_RTL_SDR_FILE>{},
-
-    Preset<IQ_UINT8_RTL_SDR, Sampler_2_56_to_8_0_Mhz, IQPipelineOptions::NONE>{},
-    Preset<IQ_UINT8_RTL_SDR, Sampler_2_56_to_8_0_Mhz, IQPipelineOptions::IQ_FIR_RTL_SDR>{},
-    Preset<IQ_UINT8_RTL_SDR, Sampler_2_56_to_8_0_Mhz, IQPipelineOptions::IQ_FIR_RTL_SDR_FILE>{} ,
-
-    Preset<IQ_UINT8_RTL_SDR, Sampler_2_56_to_12_0_Mhz, IQPipelineOptions::NONE>{},
-    Preset<IQ_UINT8_RTL_SDR, Sampler_2_56_to_12_0_Mhz, IQPipelineOptions::IQ_FIR_RTL_SDR>{},
-    Preset<IQ_UINT8_RTL_SDR, Sampler_2_56_to_12_0_Mhz, IQPipelineOptions::IQ_FIR_RTL_SDR_FILE>{}  
-);
-
-constexpr auto airspyPresets = std::make_tuple(
-    // Airspy (uint16) default presets
-    Preset<IQ_UINT16_RAW_AIRSPY, Sampler_6_0_to_6_0_Mhz, IQPipelineOptions::NONE>{},
-    Preset<IQ_UINT16_RAW_AIRSPY, Sampler_6_0_to_6_0_Mhz, IQPipelineOptions::IQ_FIR>{},
-    Preset<IQ_UINT16_RAW_AIRSPY, Sampler_6_0_to_6_0_Mhz, IQPipelineOptions::IQ_FIR_FILE>{},
-
-    Preset<IQ_UINT16_RAW_AIRSPY, Sampler_6_0_to_12_0_Mhz, IQPipelineOptions::NONE>{},
-    Preset<IQ_UINT16_RAW_AIRSPY, Sampler_6_0_to_12_0_Mhz, IQPipelineOptions::IQ_FIR>{},
-    Preset<IQ_UINT16_RAW_AIRSPY, Sampler_6_0_to_12_0_Mhz, IQPipelineOptions::IQ_FIR_FILE>{},
-
-    Preset<IQ_UINT16_RAW_AIRSPY, Sampler_6_0_to_24_0_Mhz, IQPipelineOptions::NONE>{},
-    Preset<IQ_UINT16_RAW_AIRSPY, Sampler_6_0_to_24_0_Mhz, IQPipelineOptions::IQ_FIR>{},
-    Preset<IQ_UINT16_RAW_AIRSPY, Sampler_6_0_to_24_0_Mhz, IQPipelineOptions::IQ_FIR_FILE>{},
-
-    Preset<IQ_UINT16_RAW_AIRSPY, Sampler_10_0_to_10_0_Mhz, IQPipelineOptions::NONE>{},
-    Preset<IQ_UINT16_RAW_AIRSPY, Sampler_10_0_to_10_0_Mhz, IQPipelineOptions::IQ_FIR>{},
-    Preset<IQ_UINT16_RAW_AIRSPY, Sampler_10_0_to_10_0_Mhz, IQPipelineOptions::IQ_FIR_FILE>{},
-
-    Preset<IQ_UINT16_RAW_AIRSPY, Sampler_10_0_to_24_0_Mhz, IQPipelineOptions::NONE>{},
-    Preset<IQ_UINT16_RAW_AIRSPY, Sampler_10_0_to_24_0_Mhz, IQPipelineOptions::IQ_FIR>{},
-    Preset<IQ_UINT16_RAW_AIRSPY, Sampler_10_0_to_24_0_Mhz, IQPipelineOptions::IQ_FIR_FILE>{}
-#if defined(STREAM1090_TOO_MUCH_CPU) && STREAM1090_TOO_MUCH_CPU
-    ,
-    // too much cpu samplers
-    Preset<IQ_UINT16_RAW_AIRSPY, Sampler_10_0_to_40_0_Mhz, IQPipelineOptions::NONE>{},
-    Preset<IQ_UINT16_RAW_AIRSPY, Sampler_10_0_to_40_0_Mhz, IQPipelineOptions::IQ_FIR>{},
-    Preset<IQ_UINT16_RAW_AIRSPY, Sampler_10_0_to_40_0_Mhz, IQPipelineOptions::IQ_FIR_FILE>{},
-
-    Preset<IQ_UINT16_RAW_AIRSPY, Sampler_10_0_to_48_0_Mhz, IQPipelineOptions::NONE>{},
-    Preset<IQ_UINT16_RAW_AIRSPY, Sampler_10_0_to_48_0_Mhz, IQPipelineOptions::IQ_FIR>{},
-    Preset<IQ_UINT16_RAW_AIRSPY, Sampler_10_0_to_48_0_Mhz, IQPipelineOptions::IQ_FIR_FILE>{}
-#endif
-);
-
-// Combined tuple, used only for rate-pair scanning (constexpr metadata, no
-// code instantiation). Dispatch goes through the per-backend tuples above.
-constexpr auto presets = std::tuple_cat(rtlSdrPresets, airspyPresets);
-
-#endif
+constexpr auto presets = loaded_presets;
+#undef PRESET_LOADER_FILENAME
 
 
-template<SampleRate In, SampleRate Out, IQPipelineOptions sel>
+template<SampleRate In, SampleRate Out, typename RawFormat, IQPipelineOptions sel>
 struct IQPipelineSelector {
     static auto make(const std::vector<float>&) {
         return make_pipeline();
@@ -125,28 +52,35 @@ struct IQPipelineSelector {
 };
 
 template<SampleRate In, SampleRate Out>
-struct IQPipelineSelector<In, Out, IQPipelineOptions::IQ_FIR> {
+struct IQPipelineSelector<In, Out, IQ_UINT16_RAW_AIRSPY, IQPipelineOptions::NONE> {
+    static auto make(const std::vector<float>&) {
+        return make_pipeline(DCRemoval(), FlipSigns());
+    }
+};
+
+template<SampleRate In, SampleRate Out>
+struct IQPipelineSelector<In, Out, IQ_UINT16_RAW_AIRSPY, IQPipelineOptions::IQ_FIR_INTERNAL> {
     static auto make(const std::vector<float>&) {
         return make_pipeline(DCRemoval(), FlipSigns(), IQLowPass<In, Out>());
     }
 };
 
 template<SampleRate In, SampleRate Out>
-struct IQPipelineSelector<In, Out, IQPipelineOptions::IQ_FIR_FILE> {
+struct IQPipelineSelector<In, Out, IQ_UINT16_RAW_AIRSPY, IQPipelineOptions::IQ_FIR_FILE> {
     static auto make(const std::vector<float>& taps) {
         return make_pipeline(DCRemoval(), FlipSigns(), IQLowPassDynamic(taps));
     }
 };
 
-template<SampleRate In, SampleRate Out>
-struct IQPipelineSelector<In, Out, IQPipelineOptions::IQ_FIR_RTL_SDR> {
+template<SampleRate In, SampleRate Out, typename RawFormat>
+struct IQPipelineSelector<In, Out, RawFormat, IQPipelineOptions::IQ_FIR_INTERNAL> {
     static auto make(const std::vector<float>&) {
         return make_pipeline(IQLowPass<In, Out>());
     }
 };
 
-template<SampleRate In, SampleRate Out>
-struct IQPipelineSelector<In, Out, IQPipelineOptions::IQ_FIR_RTL_SDR_FILE> {
+template<SampleRate In, SampleRate Out, typename RawFormat>
+struct IQPipelineSelector<In, Out, RawFormat, IQPipelineOptions::IQ_FIR_FILE> {
     static auto make(const std::vector<float>& taps) {
         return make_pipeline(IQLowPassDynamic(taps));
     }

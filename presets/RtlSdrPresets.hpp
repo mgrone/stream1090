@@ -1,0 +1,11 @@
+ADD_PRESET(RtlSdr, 2.4, 8)
+ADD_PRESET(RtlSdr, 2.4, 12)
+ADD_PRESET(RtlSdr, 2.4, 24)
+
+ADD_PRESET(RtlSdr, 2.56, 8)
+ADD_PRESET(RtlSdr, 2.56, 12)
+ADD_PRESET(RtlSdr, 2.56, 24)
+
+ADD_PRESET(RtlSdr, 3.2, 8)
+ADD_PRESET(RtlSdr, 3.2, 12)
+ADD_PRESET(RtlSdr, 3.2, 24)
