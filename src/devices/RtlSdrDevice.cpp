@@ -339,7 +339,7 @@ bool RtlSdrDevice::setTunerBandwidth(uint32_t bw) {
     return false;
 }
 
-#ifdef STREAM1090_HAVE_RTLSDR_BLOG
+#if defined(STREAM1090_HAS_LIB_RTLSDR_BLOG)
 bool RtlSdrDevice::setLnaGain(int gain) {
     if (!m_dev)
         return false;

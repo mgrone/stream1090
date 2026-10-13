@@ -1,158 +1,191 @@
 cmake_minimum_required(VERSION 3.10)
 project(stream1090 VERSION 1.0.0)
 
-# ------------------------------------------------------------
-# Build type
-# ------------------------------------------------------------
-if(NOT CMAKE_BUILD_TYPE)
-    set(CMAKE_BUILD_TYPE "Release")
-    message(STATUS "[stream1090] Build type not specified: defaulting to Release")
-endif()
+# Must come before the first install(): CMAKE_INSTALL_BINDIR etc. are defined here.
+include(GNUInstallDirs)
+find_package(PkgConfig REQUIRED)
 
 # ------------------------------------------------------------
 # Options
 # ------------------------------------------------------------
 option(ENABLE_STATS          "Compile with STATS_ENABLED" ON)
 option(END_STATS             "Compile with STATS_END_ONLY" OFF)
-option(ENABLE_CUSTOM_INPUT   "Compile with STREAM1090_CUSTOM_INPUT" OFF)
 option(ENABLE_RSSI           "Compile with STREAM1090_ENABLE_RSSI" ON)
+
 option(ENABLE_PREAMBLE_GATE  "Reject address-parity frames that are weak and preamble-less" ON)
 set(PREAMBLE_GATE_THRESHOLD 1.2 CACHE STRING "Preamble score a real transmission must reach")
 set(MIN_SNR               2.5 CACHE STRING "Reject address-parity frames below this signal-to-noise ratio (0 disables; a ratio, so it transfers between receivers)")
-option(ENABLE_RTLSDR_BLOG    "Enable vendored RTL-SDR Blog fork" OFF)
-option(ENABLE_TOO_MUCH_CPU   "Unlocks the 40 and 48 Msps speeds" OFF)
+option(ENABLE_RTLSDR_BLOG    "Enable vendored RTL-SDR Blog fork" ON)
 option(BUILD_TESTING         "Build tests" OFF)
+
+# Error that this has been removed 
+option(ENABLE_TOO_MUCH_CPU   "Removed. Use stream1090_airspy instead" OFF)
+if (ENABLE_TOO_MUCH_CPU)
+    message(FATAL_ERROR "ENABLE_TOO_MUCH_CPU has been removed. Use stream1090_airspy instead.")
+endif()
 
 set(STATS_DEF        STATS_ENABLED=$<BOOL:${ENABLE_STATS}>)
 set(STATS_END_DEF    STATS_END_ONLY=$<BOOL:${END_STATS}>)
-set(CUSTOM_INPUT_DEF STREAM1090_CUSTOM_INPUT=$<BOOL:${ENABLE_CUSTOM_INPUT}>)
 set(RSSI_DEF         STREAM1090_RSSI=$<BOOL:${ENABLE_RSSI}>)
 set(PREAMBLE_GATE_DEF STREAM1090_PREAMBLE_GATE=$<BOOL:${ENABLE_PREAMBLE_GATE}>)
 set(PREAMBLE_THRESHOLD_DEF STREAM1090_PREAMBLE_THRESHOLD=${PREAMBLE_GATE_THRESHOLD})
 set(MIN_SNR_DEF         STREAM1090_MIN_SNR=${MIN_SNR})
-set(TOO_MUCH_CPU_DEF STREAM1090_TOO_MUCH_CPU=$<BOOL:${ENABLE_TOO_MUCH_CPU}>)
 
 # ------------------------------------------------------------
-# Compiler settings
+# Compiler settings & base flags
 # ------------------------------------------------------------
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-set(DEFAULT_COMPILE_OPTIONS
-    -Wall -Wextra -Wunused-function -O3 -ffast-math
+set(DEFAULT_COMPILE_OPTIONS -Wall -Wextra -Wunused-function -O3 -ffast-math)
+# e.g. cmake -DSTREAM1090_ARCH_FLAGS="-march=x86-64-v2" (avoid -march=native in containers)
+if(STREAM1090_ARCH_FLAGS)
+    list(APPEND DEFAULT_COMPILE_OPTIONS ${STREAM1090_ARCH_FLAGS})
+endif()
+
+# Params template: no library is built, targets just inherit these.
+add_library(stream1090_common_params INTERFACE)
+target_include_directories(stream1090_common_params INTERFACE include presets)
+target_compile_options(stream1090_common_params INTERFACE ${DEFAULT_COMPILE_OPTIONS})
+target_compile_definitions(stream1090_common_params INTERFACE
+    ${STATS_DEF} ${STATS_END_DEF} ${RSSI_DEF}
+    ${PREAMBLE_GATE_DEF} ${PREAMBLE_THRESHOLD_DEF} ${MIN_SNR_DEF}
 )
 
-# ------------------------------------------------------------
-# Device backend detection
-# ------------------------------------------------------------
-find_package(PkgConfig REQUIRED)
-
-set(DEVICE_SOURCES "")
-set(DEVICE_LIBS "")
-set(DEVICE_INCLUDE_DIRS "")
-set(DEVICE_DEFINITIONS "")
-
-# --- Airspy --------------------------------------------------
-pkg_check_modules(AIRSPY QUIET libairspy)
-if(AIRSPY_FOUND)
-    message(STATUS "[stream1090] Airspy support enabled")
-    list(APPEND DEVICE_SOURCES       src/devices/AirspyDevice.cpp)
-    list(APPEND DEVICE_LIBS          ${AIRSPY_LDFLAGS})
-    list(APPEND DEVICE_INCLUDE_DIRS  ${AIRSPY_INCLUDE_DIRS})
-    list(APPEND DEVICE_DEFINITIONS   STREAM1090_HAVE_AIRSPY)
-else()
-    message(STATUS "[stream1090] Airspy support disabled (libairspy not found)")
-endif()
-
-# ------------------------------------------------------------
-# RTL-SDR backend
-# ------------------------------------------------------------
-if(ENABLE_RTLSDR_BLOG)
-    message(STATUS "[stream1090] Using vendored RTL-SDR Blog fork")
-
-    set(DETACH_KERNEL_DRIVER ON CACHE BOOL "" FORCE)
-    add_subdirectory(thirdparty/rtl-sdr-blog)
-
-    list(APPEND DEVICE_SOURCES       src/devices/RtlSdrDevice.cpp)
-    list(APPEND DEVICE_LIBS          rtlsdr_static)
-    list(APPEND DEVICE_INCLUDE_DIRS  thirdparty/rtl-sdr-blog/include)
-    list(APPEND DEVICE_DEFINITIONS   STREAM1090_HAVE_RTLSDR)
-    list(APPEND DEVICE_DEFINITIONS   STREAM1090_HAVE_RTLSDR_BLOG)
-
-else()
-    message(STATUS "[stream1090] Trying system librtlsdr...")
-
-    find_package(PkgConfig)
-    pkg_check_modules(RTLSDR QUIET librtlsdr)
-
-    if(RTLSDR_FOUND)
-        message(STATUS "[stream1090] System librtlsdr found")
-
-        list(APPEND DEVICE_SOURCES       src/devices/RtlSdrDevice.cpp)
-        list(APPEND DEVICE_LIBS          ${RTLSDR_LDFLAGS})
-        list(APPEND DEVICE_INCLUDE_DIRS  ${RTLSDR_INCLUDE_DIRS})
-        list(APPEND DEVICE_DEFINITIONS   STREAM1090_HAVE_RTLSDR)
-
-    else()
-        message(STATUS "[stream1090] RTL-SDR support disabled (no Blog fork, no system librtlsdr)")
-    endif()
-endif()
-
-
-# ------------------------------------------------------------
-# Feature flags
-# ------------------------------------------------------------
-if (ENABLE_RSSI)
-    message(STATUS "[stream1090] RSSI output enabled")
-else()
-    message(STATUS "[stream1090] RSSI output disabled")
-endif()
-
-if (ENABLE_CUSTOM_INPUT)
-    message(STATUS "[stream1090] Custom input mode enabled")
-endif()
-
-# ------------------------------------------------------------
-# Core sources
-# ------------------------------------------------------------
 file(GLOB STREAM1090_CORE src/*.cpp)
 
+# ==============================================================================
+# Backends: find or build each device library ONCE.
+# pkg_check_modules(<PREFIX> ...) creates <PREFIX>_FOUND, <PREFIX>_LDFLAGS and
+# <PREFIX>_INCLUDE_DIRS - always use exactly the same prefix when reading them.
+# ==============================================================================
+
+# --- RTL-SDR: system librtlsdr (stream1090_rtlsdr) ---
+pkg_check_modules(LIB_RTLSDR QUIET librtlsdr)
+
+# --- RTL-SDR Blog fork: vendored in thirdparty/ (stream1090_rtlsdr_blog) ---
+if(ENABLE_RTLSDR_BLOG)
+    set(DETACH_KERNEL_DRIVER ON CACHE BOOL "" FORCE)
+    add_subdirectory(thirdparty/rtl-sdr-blog EXCLUDE_FROM_ALL)
+    set(LIB_RTLSDR_BLOG_FOUND ON)
+endif()
+
+# --- Airspy (system library) ---
+pkg_check_modules(LIB_AIRSPY QUIET libairspy)
+
+# --- Gather all RTL-SDR related files
+set(RTLSDR_SOURCES "")
+set(RTLSDR_LIBS "")
+set(RTLSDR_INCLUDES "")
+set(RTLSDR_DEFS "")
+if(LIB_RTLSDR_BLOG_FOUND)
+    set(RTLSDR_SOURCES  src/devices/RtlSdrDevice.cpp)
+    set(RTLSDR_LIBS     rtlsdr_static)
+    set(RTLSDR_INCLUDES thirdparty/rtl-sdr-blog/include)
+    set(RTLSDR_DEFS     STREAM1090_HAS_LIB_RTLSDR_BLOG)
+elseif(LIB_RTLSDR_FOUND)
+    set(RTLSDR_SOURCES  src/devices/RtlSdrDevice.cpp)
+    set(RTLSDR_LIBS     ${LIB_RTLSDR_LDFLAGS})
+    set(RTLSDR_INCLUDES ${LIB_RTLSDR_INCLUDE_DIRS})
+    set(RTLSDR_DEFS     STREAM1090_HAS_LIB_RTLSDR)
+endif()
+
+# --- Gather all Airspy related files
+set(AIRSPY_SOURCES "")
+set(AIRSPY_LIBS "")
+set(AIRSPY_INCLUDES "")
+set(AIRSPY_DEFS "")
+if(LIB_AIRSPY_FOUND)
+    set(AIRSPY_SOURCES  src/devices/AirspyDevice.cpp)
+    set(AIRSPY_LIBS     ${LIB_AIRSPY_LDFLAGS})
+    set(AIRSPY_INCLUDES ${LIB_AIRSPY_INCLUDE_DIRS})
+    set(AIRSPY_DEFS     STREAM1090_HAS_LIB_AIRSPY)
+endif()
+
+# --- For AD936x and Custom there is nothing to do
+
+# ==============================================================================
+# Executable variants
+#   stream1090_add_variant(<target> [DEFAULT]
+#       [SOURCES ...] [LIBS ...] [INCLUDES ...] [DEFS ...])
+# DEFAULT  -> part of "all" and installed normally
+# otherwise -> EXCLUDE_FROM_ALL, installed only via `--component variants`
+#              (installing an EXCLUDE_FROM_ALL target in the normal install
+#              set makes `make install` fail unless it was built first)
+# ==============================================================================
+function(stream1090_add_variant target)
+    cmake_parse_arguments(V "DEFAULT" "" "SOURCES;LIBS;INCLUDES;DEFS" ${ARGN})
+
+    add_executable(${target} main.cpp ${STREAM1090_CORE} ${V_SOURCES})
+    target_link_libraries(${target} PRIVATE stream1090_common_params ${V_LIBS})
+    if(V_INCLUDES)
+        target_include_directories(${target} PRIVATE ${V_INCLUDES})
+    endif()
+    if(V_DEFS)
+        target_compile_definitions(${target} PRIVATE ${V_DEFS})
+    endif()
+
+    if(V_DEFAULT)
+        install(TARGETS ${target} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+    else()
+        set_target_properties(${target} PROPERTIES EXCLUDE_FROM_ALL ON)
+        install(TARGETS ${target}
+            RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+            COMPONENT variants EXCLUDE_FROM_ALL)
+    endif()
+endfunction()
+
+# --- Per-device variants (each one always exists; without its library it is built
+#     without device support, i.e. without the matching STREAM1090_HAS_LIB_* define) ---
+stream1090_add_variant(stream1090_rtlsdr
+    SOURCES ${RTLSDR_SOURCES} 
+    LIBS ${RTLSDR_LIBS}
+    INCLUDES ${RTLSDR_INCLUDES}
+    DEFS ${RTLSDR_DEFS} STREAM1090_PRESETS_FILE="RtlSdrPresets.hpp")
+
+stream1090_add_variant(stream1090_airspy
+    SOURCES ${AIRSPY_SOURCES} 
+    LIBS ${AIRSPY_LIBS}
+    INCLUDES ${AIRSPY_INCLUDES}
+    DEFS ${AIRSPY_DEFS} STREAM1090_PRESETS_FILE="AirspyPresets.hpp")
+
+stream1090_add_variant(stream1090_ad936x
+    DEFS STREAM1090_PRESETS_FILE="Ad936xPresets.hpp")
+
+stream1090_add_variant(stream1090_custom
+    DEFS STREAM1090_PRESETS_FILE="CustomPresets.hpp")
+
+# --- Default target ("make" / "make stream1090"): every backend that is available ---
+set(DEFAULT_SOURCES "")
+set(DEFAULT_LIBS "")
+set(DEFAULT_INCLUDES "")
+set(DEFAULT_DEFS "")
+list(APPEND DEFAULT_SOURCES  ${RTLSDR_SOURCES}  ${AIRSPY_SOURCES})
+list(APPEND DEFAULT_LIBS     ${RTLSDR_LIBS}     ${AIRSPY_LIBS})
+list(APPEND DEFAULT_INCLUDES ${RTLSDR_INCLUDES} ${AIRSPY_INCLUDES})
+list(APPEND DEFAULT_DEFS     ${RTLSDR_DEFS}     ${AIRSPY_DEFS})
+
+if(NOT DEFAULT_SOURCES)
+    message(WARNING "stream1090: no SDR backend found, the default target has no device input")
+endif()
+
+stream1090_add_variant(stream1090 DEFAULT
+    SOURCES ${DEFAULT_SOURCES} LIBS ${DEFAULT_LIBS}
+    INCLUDES ${DEFAULT_INCLUDES}
+    DEFS ${DEFAULT_DEFS} STREAM1090_PRESETS_FILE="DefaultPresets.hpp")
+
 # ------------------------------------------------------------
-# Main executable
+# Tests
 # ------------------------------------------------------------
-add_executable(stream1090
-    main.cpp
-    ${STREAM1090_CORE}
-    ${DEVICE_SOURCES}
-)
-
-target_include_directories(stream1090 PRIVATE
-    include
-    ${DEVICE_INCLUDE_DIRS}
-)
-
-target_compile_options(stream1090 PRIVATE ${DEFAULT_COMPILE_OPTIONS})
-
-target_compile_definitions(stream1090 PRIVATE
-    ${STATS_DEF}
-    ${STATS_END_DEF}
-    ${CUSTOM_INPUT_DEF}
-    ${RSSI_DEF}
-    ${TOO_MUCH_CPU_DEF}
-    ${PREAMBLE_GATE_DEF}
-    ${PREAMBLE_THRESHOLD_DEF}
-    ${MIN_SNR_DEF}
-    ${DEVICE_DEFINITIONS}
-)
-
-target_link_libraries(stream1090 PRIVATE ${DEVICE_LIBS})
-
 include(CTest)
 
 function(stream1090_add_test target source)
     add_executable(${target} ${source})
-    target_include_directories(${target} PRIVATE include)
+    # presets/ + STREAM1090_PRESETS_FILE: same as the product, in case headers in
+    # include/ pull in the presets file.
+    target_include_directories(${target} PRIVATE include presets)
+    target_compile_definitions(${target} PRIVATE STREAM1090_PRESETS_FILE="DefaultPresets.hpp")
     target_compile_options(${target} PRIVATE ${DEFAULT_COMPILE_OPTIONS})
     add_test(NAME ${target} COMMAND ${target})
 endfunction()
@@ -184,14 +217,8 @@ if(BUILD_TESTING)
 endif()
 
 # ------------------------------------------------------------
-# Install rules
+# Install rules (binaries are installed by stream1090_add_variant)
 # ------------------------------------------------------------
-include(GNUInstallDirs)
-
-install(TARGETS stream1090
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-)
-
 install(FILES configs/rtlsdr.ini configs/airspy.ini
     DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/stream1090
 )
@@ -212,10 +239,11 @@ set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
 set(CPACK_PACKAGE_CONTACT "Joseph Prochazka <joe@swiftbyte.com>")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY
     "Mode-S demodulator for ADS-B reception via SDR")
+# One string: set() with several arguments would build a ;-separated list.
 set(CPACK_PACKAGE_DESCRIPTION
-    "stream1090 reads IQ samples from an Airspy or RTL-SDR dongle and outputs\n"
-    "raw Mode-S message frames to stdout using CRC-based message framing.\n"
-    "It is designed to feed a decoder such as readsb or dump1090-fa via socat.")
+"stream1090 reads IQ samples from an Airspy or RTL-SDR dongle and outputs
+raw Mode-S message frames to stdout using CRC-based message framing.
+It is designed to feed a decoder such as readsb or dump1090-fa via socat.")
 set(CPACK_GENERATOR "DEB")
 set(CPACK_DEBIAN_PACKAGE_SECTION "hamradio")
 set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)

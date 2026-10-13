@@ -11,11 +11,11 @@
 #include "devices/IniConfig.hpp"
 #include "devices/InputDeviceBase.hpp"
 
-#ifdef STREAM1090_HAVE_AIRSPY
+#if defined(STREAM1090_HAS_LIB_AIRSPY)
 #include "devices/AirspyDevice.hpp"
 #endif
 
-#ifdef STREAM1090_HAVE_RTLSDR
+#if defined(STREAM1090_HAS_LIB_RTLSDR) || defined(STREAM1090_HAS_LIB_RTLSDR_BLOG)
 #include "devices/RtlSdrDevice.hpp"
 #endif
 
@@ -53,7 +53,7 @@ DeviceFactory<uint16_t>::create(InputDeviceType inputType,
 
     switch (inputType)
     {
-#ifdef STREAM1090_HAVE_AIRSPY
+#if defined(STREAM1090_HAS_LIB_AIRSPY)
         case InputDeviceType::AIRSPY:
             return std::make_unique<AirspyDevice>(inputSampleRate, writer);
 #endif
@@ -79,7 +79,7 @@ DeviceFactory<uint8_t>::create(InputDeviceType inputType,
     
     switch (inputType)
     {
-#ifdef STREAM1090_HAVE_RTLSDR
+#if defined(STREAM1090_HAS_LIB_RTLSDR) || defined(STREAM1090_HAS_LIB_RTLSDR_BLOG)
         case InputDeviceType::RTLSDR:
             return std::make_unique<RtlSdrDevice>(inputSampleRate, writer);
 #endif

@@ -29,19 +29,8 @@ struct Preset {
     static constexpr IQPipelineOptions pipelineOption = Opt;
 };
 
-
-
-#if defined(STREAM1090_CUSTOM_INPUT) && STREAM1090_CUSTOM_INPUT
-#define PRESET_LOADER_FILENAME "../presets/CustomPresets.hpp"
-#elif defined(STREAM1090_TOO_MUCH_CPU) && STREAM1090_TOO_MUCH_CPU
-#define PRESET_LOADER_FILENAME "../presets/AirspyPresets.hpp"
-#else
-#define PRESET_LOADER_FILENAME "../presets/DefaultPresets.hpp"
-#endif
-
 #include "PresetsLoader.hpp"
 constexpr auto presets = loaded_presets;
-#undef PRESET_LOADER_FILENAME
 
 
 template<SampleRate In, SampleRate Out, typename RawFormat, IQPipelineOptions sel>

@@ -47,7 +47,7 @@ ADD_PRESET_EXT(IN_TYPE, IN_RATE, OUT_RATE, Internal)            \
 ADD_PRESET_EXT(IN_TYPE, IN_RATE, OUT_RATE, File)                \
 
 constexpr auto loaded_presets = std::tuple_cat(
-#include PRESET_LOADER_FILENAME
+#include STREAM1090_PRESETS_FILE
 std::make_tuple()
 );
 

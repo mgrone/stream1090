@@ -378,7 +378,7 @@ std::optional<bool> runInstanceFromPresets(const Tuple& presets,
     for_each_in_tuple(presets, [&](auto const& p) {
         using P = std::decay_t<decltype(p)>;
 
-        if (P::RawFormatType::id  == compileTimeVars.rawFormat &&
+        if (/* P::RawFormatType::id  == compileTimeVars.rawFormat && */
             P::inputRate          == compileTimeVars.inputRate &&
             P::outputRate         == compileTimeVars.outputRate &&
             P::pipelineOption     == compileTimeVars.pipelineOption)

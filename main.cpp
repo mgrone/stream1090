@@ -92,24 +92,21 @@ void print_rate_pairs() {
 
 void print_help() {
     std::cout << "Stream1090 build " << STREAM1090_VERSION << "\n";
-    if (GlobalOptions::CustomInputMode) {
-        std::cout << "(custom input mode)\n";
-    }
 
     std::cout << "Native device support:" << std::endl;
     if (GlobalOptions::NativeAirspySupport) {
         std::cout << " Airspy";
     }
 
-    if (GlobalOptions::NativeRtlSdrSupport) {
-        if (GlobalOptions::RtlSdrBlogAdvanced) {
-            std::cout << "  RTL-SDR Blog (advanced)";
-        } else {
-            std::cout << "  RTL-SDR";
-        }
+    if (GlobalOptions::NativeRtlSdrBlogSupport) {
+        std::cout << "  RTL-SDR Blog (advanced)";
+    } else if (GlobalOptions::NativeRtlSdrSupport) {
+        std::cout << "  RTL-SDR";
     }
 
-    if (!GlobalOptions::NativeRtlSdrSupport && !GlobalOptions::NativeAirspySupport) {
+    if (!GlobalOptions::NativeRtlSdrSupport && 
+        !GlobalOptions::NativeRtlSdrBlogSupport && 
+        !GlobalOptions::NativeAirspySupport) {
         std::cout << " none";    
     }
 
@@ -339,14 +336,14 @@ int main(int argc, char** argv) {
             r_vars.deviceType = InputDeviceType::RTLSDR;
             r_vars.deviceConfigSection = cfg.at("rtlsdr");
 
-            if (!GlobalOptions::NativeRtlSdrSupport) {
+            if (!GlobalOptions::NativeRtlSdrSupport && !GlobalOptions::NativeRtlSdrBlogSupport) {
                 std::cerr << "[Stream1090] Error. No native device support for rtlsdr" << std::endl;
                 return 1;
             }
 
             // Name whether librtlsdr is vendored or externally provided so
             // bug reports carry the build configuration that selected it.
-            if (GlobalOptions::RtlSdrBlogAdvanced) {
+            if (GlobalOptions::NativeRtlSdrBlogSupport) {
                 std::cerr << "[Stream1090] RTL-SDR backend: vendored rtl-sdr-blog fork" << std::endl;
             } else {
                 std::cerr << "[Stream1090] RTL-SDR backend: external librtlsdr" << std::endl;
@@ -410,38 +407,13 @@ int main(int argc, char** argv) {
     }
 
     // ------------------------
-    // Format and pipeline
+    // Pipeline
     // ------------------------
-    if (GlobalOptions::CustomInputMode) {
-        // this needs fixing!!!
-        c_vars.rawFormat = InputFormatType::IQ_INT16_ANTSDR;
-        if (!r_vars.filterTaps.empty()) {
-            c_vars.pipelineOption = IQPipelineOptions::IQ_FIR_FILE;
-        } else if (args.iq_filter) {
-            c_vars.pipelineOption = IQPipelineOptions::IQ_FIR_INTERNAL;
-        } else {
-            c_vars.pipelineOption = IQPipelineOptions::NONE;
-        }
-    } else {
-        // the default behaviour
-        c_vars.rawFormat = (c_vars.inputRate < Rate_6_0_Mhz)
-            ? InputFormatType::IQ_UINT8_RTL_SDR
-            : InputFormatType::IQ_UINT16_RAW_AIRSPY;
-
-        c_vars.pipelineOption = IQPipelineOptions::NONE;
-        if (!r_vars.filterTaps.empty()) {
-            if (c_vars.rawFormat == InputFormatType::IQ_UINT8_RTL_SDR) {
-                c_vars.pipelineOption = IQPipelineOptions::IQ_FIR_FILE;
-            } else {
-                c_vars.pipelineOption = IQPipelineOptions::IQ_FIR_FILE;
-            }
-        } else if (args.iq_filter) {
-            if (c_vars.rawFormat == InputFormatType::IQ_UINT8_RTL_SDR) {
-                c_vars.pipelineOption = IQPipelineOptions::IQ_FIR_INTERNAL;
-            } else {
-                c_vars.pipelineOption = IQPipelineOptions::IQ_FIR_INTERNAL;
-            }        
-        }
+    c_vars.pipelineOption = IQPipelineOptions::NONE;
+    if (!r_vars.filterTaps.empty()) {
+        c_vars.pipelineOption = IQPipelineOptions::IQ_FIR_FILE;
+    } else if (args.iq_filter) {
+        c_vars.pipelineOption = IQPipelineOptions::IQ_FIR_INTERNAL;
     }
         
     // ------------------------

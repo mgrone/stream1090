@@ -11,7 +11,7 @@
 
 // visible to every translation unit that instantiates a sampler
 #ifndef STREAM1090_VERSION
-#define STREAM1090_VERSION "261012"
+#define STREAM1090_VERSION "261013"
 #endif
 
 struct GlobalOptions {
@@ -27,37 +27,30 @@ struct GlobalOptions {
         static constexpr bool StatsAtTheEndOnly = false;
     #endif
 
-    #ifdef STREAM1090_CUSTOM_INPUT
-        static constexpr bool CustomInputMode = (STREAM1090_CUSTOM_INPUT != 0);
-    #else
-        static constexpr bool CustomInputMode = false;
-    #endif
-
     #ifdef STREAM1090_RSSI
         static constexpr bool RSSIEnabled = (STREAM1090_RSSI != 0);
     #else
         static constexpr bool RSSIEnabled = false;
     #endif
 
-    #ifdef STREAM1090_HAVE_RTLSDR
-        static constexpr bool NativeRtlSdrSupport = (STREAM1090_HAVE_RTLSDR != 0);
+    #ifdef STREAM1090_HAS_LIB_RTLSDR
+        static constexpr bool NativeRtlSdrSupport = (STREAM1090_HAS_LIB_RTLSDR != 0);
     #else
         static constexpr bool NativeRtlSdrSupport = false;
     #endif
 
-    #ifdef STREAM1090_HAVE_AIRSPY
-        static constexpr bool NativeAirspySupport = (STREAM1090_HAVE_AIRSPY != 0);
+    #ifdef STREAM1090_HAS_LIB_RTLSDR_BLOG
+        static constexpr bool NativeRtlSdrBlogSupport = (STREAM1090_HAS_LIB_RTLSDR_BLOG != 0);
+    #else
+        static constexpr bool NativeRtlSdrBlogSupport = false;
+    #endif
+
+    #ifdef STREAM1090_HAS_LIB_AIRSPY
+        static constexpr bool NativeAirspySupport = (STREAM1090_HAS_LIB_AIRSPY != 0);
     #else
         static constexpr bool NativeAirspySupport = false;
     #endif
-
-    #ifdef STREAM1090_HAVE_RTLSDR_BLOG
-        static constexpr bool RtlSdrBlogAdvanced = (STREAM1090_HAVE_RTLSDR_BLOG != 0);
-    #else
-        static constexpr bool RtlSdrBlogAdvanced = false;
-    #endif
 };
-
 
 namespace ProcessSignals {
 
