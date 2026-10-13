@@ -15,7 +15,7 @@ option(ENABLE_RSSI           "Compile with STREAM1090_ENABLE_RSSI" ON)
 option(ENABLE_PREAMBLE_GATE  "Reject address-parity frames that are weak and preamble-less" ON)
 set(PREAMBLE_GATE_THRESHOLD 1.2 CACHE STRING "Preamble score a real transmission must reach")
 set(MIN_SNR               2.5 CACHE STRING "Reject address-parity frames below this signal-to-noise ratio (0 disables; a ratio, so it transfers between receivers)")
-option(ENABLE_RTLSDR_BLOG    "Enable vendored RTL-SDR Blog fork" ON)
+option(ENABLE_RTLSDR_BLOG    "Enable vendored RTL-SDR Blog fork" OFF)
 option(BUILD_TESTING         "Build tests" OFF)
 
 # Error that this has been removed 
