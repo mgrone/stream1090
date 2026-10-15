@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import subprocess
 from dataclasses import dataclass
@@ -21,7 +22,10 @@ import numpy as np
 from scipy.optimize import differential_evolution
 from scipy.signal import firwin2
 
-STREAM1090_EXE = "../build/stream1090"
+# stream1090 comes in several builds (stream1090, stream1090_airspy, ...).
+# A bare --exe name is looked up in BUILD_DIR.
+BUILD_DIR = Path("../build")
+DEFAULT_EXE = "stream1090"
 FILTER_PATH = Path("./diff_evolve_fir_temp.txt")
 
 # (input_mhz, default_output_mhz) pairs used when --fs-up is not given.
@@ -79,8 +83,13 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--fs-up", type=int, required=True,
                    help="Upsampled rate (Hz)")
 
-    # These three default to None so a resume log can supply them:
+    # These default to None so a resume log can supply them:
     # command line > resume log > built-in default.
+    p.add_argument("--exe", default=None,
+                   help=f"stream1090 build to run, e.g. stream1090_airspy or "
+                        f"stream1090_rtlsdr. A bare name is looked up in "
+                        f"{BUILD_DIR}; a name with a directory part is used as "
+                        f"given (default: from --resume log, else {DEFAULT_EXE})")
     p.add_argument("--num-taps", type=int, default=None,
                    help=f"Number of FIR taps (default: from --resume log, "
                         f"else {DEFAULT_NUM_TAPS})")
@@ -124,6 +133,7 @@ BOUNDS_RE = re.compile(r"# \[([0-9eE+\-.]+),\s*([0-9eE+\-.]+)\]")
 TAPS_RE = re.compile(r"# Number of taps:\s*(\d+)")
 CUTOFF_RE = re.compile(r"# Cutoff:\s*([0-9eE+\-.]+)")
 WINDOW_RE = re.compile(r"# Window mode:\s*(\S+)")
+EXE_RE = re.compile(r"# Executable:\s*(.+?)\s*$")
 
 
 @dataclass
@@ -135,6 +145,7 @@ class ResumeData:
     num_taps: Optional[int]
     cutoff_hz: Optional[float]
     window_mode: Optional[str]
+    exe: Optional[str]
     freq: Optional[np.ndarray]
     bounds: Optional[list[tuple[float, float]]]
 
@@ -154,7 +165,7 @@ def _valid_freq_grid(freq: np.ndarray) -> bool:
 
 
 def _parse_block(block: list[str]) -> Optional[ResumeData]:
-    params = freq = num_taps = cutoff_hz = window_mode = None
+    params = freq = num_taps = cutoff_hz = window_mode = exe = None
     bounds: list[tuple[float, float]] = []
 
     for line in block:
@@ -168,6 +179,8 @@ def _parse_block(block: list[str]) -> Optional[ResumeData]:
             cutoff_hz = float(m.group(1))
         elif (m := WINDOW_RE.match(line)):
             window_mode = m.group(1)
+        elif (m := EXE_RE.match(line)):
+            exe = m.group(1)
         elif (m := BOUNDS_RE.match(line)):
             bounds.append((float(m.group(1)), float(m.group(2))))
 
@@ -187,7 +200,7 @@ def _parse_block(block: list[str]) -> Optional[ResumeData]:
         print(f"[resume] Logged window '{window_mode}' is not supported - ignoring it.")
         window_mode = None
 
-    return ResumeData(params, num_taps, cutoff_hz, window_mode, freq, bounds or None)
+    return ResumeData(params, num_taps, cutoff_hz, window_mode, exe, freq, bounds or None)
 
 
 def load_resume_data(path: str) -> ResumeData:
@@ -226,6 +239,25 @@ def _resolve(name: str, cli, logged, default):
     return value
 
 
+def resolve_exe(spec: str) -> Path:
+    """A bare name (no directory part) is looked up in BUILD_DIR; anything
+    with a directory part, './x' included, is used exactly as given."""
+    return Path(spec) if os.path.dirname(spec) else BUILD_DIR / spec
+
+
+def check_exe(path: Path) -> None:
+    """Exit with a readable message (listing the builds that do exist next
+    to it) instead of failing later with a bare FileNotFoundError."""
+    if path.is_file() and os.access(path, os.X_OK):
+        return
+    found = []
+    if path.parent.is_dir():
+        found = sorted(p.name for p in path.parent.glob("stream1090*")
+                       if p.is_file() and os.access(p, os.X_OK))
+    hint = f" Available in {path.parent}: {', '.join(found)}." if found else ""
+    raise SystemExit(f"stream1090 executable not found or not executable: {path}.{hint}")
+
+
 def default_window_mode(cutoff_ratio: float) -> str:
     """Hamming works better when the response has to taper all the way to
     Nyquist (cutoff == fs/2); boxcar works better when the cutoff is well
@@ -242,6 +274,7 @@ class Config:
     data_path: str
     fs: int
     fs_up: int
+    exe: str
     cutoff_hz: float
     window_mode: str
     num_taps: int
@@ -253,6 +286,10 @@ class Config:
     alpha: float
     resume: Optional[str]
     resume_bounds: bool
+
+    @property
+    def exe_path(self) -> Path:
+        return resolve_exe(self.exe)
 
     @property
     def nyquist_hz(self) -> float:
@@ -276,6 +313,13 @@ class Config:
 
     @classmethod
     def from_args(cls, args: argparse.Namespace, resume: Optional[ResumeData]) -> "Config":
+        exe = _resolve(
+            "exe", args.exe,
+            resume.exe if resume else None, DEFAULT_EXE)
+        if resume and resume.exe and resume.exe != exe:
+            print(f"[config] note: the resume log was written with '{resume.exe}', "
+                  f"this run uses '{exe}'")
+
         num_taps = _resolve(
             "num_taps", args.num_taps,
             resume.num_taps if resume else None, DEFAULT_NUM_TAPS)
@@ -307,6 +351,7 @@ class Config:
             data_path=args.data,
             fs=args.fs,
             fs_up=args.fs_up,
+            exe=exe,
             cutoff_hz=cutoff_hz,
             window_mode=window_mode,
             num_taps=num_taps,
@@ -342,8 +387,6 @@ def center_seed(freq: np.ndarray, nyquist_hz: float) -> np.ndarray:
     freq_hz = freq * nyquist_hz
     gains = np.interp(freq_hz, template_hz, template_gain)
     gains[freq_hz > template_hz[-1] + TEMPLATE_TOL_HZ] = 0.0
-    #print(freq.tolist())
-    #print(gains.tolist())
     return np.clip(gains, GAIN_MIN, GAIN_MAX)
 
 
@@ -501,7 +544,7 @@ def run_stream1090(
     """
     output_mhz = cfg.fs_up_mhz if cfg.fs_up else default_output_rate(cfg.fs_mhz)
 
-    cmd = [STREAM1090_EXE, "-s", str(cfg.fs_mhz), "-u", str(output_mhz)]
+    cmd = [str(cfg.exe_path), "-s", str(cfg.fs_mhz), "-u", str(output_mhz)]
     if filter_path is not None:
         cmd += ["-f", str(filter_path)]
     elif use_builtin_filter:
@@ -546,6 +589,7 @@ def write_log_entry(
         lines = ["# ==================================================\n"]
     lines.append(f"# Time: {timestamp}\n")
     lines.append(f"# Instance: {cfg.data_path}\n")
+    lines.append(f"# Executable: {cfg.exe}\n")
     lines.append(f"# FS: {cfg.fs_mhz} MHz -> FS_UP: {cfg.fs_up_mhz} MHz\n")
     lines.append(f"# Cutoff: {cfg.cutoff_hz} Hz\n")
     lines.append(f"# Number of taps: {cfg.num_taps}\n")
@@ -685,6 +729,8 @@ def main() -> None:
     args = parse_args()
     resume = load_resume_data(args.resume) if args.resume else None
     cfg = Config.from_args(args, resume)
+    check_exe(cfg.exe_path)
+    print(f"[config] executable path = {cfg.exe_path}")
     init = resolve_initial_state(cfg, resume)
 
     baseline_total, baseline_long, baseline_df = run_stream1090(
@@ -740,3 +786,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+    
