@@ -385,13 +385,11 @@ class FilterEditor(QtWidgets.QMainWindow):
         self._recompute()
             
     # --------------------------------------------------------- computation
-    def make_fixed_point(self, taps):
-        q_rx = np.clip(np.round(taps * 32767).astype(int),
-            -32768,
-            32767
-        )
-        taps = (q_rx / 32767).astype(float)
-        return taps
+    def make_fixed_point(self, taps: np.ndarray) -> np.ndarray:
+        scale = 1.0 / np.sum(taps)
+        #q = np.clip(np.floor((taps * scale) * 2047).astype(int), -2048, 2047)
+        q = np.clip(np.floor((taps * scale) * 32767).astype(int), -32768, 32767)
+        return (q / 32768).astype(float)
     
     def _recompute(self):
         freqs = np.array([p[0] for p in self.points])
@@ -434,7 +432,8 @@ class FilterEditor(QtWidgets.QMainWindow):
                     window=self.window,
                 )
 
-        taps /= np.sum(taps)
+        # taps /= np.sum(taps)
+        taps = self.make_fixed_point(taps)
         w, h = freqz(taps, worN=2048)
 
         freq_hz = w / np.pi * (self.fs / 2.0)

@@ -458,10 +458,11 @@ def resolve_initial_state(cfg: Config, resume: Optional[ResumeData]) -> InitialS
 
 def make_fixed_point(taps: np.ndarray) -> np.ndarray:
     """Quantize taps to 16-bit signed fixed point and back to float,
-    matching the precision the hardware/software FIR will actually use.
-    (Currently not applied in make_objective.)"""
-    q = np.clip(np.round(taps * 32767).astype(int), -32768, 32767)
-    return (q / 32767).astype(float)
+    matching the precision the hardware/software FIR will actually use."""
+    scale = 1.0 / np.sum(taps)
+    #q = np.clip(np.floor((taps * scale) * 2047).astype(int), -2048, 2047)
+    q = np.clip(np.floor((taps * scale) * 32767).astype(int), -32768, 32767)
+    return (q / 32768).astype(float)
 
 
 def build_lowpass_firwin2(gains: np.ndarray, freq: np.ndarray, cfg: Config) -> np.ndarray:
@@ -471,7 +472,8 @@ def build_lowpass_firwin2(gains: np.ndarray, freq: np.ndarray, cfg: Config) -> n
     grid[0], grid[-1] = 0.0, 1.0  # firwin2 requires exactly 0 and 1
     taps = firwin2(cfg.num_taps, grid, np.asarray(gains, dtype=np.float64),
                    window=cfg.window_mode)
-    taps /= np.sum(taps)
+    # taps /= np.sum(taps)
+    taps = make_fixed_point(taps)
     return taps.astype(np.float32)
 
 
@@ -505,9 +507,16 @@ def parse_frames(out: bytes) -> tuple[int, int, dict[int, int]]:
 
         payload = line[1:-1]
         frame_hex = payload[14:] if line[0] == ord("<") else payload[12:]  # strip MLAT prefix
+        # mlat_hex = payload[:12]
 
         if not _is_hex(frame_hex):
             continue
+        #try:
+        #    mlat_int = int(mlat_hex, 16)
+        #except ValueError:
+        #    return None
+        #if (mlat_int / 12000000) < DEFAULT_MIN_TIME_MSG:
+        #    continue
 
         total += 1
         if len(frame_hex) == 28:  # 112 bits
