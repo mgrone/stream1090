@@ -15,7 +15,7 @@ option(ENABLE_RSSI           "Compile with STREAM1090_ENABLE_RSSI" ON)
 option(ENABLE_PREAMBLE_GATE  "Reject address-parity frames that are weak and preamble-less" ON)
 set(PREAMBLE_GATE_THRESHOLD 1.2 CACHE STRING "Preamble score a real transmission must reach")
 set(MIN_SNR               2.5 CACHE STRING "Reject address-parity frames below this signal-to-noise ratio (0 disables; a ratio, so it transfers between receivers)")
-option(ENABLE_RTLSDR_BLOG    "Enable vendored RTL-SDR Blog fork" OFF)
+option(ENABLE_RTLSDR_BLOG    "Enable vendored RTL-SDR Blog fork" ON)
 option(BUILD_TESTING         "Build tests" OFF)
 
 # Error that this has been removed 
@@ -65,10 +65,17 @@ file(GLOB STREAM1090_CORE src/*.cpp)
 pkg_check_modules(LIB_RTLSDR QUIET librtlsdr)
 
 # --- RTL-SDR Blog fork: vendored in thirdparty/ (stream1090_rtlsdr_blog) ---
+# The fork needs libusb and stops the whole configure without it, so look for
+# libusb first and fall back to the system librtlsdr (or no RTL-SDR) instead.
 if(ENABLE_RTLSDR_BLOG)
-    set(DETACH_KERNEL_DRIVER ON CACHE BOOL "" FORCE)
-    add_subdirectory(thirdparty/rtl-sdr-blog EXCLUDE_FROM_ALL)
-    set(LIB_RTLSDR_BLOG_FOUND ON)
+    pkg_check_modules(LIB_USB QUIET libusb-1.0)
+    if(LIB_USB_FOUND)
+        set(DETACH_KERNEL_DRIVER ON CACHE BOOL "" FORCE)
+        add_subdirectory(thirdparty/rtl-sdr-blog EXCLUDE_FROM_ALL)
+        set(LIB_RTLSDR_BLOG_FOUND ON)
+    else()
+        message(WARNING "stream1090: libusb-1.0 not found, not building the vendored RTL-SDR Blog fork")
+    endif()
 endif()
 
 # --- Airspy (system library) ---
@@ -84,11 +91,15 @@ if(LIB_RTLSDR_BLOG_FOUND)
     set(RTLSDR_LIBS     rtlsdr_static)
     set(RTLSDR_INCLUDES thirdparty/rtl-sdr-blog/include)
     set(RTLSDR_DEFS     STREAM1090_HAS_LIB_RTLSDR_BLOG)
+    message(STATUS "[stream1090] RTL-SDR: vendored RTL-SDR Blog fork")
 elseif(LIB_RTLSDR_FOUND)
     set(RTLSDR_SOURCES  src/devices/RtlSdrDevice.cpp)
     set(RTLSDR_LIBS     ${LIB_RTLSDR_LDFLAGS})
     set(RTLSDR_INCLUDES ${LIB_RTLSDR_INCLUDE_DIRS})
     set(RTLSDR_DEFS     STREAM1090_HAS_LIB_RTLSDR)
+    message(STATUS "[stream1090] RTL-SDR: system librtlsdr")
+else()
+    message(STATUS "[stream1090] RTL-SDR: disabled (neither the Blog fork nor a system librtlsdr)")
 endif()
 
 # --- Gather all Airspy related files
