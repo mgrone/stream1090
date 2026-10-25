@@ -25,8 +25,7 @@ DEFAULT_FREQ_HZ=1090000000             # 'start' always tunes here unless --freq
 DEFAULT_BW_HZ=4000000                  # 4 MHz is crucial for Mode-S
 BUFFER=262144                          # samples per iio_rwdev buffer
 
-export PATH="$IIO_PREFIX/utils:$PATH"
-export LD_LIBRARY_PATH="$IIO_PREFIX${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export PATH="$IIO_PREFIX/utils:$PATH"   # tools are linked statically against libiio
 
 # ------------------------------------------------------------
 # Helpers
@@ -54,7 +53,7 @@ config and start options (only what you give is changed):
       --ant HOST        AntSDR host (default: $ANT_HOST or "ant")
 
 start only:
-  -u, --upsample N      stream1090 upsampling factor (default 1)
+  -u, --upsample MHz    stream1090 output rate in MHz (default: picked by stream1090)
       --record FILE     also write the raw samples to FILE (for replays)
   -o, --out HOST:PORT   send output via socat (default raspberrypi:30001), "-" = stdout
       --buffer N        iio_rwdev buffer size in samples (default 262144)
@@ -70,7 +69,7 @@ EOF
 # Options (shared by config and start)
 # ------------------------------------------------------------
 CMD=""; RATE=""; RATE_HZ=""; GAIN=""; BW=""; FREQ=""; TAPS=""; DEC=""
-UP=1; RECORD=""; EXTRA=()
+UP=""; RECORD=""; EXTRA=()
 
 parse_opts() {
     while (($#)); do
@@ -98,7 +97,7 @@ parse_opts() {
     [[ -z $BW   || $BW   =~ ^[0-9]+$ ]]               || die "--bw needs Hz"
     [[ -z $FREQ || $FREQ =~ ^[0-9]+$ ]]               || die "--freq needs Hz"
     [[ -z $DEC  || $DEC  =~ ^[124]$ ]]                || die "--dec must be 1, 2 or 4"
-    [[ $UP =~ ^[0-9]+$ ]]                             || die "-u must be an integer"
+    [[ -z $UP || $UP =~ ^[0-9]+$ ]]                   || die "-u needs the output rate in MHz, e.g. 12 or 24"
     if [[ -n $DEC && -z $TAPS ]]; then
         die "--dec is part of the FIR config and is uploaded together with --taps"
     fi
@@ -255,7 +254,11 @@ cmd_start() {
     log "streaming: $ANT ($mhz MHz) -> $(basename "$STREAM_BIN") -> $OUT"
 
     local src=(iio_rwdev -b "$BUFFER" -u "ip:$ANT" cf-ad9361-lpc voltage0 voltage1)
-    local dec=("$STREAM_BIN" -v -s "$mhz" -u "$UP" ${EXTRA[@]+"${EXTRA[@]}"})
+    local dec=("$STREAM_BIN" -v -s "$mhz")
+    if [[ -n $UP ]]; then
+        dec+=(-u "$UP")
+    fi
+    dec+=(${EXTRA[@]+"${EXTRA[@]}"})
 
     sink() { if [[ $OUT == - ]]; then cat; else socat -u - "TCP4:$OUT"; fi; }
 
