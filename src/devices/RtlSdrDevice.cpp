@@ -459,23 +459,14 @@ void RtlSdrDevice::applyConfigPostOpen(const IniConfig::Section& cfg) {
     // Without an explicit gain the tuner stays in whatever mode librtlsdr
     // left after open (observed: a low fixed gain on an R828D, ~5x fewer
     // messages). Ask for hardware automatic gain so the default behaves like
-    // other Mode-S receivers' "gain auto". On a reload (SIGHUP) the same
-    // applies when the gain line was removed: without this, the tuner would
-    // silently keep the last fixed gain until the next restart.
+    // other Mode-S receivers' "gain auto". Also on reload when gain was removed.
     if (!cfg.count("gain") && (initial || m_gainApplied)) {
         if (rtlsdr_set_tuner_gain_mode(m_dev, 0) == 0) {
-            m_gainApplied = false;   // a later fixed gain must be applied again, even the same value
+            m_gainApplied = false;
             if (!initial && m_state.frequency) {
-                // librtlsdr's automatic mode sets the R82xx VGA to 26.5 dB, but
-                // every retune resets it to 16.3 dB. At startup the frequency is
-                // applied right after this call, so startup AGC runs at 16.3 dB.
-                // Retune once so a reload ends up in exactly the same tuner state
-                // (measured without this: ~10 dB more gain than after a restart).
+                // Retuning resets the R82xx VGA (26.5 -> 16.3 dB), as at startup.
                 if (rtlsdr_set_center_freq(m_dev, m_state.frequency) != 0)
-                    Log::warn("RtlSdrDevice")
-                        << "gain: retune after switching to automatic gain failed; "
-                           "automatic gain is active, but the VGA may differ from "
-                           "the state after a restart";
+                    Log::warn("RtlSdrDevice") << "gain: retune after switching to automatic gain failed";
             }
             Log::info("RtlSdrDevice")
                 << (initial ? "gain: not configured, tuner set to automatic gain "
