@@ -471,7 +471,11 @@ void RtlSdrDevice::applyConfigPostOpen(const IniConfig::Section& cfg) {
                 // applied right after this call, so startup AGC runs at 16.3 dB.
                 // Retune once so a reload ends up in exactly the same tuner state
                 // (measured without this: ~10 dB more gain than after a restart).
-                rtlsdr_set_center_freq(m_dev, m_state.frequency);
+                if (rtlsdr_set_center_freq(m_dev, m_state.frequency) != 0)
+                    Log::warn("RtlSdrDevice")
+                        << "gain: retune after switching to automatic gain failed; "
+                           "automatic gain is active, but the VGA may differ from "
+                           "the state after a restart";
             }
             Log::info("RtlSdrDevice")
                 << (initial ? "gain: not configured, tuner set to automatic gain "
