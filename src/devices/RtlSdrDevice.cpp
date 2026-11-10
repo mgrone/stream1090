@@ -441,7 +441,8 @@ void RtlSdrDevice::applyConfigPreOpen(const IniConfig::Section& cfg) {
 // Reload logic
 // ----------------------
 void RtlSdrDevice::applyConfigPostOpen(const IniConfig::Section& cfg) {
-    if (!m_initialConfigApplied) {
+    const bool initial = !m_initialConfigApplied;
+    if (initial) {
         m_initialConfigApplied = true;
 
         if (!cfg.count("tuner_bandwidth")
@@ -453,20 +454,28 @@ void RtlSdrDevice::applyConfigPostOpen(const IniConfig::Section& cfg) {
                    "3000000 at 2.4 or 2.56 Msps) to make the tuner state reproducible.";
         }
 
-        if (!cfg.count("gain")) {
-            // Without an explicit gain the tuner stays in whatever mode
-            // librtlsdr left after open (observed: a low fixed gain on an
-            // R828D, ~5x fewer messages). Ask for hardware automatic gain so
-            // the default behaves like other Mode-S receivers' "gain auto".
-            if (rtlsdr_set_tuner_gain_mode(m_dev, 0) == 0) {
-                Log::info("RtlSdrDevice")
-                    << "gain: not configured, tuner set to automatic gain "
-                       "(set gain=<dB> in the ini for a fixed value)";
-            } else {
-                Log::warn("RtlSdrDevice")
-                    << "gain: not configured and switching the tuner to automatic "
-                       "gain failed; the tuner is in an undefined gain state";
+    }
+
+    // Without an explicit gain the tuner stays in whatever mode librtlsdr
+    // left after open (observed: a low fixed gain on an R828D, ~5x fewer
+    // messages). Ask for hardware automatic gain so the default behaves like
+    // other Mode-S receivers' "gain auto". Also on reload when gain was removed.
+    if (!cfg.count("gain") && (initial || m_gainApplied)) {
+        if (rtlsdr_set_tuner_gain_mode(m_dev, 0) == 0) {
+            m_gainApplied = false;
+            if (!initial && m_state.frequency) {
+                // Retuning resets the R82xx VGA (26.5 -> 16.3 dB), as at startup.
+                if (rtlsdr_set_center_freq(m_dev, m_state.frequency) != 0)
+                    Log::warn("RtlSdrDevice") << "gain: retune after switching to automatic gain failed";
             }
+            Log::info("RtlSdrDevice")
+                << (initial ? "gain: not configured, tuner set to automatic gain "
+                              "(set gain=<dB> in the ini for a fixed value)"
+                            : "gain: removed from config, tuner set back to automatic gain");
+        } else {
+            Log::warn("RtlSdrDevice")
+                << "gain: not configured and switching the tuner to automatic "
+                   "gain failed; the tuner is in an undefined gain state";
         }
     }
 
