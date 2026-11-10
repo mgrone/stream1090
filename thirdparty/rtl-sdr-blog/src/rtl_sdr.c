@@ -43,6 +43,60 @@ static int do_exit = 0;
 static uint32_t bytes_to_read = 0;
 static rtlsdr_dev_t *dev = NULL;
 
+static int verbose_tuner_bandwidth(rtlsdr_dev_t *dev, uint32_t bw)
+{
+	int r;
+
+	r = rtlsdr_set_tuner_bandwidth(dev, bw);
+	if (r < 0)
+		fprintf(stderr, "WARNING: Failed to set tuner bandwidth to %u Hz.\n", bw);
+	else
+		fprintf(stderr, "Tuner bandwidth set to %u Hz.\n", bw);
+	return r;
+}
+
+static int verbose_stage_gain(rtlsdr_dev_t *dev, const char *stage, int gain,
+			      int (*set_gain)(rtlsdr_dev_t *, int))
+{
+	int r;
+
+	if (gain < 0 || gain > 15) {
+		fprintf(stderr, "WARNING: %s gain index %d out of range 0..15.\n", stage, gain);
+		return -1;
+	}
+
+	r = set_gain(dev, gain);
+	if (r < 0)
+		fprintf(stderr, "WARNING: Failed to set %s gain index %d.\n", stage, gain);
+	else
+		fprintf(stderr, "%s gain index set to %d.\n", stage, gain);
+	return r;
+}
+
+static int verbose_agc(rtlsdr_dev_t *dev, int on)
+{
+	int r;
+
+	r = rtlsdr_set_agc_mode(dev, on);
+	if (r < 0)
+		fprintf(stderr, "WARNING: Failed to %s AGC.\n", on ? "enable" : "disable");
+	else
+		fprintf(stderr, "AGC %s.\n", on ? "enabled" : "disabled");
+	return r;
+}
+
+static int verbose_bias_tee(rtlsdr_dev_t *dev, int on)
+{
+	int r;
+
+	r = rtlsdr_set_bias_tee(dev, on);
+	if (r < 0)
+		fprintf(stderr, "WARNING: Failed to %s bias tee.\n", on ? "enable" : "disable");
+	else
+		fprintf(stderr, "Bias tee %s.\n", on ? "enabled" : "disabled");
+	return r;
+}
+
 void usage(void)
 {
 	fprintf(stderr,
@@ -51,6 +105,13 @@ void usage(void)
 		"\t[-s samplerate (default: 2048000 Hz)]\n"
 		"\t[-d device_index (default: 0)]\n"
 		"\t[-g gain (default: 0 for auto)]\n"
+		"\t[-B tuner bandwidth in Hz, 0 = auto (default: 0)]\n"
+		"\t[-L LNA gain index 0..15 (default: auto)]\n"
+		"\t[-M mixer gain index 0..15 (default: auto)]\n"
+		"\t[-V VGA gain index 0..15 (default: auto)]\n"
+		"\t[-A enable digital AGC (default: off)]\n"
+		"\t[-O enable offset tuning (default: off)]\n"
+		"\t[-T enable bias tee (default: off)]\n"
 		"\t[-p ppm_error (default: 0)]\n"
 		"\t[-b output_block_size (default: 16 * 16384)]\n"
 		"\t[-n number of samples to read (default: 0, infinite)]\n"
@@ -113,6 +174,12 @@ int main(int argc, char **argv)
 	int n_read;
 	int r, opt;
 	int gain = 0;
+	int lna_gain = -1;
+	int mixer_gain = -1;
+	int vga_gain = -1;
+	int bias_tee = 0;
+	int offset_tuning = 0;
+	int agc = 0;
 	int ppm_error = 0;
 	int direct_sampling = 0;
 	int sync_mode = 0;
@@ -122,9 +189,10 @@ int main(int argc, char **argv)
 	int dev_given = 0;
 	uint32_t frequency = 100000000;
 	uint32_t samp_rate = DEFAULT_SAMPLE_RATE;
+	uint32_t tuner_bandwidth = 0;
 	uint32_t out_block_size = DEFAULT_BUF_LENGTH;
 
-	while ((opt = getopt(argc, argv, "d:f:g:s:b:n:p:SD")) != -1) {
+	while ((opt = getopt(argc, argv, "d:f:g:s:b:n:p:B:L:M:V:SDOAT")) != -1) {
 		switch (opt) {
 		case 'd':
 			dev_index = verbose_device_search(optarg);
@@ -135,6 +203,27 @@ int main(int argc, char **argv)
 			break;
 		case 'g':
 			gain = (int)(atof(optarg) * 10); /* tenths of a dB */
+			break;
+		case 'B':
+			tuner_bandwidth = (uint32_t)atofs(optarg);
+			break;
+		case 'L':
+			lna_gain = atoi(optarg);
+			break;
+		case 'M':
+			mixer_gain = atoi(optarg);
+			break;
+		case 'V':
+			vga_gain = atoi(optarg);
+			break;
+		case 'A':
+			agc = 1;
+			break;
+		case 'O':
+			offset_tuning = 1;
+			break;
+		case 'T':
+			bias_tee = 1;
 			break;
 		case 's':
 			samp_rate = (uint32_t)atofs(optarg);
@@ -214,7 +303,27 @@ int main(int argc, char **argv)
 	/* Set the frequency */
 	verbose_set_frequency(dev, frequency);
 
-	if (0 == gain) {
+	/* Set the tuner bandwidth, 0 lets the library choose it */
+	if (tuner_bandwidth > 0)
+		verbose_tuner_bandwidth(dev, tuner_bandwidth);
+
+	if (lna_gain >= 0 || mixer_gain >= 0 || vga_gain >= 0) {
+		/* Per-stage gain only exists for the R82xx tuners and needs
+		 * manual mode. A combined -g is applied first and then
+		 * overridden by whichever stages were given. */
+		if (rtlsdr_set_tuner_gain_mode(dev, 1) < 0)
+			fprintf(stderr, "WARNING: Failed to enable manual gain.\n");
+		if (0 != gain) {
+			gain = nearest_gain(dev, gain);
+			verbose_gain_set(dev, gain);
+		}
+		if (lna_gain >= 0)
+			verbose_stage_gain(dev, "LNA", lna_gain, rtlsdr_r82xx_set_lna_gain);
+		if (mixer_gain >= 0)
+			verbose_stage_gain(dev, "Mixer", mixer_gain, rtlsdr_r82xx_set_mixer_gain);
+		if (vga_gain >= 0)
+			verbose_stage_gain(dev, "VGA", vga_gain, rtlsdr_r82xx_set_vga_gain);
+	} else if (0 == gain) {
 		 /* Enable automatic gain */
 		verbose_auto_gain(dev);
 	} else {
@@ -222,6 +331,13 @@ int main(int argc, char **argv)
 		gain = nearest_gain(dev, gain);
 		verbose_gain_set(dev, gain);
 	}
+
+	if (agc)
+		verbose_agc(dev, 1);
+	if (offset_tuning)
+		verbose_offset_tuning(dev);
+	if (bias_tee)
+		verbose_bias_tee(dev, 1);
 
 	verbose_ppm_set(dev, ppm_error);
 

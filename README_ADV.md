@@ -34,7 +34,12 @@ This functionality is still present in stream1090 and will not be deprecated for
     ```
     Dial in on 1090 MHz, set the sample rate to 2.4 Msps. Pipe the output into stream1090 and tell it that the input sample rate is 2.4 Msps (for the missing ```-u``` it will default to 8)
 
-    **Important:** If you use the normal librtlsdr, there is no difference between rtl_sdr and the native device support variant. With the vendored RTL-SDR Blog fork, the build also produces an `rtl_sdr` linked against the same library (`ENABLE_RTLSDR_RECORDER`, on by default). It currently exposes the standard `rtl_sdr` options, so for the per-stage gain and tuner bandwidth controls use the native device support; these flags are being added to the recorder.
+    **Important:** If you use the normal librtlsdr, there is no difference between rtl_sdr and the native device support variant. With the vendored RTL-SDR Blog fork, the build also produces an `rtl_sdr` linked against the same library (`ENABLE_RTLSDR_RECORDER`, on by default). Besides the standard options it exposes the fork's advanced controls: `-B <Hz>` tuner bandwidth, `-L/-M/-V` LNA/mixer/VGA gain indices 0..15, `-A` digital AGC, `-O` offset tuning and `-T` bias tee. For example:
+
+    ```
+    ./build/rtl_sdr -f 1090000000 -s 2400000 -g 49.6 \
+        -B 3000000 -L 14 -M 13 -V 10 -T samples.bin
+    ```
 
 2. Similarly, for Airspy we do
     ```

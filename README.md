@@ -58,7 +58,7 @@ We are ready to compile. Switch to the stream1090 folder and do the usual cmake 
 
 Run ```./stream1090 -h``` in the build directory to bring up the help screen. Verify that the second line starting with ```Native device support``` has your device type listed (```Airspy``` and/or ```RTL-SDR```). 
 
-With the vendored RTL-SDR backend (`ENABLE_RTLSDR_BLOG`, on by default), the same build also produces ```./rtl_sdr```, an I/Q recorder linked against the vendored library. It stays next to ```stream1090``` in the build directory and is not installed; configure with `-DENABLE_RTLSDR_RECORDER=OFF` to skip it.
+With the vendored RTL-SDR backend (`ENABLE_RTLSDR_BLOG`, on by default), the same build also produces ```./rtl_sdr```, an I/Q recorder linked against the vendored library. Besides the standard options it accepts the fork's `-B` tuner bandwidth, `-L/-M/-V` per-stage gain indices, `-A` AGC, `-O` offset tuning and `-T` bias tee. It stays next to ```stream1090``` in the build directory and is not installed; configure with `-DENABLE_RTLSDR_RECORDER=OFF` to skip it.
 
 To build and run the unit tests, enable `BUILD_TESTING` during configuration:
 
