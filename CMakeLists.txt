@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.10)
 project(stream1090 VERSION 1.0.0)
+find_package(Threads REQUIRED)
 
 # Must come before the first install(): CMAKE_INSTALL_BINDIR etc. are defined here.
 include(GNUInstallDirs)
@@ -16,6 +17,10 @@ option(ENABLE_PREAMBLE_GATE  "Reject address-parity frames that are weak and pre
 set(PREAMBLE_GATE_THRESHOLD 1.2 CACHE STRING "Preamble score a real transmission must reach")
 set(MIN_SNR               2.5 CACHE STRING "Reject address-parity frames below this signal-to-noise ratio (0 disables; a ratio, so it transfers between receivers)")
 option(ENABLE_RTLSDR_BLOG    "Enable vendored RTL-SDR Blog fork" ON)
+# Build the fork's I/Q recorder too, so captures can be made with the same front
+# end stream1090 uses. It is built by `make`, lands next to stream1090 in the
+# build directory and is deliberately never installed.
+option(ENABLE_RTLSDR_RECORDER "Build the vendored rtl_sdr I/Q recorder" ON)
 option(BUILD_TESTING         "Build tests" OFF)
 
 # Error that this has been removed 
@@ -73,6 +78,24 @@ if(ENABLE_RTLSDR_BLOG)
         set(DETACH_KERNEL_DRIVER ON CACHE BOOL "" FORCE)
         add_subdirectory(thirdparty/rtl-sdr-blog EXCLUDE_FROM_ALL)
         set(LIB_RTLSDR_BLOG_FOUND ON)
+
+        # The fork's rtl_sdr source, linked against the same static librtlsdr
+        # as stream1090. Plain `make` builds it; there is no install rule, so
+        # the binary stays next to the stream1090 executables in the build
+        # directory.
+        if(ENABLE_RTLSDR_RECORDER)
+            add_executable(stream1090_rtl_sdr
+                thirdparty/rtl-sdr-blog/src/rtl_sdr.c
+                thirdparty/rtl-sdr-blog/src/convenience/convenience.c)
+            target_compile_definitions(stream1090_rtl_sdr PRIVATE rtlsdr_STATIC)
+            target_link_libraries(stream1090_rtl_sdr PRIVATE rtlsdr_static Threads::Threads)
+            set_target_properties(stream1090_rtl_sdr PROPERTIES
+                OUTPUT_NAME rtl_sdr
+                RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+            if(WIN32)
+                target_sources(stream1090_rtl_sdr PRIVATE thirdparty/rtl-sdr-blog/src/getopt/getopt.c)
+            endif()
+        endif()
     else()
         message(WARNING "stream1090: libusb-1.0 not found, not building the vendored RTL-SDR Blog fork")
     endif()
